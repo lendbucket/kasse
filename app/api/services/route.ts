@@ -9,15 +9,70 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const locationId = request.nextUrl.searchParams.get("locationId");
+  const params = request.nextUrl.searchParams;
+  const locationId = params.get("locationId");
+  const activeParam = params.get("active"); // "all" | "false" | default true
+
+  const where: Record<string, unknown> = {};
+  if (locationId) where.locationId = locationId;
+  if (activeParam !== "all") {
+    where.active = activeParam === "false" ? false : true;
+  }
 
   const services = await prisma.service.findMany({
-    where: {
-      active: true,
-      ...(locationId ? { locationId } : {}),
-    },
+    where,
     orderBy: [{ category: "asc" }, { name: "asc" }],
   });
 
   return NextResponse.json({ services });
+}
+
+type CreateBody = {
+  name: string;
+  price: number;
+  duration: number;
+  category?: string | null;
+  locationId: string;
+  active?: boolean;
+};
+
+export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: CreateBody;
+  try {
+    body = (await request.json()) as CreateBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (
+    !body.name?.trim() ||
+    !body.locationId ||
+    typeof body.price !== "number" ||
+    typeof body.duration !== "number" ||
+    body.price < 0 ||
+    body.duration <= 0
+  ) {
+    return NextResponse.json(
+      { error: "Missing or invalid fields" },
+      { status: 400 },
+    );
+  }
+
+  const service = await prisma.service.create({
+    data: {
+      name: body.name.trim(),
+      price: body.price,
+      duration: Math.round(body.duration),
+      category: body.category?.trim() || null,
+      locationId: body.locationId,
+      active: body.active ?? true,
+    },
+  });
+
+  return NextResponse.json({ service }, { status: 201 });
 }
