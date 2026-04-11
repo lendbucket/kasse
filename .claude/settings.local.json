@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm run:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(grep -l \"prisma-client-js\" C:/Users/Salon/Downloads/kasse/node_modules/@prisma/client/generator-build/*.js)",
+      "Bash(npx dotenv-cli:*)"
     ]
   }
 }
