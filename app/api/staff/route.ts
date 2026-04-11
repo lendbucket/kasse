@@ -9,15 +9,68 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const locationId = request.nextUrl.searchParams.get("locationId");
+  const params = request.nextUrl.searchParams;
+  const locationId = params.get("locationId");
+  const activeParam = params.get("active"); // "all" | "true" | null(default true)
+
+  const where: Record<string, unknown> = {};
+  if (locationId) where.locationId = locationId;
+  if (activeParam !== "all") {
+    where.active = activeParam === "false" ? false : true;
+  }
 
   const staff = await prisma.staff.findMany({
-    where: {
-      active: true,
-      ...(locationId ? { locationId } : {}),
-    },
+    where,
     orderBy: { name: "asc" },
+    include: {
+      location: { select: { id: true, name: true } },
+    },
   });
 
   return NextResponse.json({ staff });
+}
+
+type CreateBody = {
+  name: string;
+  email?: string;
+  phone?: string;
+  role?: "manager" | "stylist";
+  locationId: string;
+  active?: boolean;
+};
+
+export async function POST(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: CreateBody;
+  try {
+    body = (await request.json()) as CreateBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  if (!body.name?.trim() || !body.locationId) {
+    return NextResponse.json(
+      { error: "Name and locationId required" },
+      { status: 400 },
+    );
+  }
+
+  const role = body.role === "manager" ? "manager" : "stylist";
+
+  const staff = await prisma.staff.create({
+    data: {
+      name: body.name.trim(),
+      email: body.email?.trim() || null,
+      phone: body.phone?.trim() || null,
+      role,
+      locationId: body.locationId,
+      active: body.active ?? true,
+    },
+  });
+
+  return NextResponse.json({ staff }, { status: 201 });
 }

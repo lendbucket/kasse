@@ -41,7 +41,31 @@ async function main() {
     },
   });
 
-  console.log("Seeded location + services");
+  await prisma.staff.upsert({
+    where: { id: "seed-staff-clarissa" },
+    update: {},
+    create: {
+      id: "seed-staff-clarissa",
+      name: "Clarissa Reyna",
+      role: "manager",
+      locationId: location.id,
+      active: true,
+    },
+  });
+
+  await prisma.staff.upsert({
+    where: { id: "seed-staff-alexis" },
+    update: {},
+    create: {
+      id: "seed-staff-alexis",
+      name: "Alexis Rodriguez",
+      role: "stylist",
+      locationId: location.id,
+      active: true,
+    },
+  });
+
+  console.log("Seeded location + services + staff");
 }
 
 main()
