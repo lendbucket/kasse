@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ═══════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("stylist") // owner | manager | stylist
+  locationId    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ═══════════════════════════════════════════
+// CORE BUSINESS
+// ═══════════════════════════════════════════
+
+model Location {
+  id           String        @id @default(cuid())
+  name         String
+  address      String?
+  phone        String?
+  email        String?
+  createdAt    DateTime      @default(now())
+  clients      Client[]
+  staff        Staff[]
+  services     Service[]
+  appointments Appointment[]
+}
+
+model Staff {
+  id           String        @id @default(cuid())
+  name         String
+  email        String?
+  phone        String?
+  role         String        @default("stylist") // manager | stylist
+  locationId   String
+  location     Location      @relation(fields: [locationId], references: [id])
+  active       Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  appointments Appointment[]
+}
+
+model Client {
+  id           String        @id @default(cuid())
+  name         String
+  email        String?
+  phone        String?
+  locationId   String
+  location     Location      @relation(fields: [locationId], references: [id])
+  notes        String?
+  createdAt    DateTime      @default(now())
+  appointments Appointment[]
+}
+
+model Service {
+  id         String   @id @default(cuid())
+  name       String
+  price      Float
+  duration   Int // minutes
+  category   String?
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  clientId    String?
+  clientName  String?
+  staffId     String
+  locationId  String
+  serviceId   String?
+  serviceName String?
+  price       Float?
+  status      String   @default("scheduled") // scheduled | completed | cancelled | no_show
+  startTime   DateTime
+  endTime     DateTime
+  notes       String?
+  createdAt   DateTime @default(now())
+  client      Client?  @relation(fields: [clientId], references: [id])
+  staff       Staff    @relation(fields: [staffId], references: [id])
+  location    Location @relation(fields: [locationId], references: [id])
+}
+
+model Transaction {
+  id            String   @id @default(cuid())
+  appointmentId String?
+  locationId    String
+  staffId       String?
+  clientName    String?
+  amount        Float
+  tip           Float    @default(0)
+  tax           Float    @default(0)
+  total         Float
+  paymentMethod String? // cash | card | other
+  status        String   @default("completed")
+  createdAt     DateTime @default(now())
+}
