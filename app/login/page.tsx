@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { CheckCircle2 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -60,12 +61,23 @@ export default function LoginPage() {
 
       {/* Top-left wordmark */}
       <div className="fixed left-8 top-8 z-30 flex flex-col">
-        <span className="text-[22px] font-bold tracking-[0.25em] text-white">
+        <span
+          className="text-[22px] font-bold tracking-[0.25em]"
+          style={{ color: "var(--login-wordmark)" }}
+        >
           KASSE
         </span>
-        <span className="mt-0.5 text-[11px] tracking-[0.12em] text-white/50">
+        <span
+          className="mt-0.5 text-[11px] tracking-[0.12em]"
+          style={{ color: "var(--login-tagline)" }}
+        >
           Salon Management Platform
         </span>
+      </div>
+
+      {/* Top-right theme toggle */}
+      <div className="fixed right-8 top-8 z-30">
+        <ThemeToggle className="text-white/60 hover:text-white hover:bg-white/10" />
       </div>
 
       {/* Center — Glass auth card */}
@@ -76,35 +88,47 @@ export default function LoginPage() {
         }}
       >
         <div
-          className="rounded-3xl border border-white/[0.08] p-10"
+          className="rounded-3xl p-10"
           style={{
-            background: "rgba(13,17,23,0.85)",
+            background: "var(--glass-bg)",
             backdropFilter: "blur(24px) saturate(180%)",
             WebkitBackdropFilter: "blur(24px) saturate(180%)",
-            boxShadow:
-              "inset 0 1px 0 rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.3), 0 8px 16px rgba(0,0,0,0.4), 0 24px 48px rgba(0,0,0,0.3), 0 48px 96px rgba(0,0,0,0.2)",
+            border: "1px solid var(--glass-border)",
+            boxShadow: "var(--glass-shadow)",
           }}
         >
           {/* Logo */}
           <p
-            className="text-center text-[18px] font-bold tracking-[0.2em] text-white"
-            style={{ animation: "fadeInUp 400ms ease-out 60ms both" }}
+            className="text-center text-[18px] font-bold tracking-[0.2em]"
+            style={{
+              color: "var(--login-heading)",
+              animation: "fadeInUp 400ms ease-out 60ms both",
+            }}
           >
             KASSE
           </p>
 
           {/* Divider line */}
           <div
-            className="my-5 h-px w-full bg-white/[0.06]"
-            style={{ animation: "fadeInUp 400ms ease-out 120ms both" }}
+            className="my-5 h-px w-full"
+            style={{
+              background: "var(--overlay-divider)",
+              animation: "fadeInUp 400ms ease-out 120ms both",
+            }}
           />
 
           {/* Heading */}
           <div style={{ animation: "fadeInUp 400ms ease-out 180ms both" }}>
-            <h1 className="text-[22px] font-semibold text-white">
+            <h1
+              className="text-[22px] font-semibold"
+              style={{ color: "var(--login-heading)" }}
+            >
               Welcome back
             </h1>
-            <p className="mt-1 mb-6 text-[13px] text-white/50">
+            <p
+              className="mt-1 mb-6 text-[13px]"
+              style={{ color: "var(--login-subtext)" }}
+            >
               Sign in to your account
             </p>
           </div>
@@ -113,8 +137,19 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-white/[0.1] bg-white/[0.06] text-[14px] font-medium text-white transition-all duration-150 hover:bg-white/[0.1]"
-            style={{ animation: "fadeInUp 400ms ease-out 240ms both" }}
+            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-150"
+            style={{
+              background: "var(--login-google-bg)",
+              border: "1px solid var(--login-google-border)",
+              color: "var(--login-google-text)",
+              animation: "fadeInUp 400ms ease-out 240ms both",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "var(--login-google-hover)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "var(--login-google-bg)")
+            }
           >
             <svg
               width="18"
@@ -147,24 +182,42 @@ export default function LoginPage() {
             className="my-5 flex items-center gap-4"
             style={{ animation: "fadeInUp 400ms ease-out 300ms both" }}
           >
-            <div className="h-px flex-1 bg-white/[0.06]" />
-            <span className="text-[11px] text-white/30">&mdash; or &mdash;</span>
-            <div className="h-px flex-1 bg-white/[0.06]" />
+            <div
+              className="h-px flex-1"
+              style={{ background: "var(--overlay-divider)" }}
+            />
+            <span
+              className="text-[11px]"
+              style={{ color: "var(--login-divider-text)" }}
+            >
+              &mdash; or &mdash;
+            </span>
+            <div
+              className="h-px flex-1"
+              style={{ background: "var(--overlay-divider)" }}
+            />
           </div>
 
           {/* Email form / Success state */}
           <div style={{ animation: "fadeInUp 400ms ease-out 360ms both" }}>
             {sent ? (
               <div
-                className="flex flex-col items-center gap-3 rounded-xl border border-[#22c55e]/20 bg-[#22c55e]/5 px-4 py-6"
-                style={{ animation: "scaleIn 300ms ease-out both" }}
+                className="flex flex-col items-center gap-3 rounded-xl px-4 py-6"
+                style={{
+                  border: "1px solid color-mix(in srgb, var(--success) 20%, transparent)",
+                  background: "color-mix(in srgb, var(--success) 5%, transparent)",
+                  animation: "scaleIn 300ms ease-out both",
+                }}
               >
                 <CheckCircle2
                   size={28}
                   strokeWidth={1.5}
-                  className="text-[#22c55e]"
+                  style={{ color: "var(--success)" }}
                 />
-                <p className="text-[14px] font-medium text-[#22c55e]">
+                <p
+                  className="text-[14px] font-medium"
+                  style={{ color: "var(--success)" }}
+                >
                   Magic link sent! Check your inbox.
                 </p>
               </div>
@@ -183,7 +236,12 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
-                  className="h-[44px] w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 text-[16px] text-white placeholder:text-white/30 outline-none transition-all duration-150 focus:border-[#606e74] focus:shadow-[0_0_0_3px_rgba(96,110,116,0.2)]"
+                  className="h-[44px] w-full rounded-xl px-4 text-[16px] outline-none transition-all duration-150 focus:border-[#606e74] focus:shadow-[0_0_0_3px_rgba(96,110,116,0.2)]"
+                  style={{
+                    background: "var(--login-input-bg)",
+                    border: "1px solid var(--login-input-border)",
+                    color: "var(--login-input-text)",
+                  }}
                 />
                 <button
                   type="submit"
@@ -198,19 +256,26 @@ export default function LoginPage() {
 
           {/* Bottom divider */}
           <div
-            className="my-5 h-px w-full bg-white/[0.06]"
-            style={{ animation: "fadeInUp 400ms ease-out 420ms both" }}
+            className="my-5 h-px w-full"
+            style={{
+              background: "var(--overlay-divider)",
+              animation: "fadeInUp 400ms ease-out 420ms both",
+            }}
           />
 
           {/* Sign up link */}
           <p
-            className="text-center text-[13px] text-white/50"
-            style={{ animation: "fadeInUp 400ms ease-out 480ms both" }}
+            className="text-center text-[13px]"
+            style={{
+              color: "var(--login-subtext)",
+              animation: "fadeInUp 400ms ease-out 480ms both",
+            }}
           >
             New to Kasse?{" "}
             <a
               href="/onboarding"
-              className="cursor-pointer font-medium text-[#7a8f96] transition-colors duration-150 hover:text-white"
+              className="cursor-pointer font-medium transition-colors duration-150"
+              style={{ color: "var(--login-link)" }}
             >
               Create an account &rarr;
             </a>
@@ -218,8 +283,11 @@ export default function LoginPage() {
 
           {/* Terms */}
           <p
-            className="mt-5 text-center text-[11px] text-white/30"
-            style={{ animation: "fadeInUp 400ms ease-out 540ms both" }}
+            className="mt-5 text-center text-[11px]"
+            style={{
+              color: "var(--login-terms)",
+              animation: "fadeInUp 400ms ease-out 540ms both",
+            }}
           >
             Terms of Service &middot; Privacy Policy
           </p>
@@ -232,9 +300,11 @@ export default function LoginPage() {
           (pill) => (
             <span
               key={pill}
-              className="rounded-full border border-white/[0.08] px-3 py-1.5 text-[12px] text-white/60"
+              className="rounded-full px-3 py-1.5 text-[12px]"
               style={{
-                background: "rgba(13,17,23,0.7)",
+                background: "var(--login-pill-bg)",
+                border: "1px solid var(--login-pill-border)",
+                color: "var(--login-pill-text)",
                 backdropFilter: "blur(8px)",
                 WebkitBackdropFilter: "blur(8px)",
               }}

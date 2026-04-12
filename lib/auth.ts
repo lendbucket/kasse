@@ -3,6 +3,10 @@ import GoogleProvider from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { magicLinkEmail } from "./email-template";
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -22,6 +26,14 @@ export const authOptions: NextAuthOptions = {
         secure: true,
       },
       from: "Kasse <noreply@kasseapp.com>",
+      sendVerificationRequest: async ({ identifier, url }) => {
+        await resend.emails.send({
+          from: "Kasse <noreply@kasseapp.com>",
+          to: identifier,
+          subject: "Sign in to Kasse",
+          html: magicLinkEmail(url),
+        });
+      },
     }),
   ],
   session: { strategy: "database" },

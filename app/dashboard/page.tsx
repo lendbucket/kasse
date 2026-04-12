@@ -13,9 +13,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-const CARD_SHADOW =
-  "inset 0 1px 0 rgba(255,255,255,0.02), inset 1px 0 0 rgba(255,255,255,0.02), 0 0 0 1px rgba(0,0,0,0.25), 0 2px 2px rgba(0,0,0,0.12), 0 4px 4px rgba(0,0,0,0.08), 0 8px 8px rgba(0,0,0,0.06)";
-
 type KPI = {
   label: string;
   value: string;
@@ -112,18 +109,18 @@ const STATUS_STYLES: Record<
   },
   completed: {
     label: "Completed",
-    bg: "bg-[#22c55e]/10",
-    text: "text-[#22c55e]",
+    bg: "bg-[var(--success)]/10",
+    text: "text-[var(--success)]",
   },
   cancelled: {
     label: "Cancelled",
-    bg: "bg-[#ef4444]/10",
-    text: "text-[#ef4444]",
+    bg: "bg-[var(--error)]/10",
+    text: "text-[var(--error)]",
   },
   no_show: {
     label: "No Show",
-    bg: "bg-[#f59e0b]/10",
-    text: "text-[#f59e0b]",
+    bg: "bg-[var(--warning)]/10",
+    text: "text-[var(--warning)]",
   },
 };
 
@@ -140,14 +137,27 @@ export default function DashboardPage() {
       {/* Top Bar */}
       <header className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-white">
+          <h1
+            className="text-[20px] font-semibold"
+            style={{ color: "var(--text-primary)" }}
+          >
             {getGreeting()}, Robert
           </h1>
           <DashboardClock />
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1.5 text-[13px] text-[#7a8f96]">
-            <MapPin size={12} strokeWidth={1.5} className="text-[#606e74]" />
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px]"
+            style={{
+              background: "var(--overlay-subtle)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <MapPin
+              size={12}
+              strokeWidth={1.5}
+              style={{ color: "var(--text-muted)" }}
+            />
             Main Location
           </span>
         </div>
@@ -161,38 +171,68 @@ export default function DashboardPage() {
             return (
               <div
                 key={kpi.label}
-                className="rounded-xl border border-white/[0.06] bg-[#0d1117] p-5 transition-all duration-150 hover:border-white/[0.12]"
-                style={{ boxShadow: CARD_SHADOW }}
+                className="rounded-xl p-5 transition-all duration-150"
+                style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border-color)",
+                  boxShadow: "var(--shadow-card)",
+                }}
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-[13px] text-[#606e74]">{kpi.label}</p>
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+                  <p
+                    className="text-[13px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {kpi.label}
+                  </p>
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-lg"
+                    style={{ background: "var(--overlay-subtle)" }}
+                  >
                     <Icon
                       size={16}
                       strokeWidth={1.5}
-                      className="text-[#606e74]"
+                      style={{ color: "var(--text-muted)" }}
                     />
                   </div>
                 </div>
-                <p className="mt-3 font-mono text-[32px] font-semibold text-white">
+                <p
+                  className="mt-3 font-mono text-[32px] font-semibold"
+                  style={{ color: "var(--text-primary)" }}
+                >
                   {kpi.value}
                 </p>
                 <div className="mt-2 flex items-center gap-1">
                   {kpi.trendUp ? (
-                    <TrendingUp size={12} className="text-[#22c55e]" />
+                    <TrendingUp
+                      size={12}
+                      style={{ color: "var(--success)" }}
+                    />
                   ) : (
-                    <TrendingDown size={12} className="text-[#ef4444]" />
+                    <TrendingDown
+                      size={12}
+                      style={{ color: "var(--error)" }}
+                    />
                   )}
                   <span
-                    className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${
-                      kpi.trendUp
-                        ? "bg-[#22c55e]/10 text-[#22c55e]"
-                        : "bg-[#ef4444]/10 text-[#ef4444]"
-                    }`}
+                    className="rounded-full px-1.5 py-0.5 text-[11px] font-medium"
+                    style={{
+                      background: kpi.trendUp
+                        ? "color-mix(in srgb, var(--success) 10%, transparent)"
+                        : "color-mix(in srgb, var(--error) 10%, transparent)",
+                      color: kpi.trendUp
+                        ? "var(--success)"
+                        : "var(--error)",
+                    }}
                   >
                     {kpi.trend}
                   </span>
-                  <span className="text-[11px] text-[#606e74]">vs last week</span>
+                  <span
+                    className="text-[11px]"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    vs last week
+                  </span>
                 </div>
               </div>
             );
@@ -203,22 +243,48 @@ export default function DashboardPage() {
         <section className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/dashboard/appointments"
-            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl bg-[#606e74] px-5 text-[14px] font-semibold text-white transition-all duration-150 hover:bg-[#7a8f96] hover:scale-[1.01] active:scale-[0.995]"
-            style={{ boxShadow: CARD_SHADOW }}
+            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl bg-[var(--accent)] px-5 text-[14px] font-semibold text-white transition-all duration-150 hover:scale-[1.01] active:scale-[0.995]"
+            style={{ boxShadow: "var(--shadow-card)" }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "var(--accent-hover)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "var(--accent)")
+            }
           >
             <Plus size={16} strokeWidth={1.5} />
             New Appointment
           </Link>
           <Link
             href="/dashboard/pos"
-            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-white/[0.06] bg-transparent px-5 text-[14px] font-semibold text-white transition-all duration-150 hover:bg-white/[0.04]"
+            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-all duration-150"
+            style={{
+              border: "1px solid var(--border-color)",
+              color: "var(--text-primary)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "var(--overlay-hover)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
           >
             <ShoppingCart size={16} strokeWidth={1.5} />
             Quick Sale
           </Link>
           <Link
             href="/dashboard/clients"
-            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-white/[0.06] bg-transparent px-5 text-[14px] font-semibold text-white transition-all duration-150 hover:bg-white/[0.04]"
+            className="flex h-[44px] cursor-pointer items-center gap-2 rounded-xl px-5 text-[14px] font-semibold transition-all duration-150"
+            style={{
+              border: "1px solid var(--border-color)",
+              color: "var(--text-primary)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "var(--overlay-hover)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
           >
             <UserPlus size={16} strokeWidth={1.5} />
             Add Client
@@ -228,24 +294,51 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[16px] font-semibold text-white">
+            <h2
+              className="text-[16px] font-semibold"
+              style={{ color: "var(--text-primary)" }}
+            >
               Recent Activity
             </h2>
           </div>
           <div
-            className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#0d1117]"
-            style={{ boxShadow: CARD_SHADOW }}
+            className="overflow-hidden rounded-xl"
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border-color)",
+              boxShadow: "var(--shadow-card)",
+            }}
           >
-            <div className="divide-y divide-white/[0.06]">
+            <div
+              className="divide-y"
+              style={
+                {
+                  "--tw-divide-color": "var(--overlay-divider)",
+                } as React.CSSProperties
+              }
+            >
               {RECENT_APPOINTMENTS.map((apt, i) => {
                 const status = STATUS_STYLES[apt.status];
                 return (
                   <div
                     key={i}
-                    className="flex items-center gap-4 px-5 py-3.5 transition-colors duration-150 hover:bg-white/[0.02]"
+                    className="flex items-center gap-4 px-5 py-3.5 transition-colors duration-150"
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background =
+                        "var(--overlay-subtle)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background = "transparent")
+                    }
                   >
                     {/* Client avatar */}
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-[12px] font-semibold text-[#7a8f96]">
+                    <div
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
+                      style={{
+                        background: "var(--overlay-subtle)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
                       {apt.client
                         .split(" ")
                         .map((n) => n[0])
@@ -254,18 +347,30 @@ export default function DashboardPage() {
                     {/* Info */}
                     <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-4">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[14px] font-medium text-white">
+                        <p
+                          className="truncate text-[14px] font-medium"
+                          style={{ color: "var(--text-primary)" }}
+                        >
                           {apt.client}
                         </p>
-                        <p className="truncate text-[13px] text-[#606e74]">
+                        <p
+                          className="truncate text-[13px]"
+                          style={{ color: "var(--text-muted)" }}
+                        >
                           {apt.service}
                         </p>
                       </div>
                       <div className="mt-1 flex items-center gap-3 sm:mt-0">
-                        <span className="text-[13px] text-[#606e74]">
+                        <span
+                          className="text-[13px]"
+                          style={{ color: "var(--text-muted)" }}
+                        >
                           {apt.stylist}
                         </span>
-                        <span className="font-mono text-[13px] text-[#7a8f96]">
+                        <span
+                          className="font-mono text-[13px]"
+                          style={{ color: "var(--text-secondary)" }}
+                        >
                           {apt.time}
                         </span>
                       </div>
@@ -281,10 +386,20 @@ export default function DashboardPage() {
               })}
             </div>
             {/* View All */}
-            <div className="border-t border-white/[0.06] px-5 py-3">
+            <div
+              className="px-5 py-3"
+              style={{ borderTop: "1px solid var(--overlay-divider)" }}
+            >
               <Link
                 href="/dashboard/appointments"
-                className="cursor-pointer text-[13px] font-medium text-[#7a8f96] transition-colors duration-150 hover:text-white"
+                className="cursor-pointer text-[13px] font-medium transition-colors duration-150"
+                style={{ color: "var(--text-secondary)" }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.color = "var(--text-primary)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.color = "var(--text-secondary)")
+                }
               >
                 View all appointments &rarr;
               </Link>
