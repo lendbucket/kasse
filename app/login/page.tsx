@@ -2,30 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import { Zap, CalendarCheck, UserCog, ChartLine, type LucideIcon } from "lucide-react";
-
-const FEATURES: { icon: LucideIcon; title: string; desc: string }[] = [
-  {
-    icon: Zap,
-    title: "Fast Checkout",
-    desc: "Process transactions in seconds with our streamlined POS terminal",
-  },
-  {
-    icon: CalendarCheck,
-    title: "Appointment Booking",
-    desc: "Manage your salon schedule with drag-and-drop simplicity",
-  },
-  {
-    icon: UserCog,
-    title: "Staff Management",
-    desc: "Track performance, assign roles, and manage your team",
-  },
-  {
-    icon: ChartLine,
-    title: "Real-time Reports",
-    desc: "Revenue, trends, and insights updated as they happen",
-  },
-];
+import { Check } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -37,7 +14,11 @@ export default function LoginPage() {
     if (!email || submitting) return;
     setSubmitting(true);
     try {
-      await signIn("email", { email, callbackUrl: "/dashboard", redirect: false });
+      await signIn("email", {
+        email,
+        callbackUrl: "/dashboard",
+        redirect: false,
+      });
       setSent(true);
     } finally {
       setSubmitting(false);
@@ -46,45 +27,111 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen bg-[#06080d]">
-      {/* Left — Login */}
-      <div className="relative flex flex-1 items-center justify-center px-6 py-16">
-        {/* Subtle radial glow */}
+      {/* Left Hero Panel — 55% on desktop, hidden on mobile */}
+      <div
+        className="relative hidden w-[55%] flex-col justify-between overflow-hidden p-12 lg:flex"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
+        }}
+      >
+        {/* Radial glow */}
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(42,64,74,0.15) 0%, transparent 70%)",
+              "radial-gradient(ellipse 70% 60% at 50% 50%, rgba(96,110,116,0.15) 0%, transparent 70%)",
           }}
         />
 
+        {/* Top — Wordmark */}
+        <div className="relative z-10">
+          <span className="text-[28px] font-bold tracking-[0.2em] text-white">
+            KASSE
+          </span>
+        </div>
+
+        {/* Center — Hero Content */}
+        <div className="relative z-10 max-w-[560px]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#606e74]">
+            SALON MANAGEMENT PLATFORM
+          </p>
+          <h1 className="mt-4 text-[42px] font-semibold leading-[1.2] text-white">
+            The operating system for modern salons.
+          </h1>
+          <p className="mt-5 max-w-[480px] text-[16px] leading-relaxed text-[#7a8f96]">
+            Everything your team needs — bookings, payments, staff, and reports
+            — in one powerful platform.
+          </p>
+
+          {/* Social Proof Chips */}
+          <div className="mt-8 flex flex-wrap gap-3">
+            {["10,000+ stylists", "99.9% uptime", "SOC 2 compliant"].map(
+              (chip) => (
+                <span
+                  key={chip}
+                  className="rounded-full border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-[13px] text-[#7a8f96]"
+                >
+                  {chip}
+                </span>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Bottom — Trust Line */}
+        <p className="relative z-10 text-[13px] italic text-[#606e74]">
+          Trusted by Salon Envy&reg;
+        </p>
+      </div>
+
+      {/* Right Auth Panel — 45% on desktop, full on mobile */}
+      <div
+        className="flex w-full flex-1 items-center justify-center bg-[#0d1117] px-6 py-12 lg:w-[45%]"
+        style={{ animation: "slideInRight 500ms ease-out both" }}
+      >
         <div
-          className="login-card relative z-10 w-full max-w-[420px] rounded-2xl border border-[#1a2332] bg-[#0d1117] shadow-[0_8px_40px_rgba(0,0,0,0.5)]"
+          className="w-full max-w-[380px] rounded-2xl border border-white/[0.06] bg-[#0d1117] p-8"
+          style={{ boxShadow: "var(--shadow-card)" }}
         >
           {/* Logo */}
-          <div className="flex flex-col items-center gap-2 px-8 pt-10 pb-6">
-            <h1 className="text-3xl font-bold tracking-[0.25em] text-white">
+          <div
+            className="mb-8 text-center"
+            style={{ animation: "fadeInUp 400ms ease-out both" }}
+          >
+            <p className="text-[20px] font-bold tracking-[0.2em] text-[#7a8f96]">
               KASSE
-            </h1>
-            <p className="text-sm italic text-[#606e74]">
-              Salon Management. Simplified.
             </p>
           </div>
 
-          <div className="mx-8 h-px bg-[#1a2332]" />
-
-          {/* Form */}
-          <div className="px-8 pb-8 pt-6">
-            <h2 className="text-2xl font-bold text-white">Welcome back</h2>
-            <p className="mb-6 mt-1 text-sm text-[#606e74]">
-              Sign in to your Kasse account
+          {/* Heading */}
+          <div style={{ animation: "fadeInUp 400ms ease-out 50ms both" }}>
+            <h2 className="text-[24px] font-semibold text-white">
+              Welcome back
+            </h2>
+            <p className="mt-1 text-[13px] text-[#606e74]">
+              Sign in to continue
             </p>
+          </div>
 
+          {/* Google Button */}
+          <div
+            className="mt-6"
+            style={{ animation: "fadeInUp 400ms ease-out 100ms both" }}
+          >
             <button
               type="button"
               onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-              className="login-btn flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-[#2a3442] bg-[#1a2332] text-sm font-medium text-white transition-all duration-150 hover:bg-[#243040]"
+              className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-3 rounded-xl border border-white/[0.08] bg-[#111920] text-[14px] font-semibold text-white transition-all duration-150 hover:bg-[#1a2332]"
+              style={{ boxShadow: "var(--shadow-card)" }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
                 <path
                   fill="#4285F4"
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
@@ -104,107 +151,98 @@ export default function LoginPage() {
               </svg>
               Continue with Google
             </button>
+          </div>
 
-            <div className="my-6 flex items-center gap-4">
-              <div className="h-px flex-1 bg-[#1a2332]" />
-              <span className="text-xs uppercase tracking-widest text-[#606e74]">
-                or
-              </span>
-              <div className="h-px flex-1 bg-[#1a2332]" />
-            </div>
+          {/* Divider */}
+          <div
+            className="my-6 flex items-center gap-4"
+            style={{ animation: "fadeInUp 400ms ease-out 150ms both" }}
+          >
+            <div className="h-px flex-1 bg-white/[0.06]" />
+            <span className="text-[11px] text-[#606e74]">
+              or continue with email
+            </span>
+            <div className="h-px flex-1 bg-white/[0.06]" />
+          </div>
 
+          {/* Email Form / Success State */}
+          <div style={{ animation: "fadeInUp 400ms ease-out 200ms both" }}>
             {sent ? (
-              <div className="rounded-lg border border-[#22c55e]/30 bg-[#22c55e]/5 px-4 py-4 text-center text-sm font-medium text-[#22c55e]">
-                Check your email — magic link sent!
+              <div
+                className="flex flex-col items-center gap-3 rounded-xl border border-[#22c55e]/30 bg-[#22c55e]/5 px-4 py-6"
+                style={{ animation: "scaleIn 300ms ease-out both" }}
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#22c55e]/10">
+                  <Check size={20} className="text-[#22c55e]" />
+                </div>
+                <p className="text-[14px] font-medium text-[#22c55e]">
+                  Magic link sent! Check your inbox.
+                </p>
               </div>
             ) : (
-              <form onSubmit={handleMagicLink} className="flex flex-col gap-4">
+              <form
+                onSubmit={handleMagicLink}
+                className="flex flex-col gap-4"
+              >
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your email"
-                  className="login-input h-12 w-full rounded-lg border border-[#1a2332] bg-[#06080d] px-4 text-base text-white placeholder:text-[#606e74] outline-none transition-colors duration-150 focus:border-[#606e74]"
+                  className="h-[44px] w-full rounded-xl border border-white/[0.06] bg-[#06080d] px-4 text-[16px] text-white placeholder:text-white/25 outline-none transition-all duration-150 focus:border-[#606e74] focus:shadow-[0_0_0_3px_rgba(96,110,116,0.15)]"
                 />
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="login-btn h-12 w-full rounded-lg bg-[#606e74] text-sm font-semibold text-white transition-all duration-150 hover:bg-[#7a8f96] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="h-[44px] w-full cursor-pointer rounded-xl bg-[#606e74] text-[14px] font-semibold text-white transition-all duration-150 hover:bg-[#7a8f96] hover:scale-[1.01] active:scale-[0.995] disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ boxShadow: "var(--shadow-card)" }}
                 >
                   {submitting ? "Sending..." : "Send Magic Link"}
                 </button>
               </form>
             )}
-
-            <p className="mt-8 text-center text-xs leading-relaxed text-[#606e74]">
-              By signing in you agree to Kasse&apos;s Terms of Service
-            </p>
-
-            <p className="mt-3 text-center text-[11px] text-[#1a2332]">
-              Powered by Reyna Tech LLC
-            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Right — Feature Showcase (desktop only) */}
-      <div className="hidden w-1/2 max-w-[640px] items-center border-l border-[#1a2332] bg-[#0d1117] px-16 lg:flex">
-        <div className="w-full max-w-md">
-          <h2 className="text-4xl font-bold leading-tight tracking-tight text-white">
-            The modern POS
-            <br />
-            for salons
-          </h2>
+          {/* Separator */}
+          <div
+            className="my-6 h-px bg-white/[0.06]"
+            style={{ animation: "fadeInUp 400ms ease-out 250ms both" }}
+          />
 
-          <ul className="mt-12 flex flex-col gap-8">
-            {FEATURES.map((f) => {
-              const Icon = f.icon;
-              return (
-                <li key={f.title} className="flex gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#1a2332] bg-[#06080d]">
-                    <Icon size={18} className="text-[#606e74]" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      {f.title}
-                    </p>
-                    <p className="mt-0.5 text-sm leading-relaxed text-[#606e74]">
-                      {f.desc}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+          {/* Sign Up Link */}
+          <p
+            className="text-center text-[13px] text-[#606e74]"
+            style={{ animation: "fadeInUp 400ms ease-out 300ms both" }}
+          >
+            Don&apos;t have an account?{" "}
+            <a
+              href="/onboarding"
+              className="cursor-pointer font-medium text-[#7a8f96] transition-colors duration-150 hover:text-white"
+            >
+              Start free trial &rarr;
+            </a>
+          </p>
 
-          <p className="mt-16 text-sm italic text-[#606e74]">
-            Trusted by Salon Envy&reg;
+          {/* Footer */}
+          <p
+            className="mt-6 text-center text-[11px] text-[#606e74]"
+            style={{ animation: "fadeInUp 400ms ease-out 350ms both" }}
+          >
+            By continuing you agree to our Terms & Privacy Policy
           </p>
         </div>
       </div>
 
-      <style>{`
-        .login-card {
-          animation: cardIn 400ms ease both;
-        }
-        @keyframes cardIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        .login-btn:hover {
-          transform: scale(1.01);
-        }
-        .login-btn:active {
-          transform: scale(0.995);
-        }
-      `}</style>
+      {/* Mobile: Logo + tagline at top (visible only on small screens) */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-10 flex items-center gap-3 bg-gradient-to-b from-[#06080d] to-transparent px-6 py-4 lg:hidden">
+        <span className="text-[20px] font-bold tracking-[0.2em] text-white">
+          KASSE
+        </span>
+        <span className="text-[11px] text-[#606e74]">
+          Salon Management Platform
+        </span>
+      </div>
     </main>
   );
 }
