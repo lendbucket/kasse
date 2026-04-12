@@ -4,7 +4,17 @@
       "Bash(npm run:*)",
       "Bash(npm install:*)",
       "Bash(grep -l \"prisma-client-js\" C:/Users/Salon/Downloads/kasse/node_modules/@prisma/client/generator-build/*.js)",
-      "Bash(npx dotenv-cli:*)"
+      "Bash(npx dotenv-cli:*)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(python3 skills/ui-ux-pro-max/scripts/search.py \"salon POS beauty dark luxury premium\" --design-system -p \"Kasse\")",
+      "Bash(python skills/ui-ux-pro-max/scripts/search.py \"salon POS beauty dark luxury premium\" --design-system -p \"Kasse\")",
+      "Read(//c/Users/Salon/.claude/skills/ui-ux-pro-max/scripts/**)",
+      "Bash(python \"C:\\\\Users\\\\Salon\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"salon POS beauty dark luxury premium\" --design-system -p \"Kasse\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(python:*)"
     ]
   }
 }

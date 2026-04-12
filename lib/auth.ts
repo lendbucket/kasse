@@ -13,14 +13,15 @@ export const authOptions: NextAuthOptions = {
     }),
     EmailProvider({
       server: {
-        host: process.env.EMAIL_SERVER_HOST,
-        port: Number(process.env.EMAIL_SERVER_PORT ?? 587),
+        host: "smtp.resend.com",
+        port: 465,
         auth: {
-          user: process.env.EMAIL_SERVER_USER,
-          pass: process.env.EMAIL_SERVER_PASSWORD,
+          user: "resend",
+          pass: process.env.RESEND_API_KEY,
         },
+        secure: true,
       },
-      from: process.env.EMAIL_FROM,
+      from: "Kasse <noreply@salonenvyusa.com>",
     }),
   ],
   session: { strategy: "database" },
