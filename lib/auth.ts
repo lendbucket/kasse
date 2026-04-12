@@ -37,7 +37,10 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   session: { strategy: "database" },
-  pages: { signIn: "/login" },
+  pages: {
+    signIn: "/login",
+    newUser: "/onboarding",
+  },
   callbacks: {
     async session({ session, user }) {
       if (session.user) {
@@ -45,6 +48,9 @@ export const authOptions: NextAuthOptions = {
         (session.user as { role?: string }).role = (user as { role?: string }).role ?? "stylist";
       }
       return session;
+    },
+    async redirect({ baseUrl }) {
+      return baseUrl + "/dashboard";
     },
   },
 };
