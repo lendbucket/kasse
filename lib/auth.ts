@@ -21,7 +21,7 @@ export const authOptions: NextAuthOptions = {
         },
         secure: true,
       },
-      from: "Kasse <noreply@salonenvyusa.com>",
+      from: "Kasse <noreply@kasseapp.com>",
     }),
   ],
   session: { strategy: "database" },
