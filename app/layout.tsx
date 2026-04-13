@@ -2,32 +2,31 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Fira_Code } from "next/font/google";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-jakarta",
+const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
+  variable: "--font-jakarta",
+  display: "swap",
 });
 
 const firaCode = Fira_Code({
-  variable: "--font-fira",
   subsets: ["latin"],
+  variable: "--font-fira",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Kasse",
-  description: "Salon POS & management — Reyna Tech LLC",
+  title: "Kasse — Salon Management Platform",
+  description: "The operating system for modern salons.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html
-      lang="en"
-      className={`${jakarta.variable} ${firaCode.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className={`${plusJakartaSans.variable} ${firaCode.variable}`}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }

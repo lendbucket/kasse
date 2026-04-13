@@ -6,7 +6,16 @@ import { prisma } from "@/lib/prisma";
 import { magicLinkEmail } from "./email-template";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      name?: string | null;
+      email?: string | null;
+      image?: string | null;
+    };
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -27,6 +36,7 @@ export const authOptions: NextAuthOptions = {
       },
       from: "Kasse <noreply@kasseapp.com>",
       sendVerificationRequest: async ({ identifier, url }) => {
+        const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
           from: "Kasse <noreply@kasseapp.com>",
           to: identifier,
@@ -43,14 +53,16 @@ export const authOptions: NextAuthOptions = {
   },
   callbacks: {
     async session({ session, user }) {
-      if (session.user) {
-        (session.user as { id?: string }).id = user.id;
-        (session.user as { role?: string }).role = (user as { role?: string }).role ?? "stylist";
+      if (session.user && user) {
+        session.user.id = user.id;
       }
       return session;
     },
-    async redirect({ baseUrl }) {
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) return url;
       return baseUrl + "/dashboard";
     },
   },
 };
+
+export default authOptions;
