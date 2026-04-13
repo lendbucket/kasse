@@ -15,8 +15,12 @@ export default function BottomNav() {
         bottom: 0,
         left: 0,
         right: 0,
-        background: "#0d1117",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
+        height: 60,
+        background: "rgba(13,17,23,0.95)",
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        borderTop: "1px solid rgba(255,255,255,0.07)",
+        boxShadow: "0 -4px 24px rgba(0,0,0,0.4)",
         display: "flex",
         paddingBottom: "env(safe-area-inset-bottom)",
         zIndex: 50,
@@ -38,15 +42,36 @@ export default function BottomNav() {
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              padding: "8px 0",
-              color: active ? "#7a8f96" : "rgba(255,255,255,0.4)",
+              gap: 3,
+              paddingTop: 8,
               textDecoration: "none",
-              fontSize: 11,
-              gap: 4,
+              transition: "all 120ms",
+              color: active ? "#7a8f96" : "rgba(255,255,255,0.3)",
+              position: "relative",
             }}
           >
-            <Icon size={20} strokeWidth={1.5} />
-            <span>{item.label}</span>
+            {active && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  width: 16,
+                  height: 2.5,
+                  background: "#606E74",
+                  borderRadius: 999,
+                }}
+              />
+            )}
+            <Icon size={22} strokeWidth={1.5} />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {item.label}
+            </span>
           </Link>
         );
       })}

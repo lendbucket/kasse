@@ -23,14 +23,25 @@ export default async function DashboardLayout({
 
   return (
     <div
-      className="flex h-screen overflow-hidden"
-      style={{ background: "var(--background)" }}
+      style={{
+        display: "flex",
+        height: "100vh",
+        overflow: "hidden",
+        background: "var(--bg-base, #06080d)",
+      }}
     >
-      <div className="hidden lg:flex lg:flex-shrink-0">
+      <div className="hidden lg:block">
         <Sidebar user={session.user} />
       </div>
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <main className="flex-1 overflow-y-auto">{children}</main>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          paddingBottom: 80,
+        }}
+        className="lg:pb-0"
+      >
+        {children}
       </div>
       <BottomNav />
     </div>
