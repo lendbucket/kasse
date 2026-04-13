@@ -26,7 +26,7 @@ export default function DashboardClock() {
     <p
       style={{
         fontSize: 13,
-        color: "rgba(255,255,255,0.4)",
+        color: "rgba(0,0,0,0.4)",
         margin: "4px 0 0",
         fontFamily: "var(--font-fira), monospace",
         letterSpacing: "-0.31px",

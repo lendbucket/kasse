@@ -29,16 +29,17 @@ export default function Sidebar({ user }: SidebarProps) {
       style={{
         width: 256,
         minHeight: "100vh",
-        background: "#0d1117",
-        borderRight: "1px solid rgba(255,255,255,0.06)",
+        background: "#f7f8fa",
+        borderRight: "1px solid rgba(0,0,0,0.07)",
         display: "flex",
         flexDirection: "column",
-        boxShadow: "4px 0 24px rgba(0,0,0,0.3)",
+        boxShadow: "2px 0 12px rgba(0,0,0,0.05)",
         position: "relative",
         zIndex: 10,
+        overflow: "hidden",
       }}
     >
-      {/* ── Logo bar ── */}
+      {/* ── Logo ── */}
       <div
         style={{
           height: 64,
@@ -46,7 +47,7 @@ export default function Sidebar({ user }: SidebarProps) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
+          borderBottom: "1px solid rgba(0,0,0,0.06)",
         }}
       >
         <span
@@ -54,20 +55,20 @@ export default function Sidebar({ user }: SidebarProps) {
             fontSize: 17,
             fontWeight: 700,
             letterSpacing: "0.22em",
-            color: "#f0f4f8",
+            color: "#0a0c0e",
           }}
         >
           KASSE
         </span>
         <span
           style={{
-            background: "rgba(96,110,116,0.12)",
-            border: "1px solid rgba(96,110,116,0.2)",
+            background: "rgba(96,110,116,0.10)",
+            border: "1px solid rgba(96,110,116,0.18)",
             borderRadius: 999,
             padding: "3px 10px",
             fontSize: 11,
             fontWeight: 500,
-            color: "#7a8f96",
+            color: "#606E74",
           }}
         >
           Main Location
@@ -75,7 +76,7 @@ export default function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* ── Search ── */}
-      <div style={{ margin: "12px 16px", position: "relative" }}>
+      <div style={{ margin: "12px 12px", position: "relative" }}>
         <Search
           size={14}
           strokeWidth={1.5}
@@ -84,7 +85,7 @@ export default function Sidebar({ user }: SidebarProps) {
             left: 10,
             top: "50%",
             transform: "translateY(-50%)",
-            color: "rgba(255,255,255,0.25)",
+            color: "rgba(0,0,0,0.3)",
             pointerEvents: "none",
           }}
         />
@@ -94,19 +95,19 @@ export default function Sidebar({ user }: SidebarProps) {
           style={{
             width: "100%",
             height: 34,
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "white",
+            border: "1px solid rgba(0,0,0,0.09)",
             borderRadius: 8,
             padding: "0 10px 0 32px",
             fontSize: 13,
-            color: "rgba(255,255,255,0.7)",
+            color: "#0a0c0e",
             outline: "none",
             letterSpacing: "-0.31px",
           }}
         />
       </div>
 
-      {/* ── Nav sections ── */}
+      {/* ── Nav ── */}
       <nav
         style={{
           flex: 1,
@@ -125,7 +126,7 @@ export default function Sidebar({ user }: SidebarProps) {
                 fontSize: 10,
                 fontWeight: 600,
                 letterSpacing: "0.1em",
-                color: "rgba(255,255,255,0.25)",
+                color: "rgba(0,0,0,0.3)",
                 textTransform: "uppercase",
                 margin: 0,
               }}
@@ -158,25 +159,36 @@ export default function Sidebar({ user }: SidebarProps) {
                       padding: "0 12px",
                       borderRadius: 9,
                       fontSize: 14,
-                      fontWeight: 500,
+                      fontWeight: active ? 600 : 500,
                       textDecoration: "none",
                       transition: "all 120ms cubic-bezier(0.4,0,0.2,1)",
-                      color: active ? "#a8bdc4" : "rgba(255,255,255,0.45)",
+                      color: active ? "#606E74" : "#4a5568",
                       background: active
-                        ? "rgba(96,110,116,0.12)"
+                        ? "rgba(96,110,116,0.10)"
                         : "transparent",
                       position: "relative",
-                      borderLeft: active
-                        ? "2.5px solid #7a8f96"
-                        : "2.5px solid transparent",
                       letterSpacing: "-0.31px",
                     }}
                   >
+                    {active && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          width: 2.5,
+                          height: 18,
+                          background: "#606E74",
+                          borderRadius: 999,
+                        }}
+                      />
+                    )}
                     <Icon
                       size={16}
                       strokeWidth={1.5}
                       style={{
-                        color: active ? "#7a8f96" : "#4a5568",
+                        color: active ? "#606E74" : "#9ca3af",
                         flexShrink: 0,
                       }}
                     />
@@ -192,11 +204,11 @@ export default function Sidebar({ user }: SidebarProps) {
       {/* ── User ── */}
       <div
         style={{
-          borderTop: "1px solid rgba(255,255,255,0.06)",
-          padding: 16,
+          borderTop: "1px solid rgba(0,0,0,0.07)",
+          padding: "14px 16px",
           display: "flex",
           alignItems: "center",
-          gap: 12,
+          gap: 10,
         }}
       >
         <div
@@ -204,7 +216,7 @@ export default function Sidebar({ user }: SidebarProps) {
             width: 34,
             height: 34,
             borderRadius: "50%",
-            background: "linear-gradient(135deg, #606E74, #3d4f56)",
+            background: "linear-gradient(135deg, #606E74, #4d5c62)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -221,7 +233,7 @@ export default function Sidebar({ user }: SidebarProps) {
             style={{
               fontSize: 13,
               fontWeight: 600,
-              color: "#f0f4f8",
+              color: "#0a0c0e",
               margin: 0,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -233,7 +245,7 @@ export default function Sidebar({ user }: SidebarProps) {
           <p
             style={{
               fontSize: 11,
-              color: "rgba(255,255,255,0.35)",
+              color: "#9ca3af",
               margin: 0,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -251,7 +263,7 @@ export default function Sidebar({ user }: SidebarProps) {
             borderRadius: 6,
             border: "none",
             background: "transparent",
-            color: "rgba(255,255,255,0.25)",
+            color: "#9ca3af",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",

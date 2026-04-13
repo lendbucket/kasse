@@ -27,18 +27,14 @@ export default async function DashboardLayout({
         display: "flex",
         height: "100vh",
         overflow: "hidden",
-        background: "var(--bg-base, #06080d)",
+        background: "#ffffff",
       }}
     >
       <div className="hidden lg:block">
         <Sidebar user={session.user} />
       </div>
       <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          paddingBottom: 80,
-        }}
+        style={{ flex: 1, overflowY: "auto", paddingBottom: 80 }}
         className="lg:pb-0"
       >
         {children}
