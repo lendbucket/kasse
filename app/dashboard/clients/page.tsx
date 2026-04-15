@@ -1,803 +1,246 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
-import {
-  Search,
-  Plus,
-  X,
-  Eye,
-  Pencil,
-  Mail,
-  Phone,
-  User,
-  Users,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Search, Plus, X, Eye, Pencil, Mail, Phone, User, Users } from "lucide-react";
 
-type ClientListItem = {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  notes: string | null;
-  locationId: string;
-  visitCount: number;
-  lastVisit: string | null;
-};
+type ClientListItem = { id: string; name: string; email: string | null; phone: string | null; notes: string | null; locationId: string; visitCount: number; lastVisit: string | null };
+type AppointmentHistoryItem = { id: string; startTime: string; status: string; serviceName: string | null; price: number | null; staff: { name: string } | null };
+type ClientDetail = { id: string; name: string; email: string | null; phone: string | null; notes: string | null; locationId: string; totalSpent: number; appointments: AppointmentHistoryItem[] };
 
-type AppointmentHistoryItem = {
-  id: string;
-  startTime: string;
-  status: string;
-  serviceName: string | null;
-  price: number | null;
-  staff: { name: string } | null;
-};
-
-type ClientDetail = {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  notes: string | null;
-  locationId: string;
-  totalSpent: number;
-  appointments: AppointmentHistoryItem[];
-};
-
-const DATE_FMT = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Chicago",
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-
-const DATETIME_FMT = new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Chicago",
-  month: "short",
-  day: "numeric",
-  hour: "numeric",
-  minute: "2-digit",
-  hour12: true,
-});
-
-function formatUSD(n: number) {
-  return `$${n.toFixed(2)}`;
-}
+const DATE_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric" });
+const DATETIME_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+function fmt(n: number) { return `$${n.toFixed(2)}`; }
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<ClientListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [locationId, setLocationId] = useState<string>("");
+  const [locationId, setLocationId] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [openClientId, setOpenClientId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadLocation() {
-      try {
-        const res = await fetch("/api/services");
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          services: { locationId: string }[];
-        };
-        if (!cancelled && data.services[0]) {
-          setLocationId(data.services[0].locationId);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    loadLocation();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useEffect(() => { let c = false; (async () => { try { const r = await fetch("/api/services"); if (!r.ok) return; const d = (await r.json()) as { services: { locationId: string }[] }; if (!c && d.services[0]) setLocationId(d.services[0].locationId); } catch {} })(); return () => { c = true; }; }, []);
 
   const loadClients = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (locationId) params.set("locationId", locationId);
-      const res = await fetch(`/api/clients?${params}`);
-      if (!res.ok) throw new Error("Failed to load clients");
-      const data = (await res.json()) as { clients: ClientListItem[] };
-      setClients(data.clients);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Load failed");
-    } finally {
-      setLoading(false);
-    }
+      const p = new URLSearchParams(); if (query.trim()) p.set("q", query.trim()); if (locationId) p.set("locationId", locationId);
+      const r = await fetch(`/api/clients?${p}`); if (!r.ok) throw new Error("Failed"); const d = (await r.json()) as { clients: ClientListItem[] }; setClients(d.clients);
+    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); } finally { setLoading(false); }
   }, [query, locationId]);
 
-  useEffect(() => {
-    const t = setTimeout(() => {
-      loadClients();
-    }, 200);
-    return () => clearTimeout(t);
-  }, [loadClients]);
+  useEffect(() => { const t = setTimeout(() => loadClients(), 200); return () => clearTimeout(t); }, [loadClients]);
+
+  const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 
   return (
     <>
-      <header className="flex flex-col gap-4 border-b border-[#1a2332] bg-[#0d1117] px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid #e5e7eb", background: "white", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <p className="text-xs uppercase tracking-wider text-[#606e74]">
-            Directory
-          </p>
-          <h1 className="text-xl font-semibold text-white">Clients</h1>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>CLIENTS</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: 0 }}>Clients</h1>
         </div>
+        <button className="btn btn-primary" onClick={() => setModalOpen(true)}><Plus size={16} strokeWidth={1.5} /> Add Client</button>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[260px] flex-1">
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#606e74]"
-            />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name, email, phone"
-              className="w-full rounded-lg border border-[#1a2332] bg-[#06080d] py-2.5 pl-9 pr-3 text-base text-white placeholder:text-[#606e74] outline-none transition-colors duration-150 focus:border-[#7a8f96]"
-            />
+      <div style={{ padding: "16px 32px", borderBottom: "1px solid #e5e7eb", background: "white", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ position: "relative", width: 280 }}>
+          <Search size={16} strokeWidth={1.5} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search clients..." style={{ ...iS, height: 36, paddingLeft: 36, background: "#f7f8fa" }} />
+        </div>
+        <span style={{ fontSize: 13, color: "#9ca3af", marginLeft: "auto" }}>{clients.length} client{clients.length !== 1 ? "s" : ""}</span>
+      </div>
+
+      <div style={{ padding: "24px 32px" }}>
+        {loading ? <div className="card" style={{ padding: "48px 32px", textAlign: "center" }}><p style={{ color: "#9ca3af" }}>Loading clients...</p></div>
+        : error ? <div className="card" style={{ padding: "48px 32px", textAlign: "center" }}><p style={{ color: "#dc2626" }}>{error}</p></div>
+        : clients.length === 0 ? (
+          <div className="card" style={{ padding: "64px 32px", textAlign: "center" }}>
+            <Users size={40} strokeWidth={1.5} style={{ color: "#e5e7eb", margin: "0 auto 16px" }} />
+            <p style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 6 }}>No clients yet</p>
+            <p style={{ fontSize: 14, color: "#9ca3af", marginBottom: 20 }}>Add your first client to get started</p>
+            <button className="btn btn-primary" onClick={() => setModalOpen(true)}>+ Add Client</button>
           </div>
+        ) : (
+          <div className="card" style={{ overflow: "hidden" }}>
+            <table className="hidden lg:table">
+              <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Visits</th><th>Last Visit</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
+              <tbody>
+                {clients.map((c) => (
+                  <tr key={c.id}>
+                    <td><div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#606E74,#4d5c62)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, color: "white", flexShrink: 0 }}>{c.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}</div>
+                      <span style={{ fontWeight: 600 }}>{c.name}</span>
+                    </div></td>
+                    <td style={{ fontFamily: "var(--font-fira), monospace", color: "#6b7280" }}>{c.phone || "\u2014"}</td>
+                    <td style={{ color: "#6b7280" }}>{c.email || "\u2014"}</td>
+                    <td style={{ fontWeight: 600 }}>{c.visitCount}</td>
+                    <td style={{ fontSize: 13, fontFamily: "var(--font-fira), monospace", color: "#9ca3af" }}>{c.lastVisit ? DATE_FMT.format(new Date(c.lastVisit)) : "\u2014"}</td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                        <button onClick={() => { setEditMode(false); setOpenClientId(c.id); }} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Eye size={12} /> View</button>
+                        <button onClick={() => { setEditMode(true); setOpenClientId(c.id); }} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="lg:hidden" style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
+              {clients.map((c) => (
+                <div key={c.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+                  <p style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>{c.name}</p>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>{c.phone && <span style={{ fontFamily: "var(--font-fira), monospace" }}>{c.phone}</span>}{c.email && <span style={{ marginLeft: 8 }}>{c.email}</span>}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#9ca3af", marginTop: 8 }}><span>{c.visitCount} visit{c.visitCount !== 1 ? "s" : ""}</span><span>{c.lastVisit ? DATE_FMT.format(new Date(c.lastVisit)) : "\u2014"}</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
-          <button
-            type="button"
-            onClick={() => setModalOpen(true)}
-            className="flex items-center gap-2 rounded-lg bg-[#606e74] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96]"
-          >
-            <Plus size={16} />
-            New Client
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 px-4 py-6 sm:px-6">
-        <ClientList
-          loading={loading}
-          error={error}
-          clients={clients}
-          onView={(id) => {
-            setEditMode(false);
-            setOpenClientId(id);
-          }}
-          onEdit={(id) => {
-            setEditMode(true);
-            setOpenClientId(id);
-          }}
-        />
-      </main>
-
-      {modalOpen && (
-        <NewClientModal
-          locationId={locationId}
-          onClose={() => setModalOpen(false)}
-          onCreated={() => {
-            setModalOpen(false);
-            loadClients();
-          }}
-        />
-      )}
-
-      {openClientId && (
-        <ClientDetailDrawer
-          clientId={openClientId}
-          startInEdit={editMode}
-          onClose={() => setOpenClientId(null)}
-          onSaved={loadClients}
-        />
-      )}
+      {modalOpen && <NewClientModal locationId={locationId} onClose={() => setModalOpen(false)} onCreated={() => { setModalOpen(false); loadClients(); }} />}
+      {openClientId && <ClientDrawer clientId={openClientId} startInEdit={editMode} onClose={() => setOpenClientId(null)} onSaved={loadClients} />}
     </>
   );
 }
 
-function ClientList({
-  loading,
-  error,
-  clients,
-  onView,
-  onEdit,
-}: {
-  loading: boolean;
-  error: string | null;
-  clients: ClientListItem[];
-  onView: (id: string) => void;
-  onEdit: (id: string) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="rounded-xl border border-[#1a2332] bg-[#0d1117] p-10 text-center text-sm text-[#606e74]">
-        Loading clients...
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/5 p-10 text-center text-sm text-[#ef4444]">
-        {error}
-      </div>
-    );
-  }
-  if (clients.length === 0) {
-    return (
-      <div className="rounded-xl border border-[#1a2332] bg-[#0d1117] p-12 text-center">
-        <Users size={28} className="mx-auto text-[#606e74]" />
-        <p className="mt-3 text-sm text-[#7a8f96]">No clients yet</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[#1a2332] bg-[#0d1117]">
-      <table className="hidden w-full lg:table">
-        <thead>
-          <tr className="border-b border-[#1a2332] text-left text-[10px] uppercase tracking-wider text-[#606e74]">
-            <th className="px-5 py-3 font-medium">Name</th>
-            <th className="px-5 py-3 font-medium">Phone</th>
-            <th className="px-5 py-3 font-medium">Email</th>
-            <th className="px-5 py-3 font-medium">Visits</th>
-            <th className="px-5 py-3 font-medium">Last Visit</th>
-            <th className="px-5 py-3 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clients.map((c) => (
-            <tr
-              key={c.id}
-              className="border-b border-[#1a2332] last:border-b-0 transition-colors duration-150 hover:bg-[#06080d]"
-            >
-              <td className="px-5 py-4 text-sm font-medium text-white">
-                {c.name}
-              </td>
-              <td className="px-5 py-4 font-mono text-sm text-[#7a8f96]">
-                {c.phone || "—"}
-              </td>
-              <td className="px-5 py-4 text-sm text-[#7a8f96]">
-                {c.email || "—"}
-              </td>
-              <td className="px-5 py-4 font-mono text-sm text-white">
-                {c.visitCount}
-              </td>
-              <td className="px-5 py-4 font-mono text-sm text-[#7a8f96]">
-                {c.lastVisit ? DATE_FMT.format(new Date(c.lastVisit)) : "—"}
-              </td>
-              <td className="px-5 py-4">
-                <div className="flex justify-end gap-2">
-                  <RowButton onClick={() => onView(c.id)} icon={<Eye size={14} />} label="View" />
-                  <RowButton onClick={() => onEdit(c.id)} icon={<Pencil size={14} />} label="Edit" />
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <ul className="flex flex-col gap-3 p-4 lg:hidden">
-        {clients.map((c) => (
-          <li
-            key={c.id}
-            className="flex flex-col gap-3 rounded-lg border border-[#1a2332] bg-[#06080d] p-4"
-          >
-            <div>
-              <p className="text-base font-semibold text-white">{c.name}</p>
-              <div className="mt-1 flex flex-col gap-0.5 text-xs text-[#7a8f96]">
-                {c.phone && (
-                  <span className="font-mono">{c.phone}</span>
-                )}
-                {c.email && <span>{c.email}</span>}
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs text-[#606e74]">
-              <span className="font-mono">
-                {c.visitCount} visit{c.visitCount === 1 ? "" : "s"}
-              </span>
-              <span className="font-mono">
-                {c.lastVisit ? DATE_FMT.format(new Date(c.lastVisit)) : "—"}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <RowButton onClick={() => onView(c.id)} icon={<Eye size={14} />} label="View" />
-              <RowButton onClick={() => onEdit(c.id)} icon={<Pencil size={14} />} label="Edit" />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function RowButton({
-  onClick,
-  icon,
-  label,
-}: {
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-1 rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-1.5 text-xs font-medium text-[#7a8f96] transition-colors duration-150 hover:border-[#606e74] hover:text-white"
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-function NewClientModal({
-  locationId,
-  onClose,
-  onCreated,
-}: {
-  locationId: string;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+function NewClientModal({ locationId, onClose, onCreated }: { locationId: string; onClose: () => void; onCreated: () => void }) {
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!name.trim() || submitting) return;
-    if (!locationId) {
-      setErr("No location available");
-      return;
-    }
-    setSubmitting(true);
-    setErr(null);
+    e.preventDefault(); if (!name.trim() || submitting) return; if (!locationId) { setErr("No location"); return; }
+    setSubmitting(true); setErr(null);
     try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email: email || undefined,
-          phone: phone || undefined,
-          notes: notes || undefined,
-          locationId,
-        }),
-      });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Create failed");
-      }
+      const r = await fetch("/api/clients", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email: email || undefined, phone: phone || undefined, notes: notes || undefined, locationId }) });
+      if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Create failed"); }
       onCreated();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Create failed");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Create failed"); } finally { setSubmitting(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/60 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
-      <div className="flex w-full flex-col overflow-hidden border-t border-[#1a2332] bg-[#0d1117] sm:max-w-md sm:rounded-2xl sm:border">
-        <div className="flex items-center justify-between border-b border-[#1a2332] px-5 py-4">
-          <h2 className="text-base font-semibold text-white">New Client</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-[#606e74] transition-colors duration-150 hover:text-white"
-          >
-            <X size={18} />
-          </button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: "white", borderRadius: 12, width: 480, maxWidth: "100%", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 24px 0" }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>New Client</h2>
+          <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={20} /></button>
         </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5"
-        >
-          <Field label="Name" required>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="kasse-input"
-              placeholder="Jane Doe"
-            />
-          </Field>
-          <Field label="Email">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="kasse-input"
-              placeholder="jane@example.com"
-            />
-          </Field>
-          <Field label="Phone">
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="kasse-input font-mono"
-              placeholder="(555) 555-5555"
-            />
-          </Field>
-          <Field label="Notes">
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              className="kasse-input resize-none"
-              placeholder="Optional"
-            />
-          </Field>
-
-          {err && (
-            <p className="rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/5 px-3 py-2 text-xs text-[#ef4444]">
-              {err}
-            </p>
-          )}
-
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border border-[#1a2332] bg-[#06080d] px-4 py-3 text-sm font-medium text-[#7a8f96] transition-colors duration-150 hover:border-[#606e74] hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!name.trim() || submitting}
-              className="flex-1 rounded-lg bg-[#606e74] px-4 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? "Saving..." : "Save"}
-            </button>
+        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Name <span style={{ color: "#dc2626" }}>*</span></span><input type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Jane Doe" style={iS} /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" style={iS} /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Phone</span><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 555-5555" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Notes</span><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Optional" style={{ ...iS, height: "auto", padding: "10px 12px", resize: "none" }} /></label>
+          {err && <p style={{ fontSize: 13, color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 6, padding: "8px 12px" }}>{err}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
+            <button type="submit" disabled={!name.trim() || submitting} className="btn btn-primary" style={{ opacity: !name.trim() || submitting ? 0.5 : 1 }}>{submitting ? "Saving..." : "Save"}</button>
           </div>
         </form>
       </div>
-      <InputStyles />
     </div>
   );
 }
 
-function ClientDetailDrawer({
-  clientId,
-  startInEdit,
-  onClose,
-  onSaved,
-}: {
-  clientId: string;
-  startInEdit: boolean;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
+function ClientDrawer({ clientId, startInEdit, onClose, onSaved }: { clientId: string; startInEdit: boolean; onClose: () => void; onSaved: () => void }) {
   const [detail, setDetail] = useState<ClientDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true); const [err, setErr] = useState<string | null>(null);
   const [edit, setEdit] = useState(startInEdit);
-
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [notes, setNotes] = useState("");
+  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [notes, setNotes] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadedClientId = useRef<string | null>(null);
+  const loadedId = useRef<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setErr(null);
-    fetch(`/api/clients/${clientId}`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to load");
-        return r.json() as Promise<{ client: ClientDetail }>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data.client);
-        setName(data.client.name);
-        setEmail(data.client.email ?? "");
-        setPhone(data.client.phone ?? "");
-        setNotes(data.client.notes ?? "");
-        loadedClientId.current = clientId;
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Load failed");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    let c = false; setLoading(true); setErr(null);
+    fetch(`/api/clients/${clientId}`).then((r) => { if (!r.ok) throw new Error(); return r.json() as Promise<{ client: ClientDetail }>; })
+      .then((d) => { if (c) return; setDetail(d.client); setName(d.client.name); setEmail(d.client.email ?? ""); setPhone(d.client.phone ?? ""); setNotes(d.client.notes ?? ""); loadedId.current = clientId; })
+      .catch((e) => { if (!c) setErr(e instanceof Error ? e.message : "Load failed"); })
+      .finally(() => { if (!c) setLoading(false); });
+    return () => { c = true; };
   }, [clientId]);
 
   function onNotesChange(v: string) {
-    setNotes(v);
-    if (loadedClientId.current !== clientId) return;
+    setNotes(v); if (loadedId.current !== clientId) return;
     if (notesTimer.current) clearTimeout(notesTimer.current);
-    notesTimer.current = setTimeout(async () => {
-      setNotesSaving(true);
-      try {
-        await fetch(`/api/clients/${clientId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ notes: v }),
-        });
-        onSaved();
-      } finally {
-        setNotesSaving(false);
-      }
-    }, 600);
+    notesTimer.current = setTimeout(async () => { setNotesSaving(true); try { await fetch(`/api/clients/${clientId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: v }) }); onSaved(); } finally { setNotesSaving(false); } }, 600);
   }
 
   async function saveFields() {
     if (!name.trim()) return;
-    const res = await fetch(`/api/clients/${clientId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, phone }),
-    });
-    if (res.ok) {
-      setEdit(false);
-      onSaved();
-      const data = (await res.json()) as { client: ClientDetail };
-      setDetail((prev) => (prev ? { ...prev, ...data.client } : prev));
-    }
+    const r = await fetch(`/api/clients/${clientId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email, phone }) });
+    if (r.ok) { setEdit(false); onSaved(); const d = (await r.json()) as { client: ClientDetail }; setDetail((p) => (p ? { ...p, ...d.client } : p)); }
   }
 
+  const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="flex h-full w-full max-w-md flex-col border-l border-[#1a2332] bg-[#0d1117]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-[#1a2332] px-5 py-4">
-          <h2 className="text-base font-semibold text-white">Client Details</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-[#606e74] transition-colors duration-150 hover:text-white"
-          >
-            <X size={18} />
-          </button>
+    <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", justifyContent: "flex-end", background: "rgba(0,0,0,0.3)" }} onClick={onClose}>
+      <div style={{ width: 400, maxWidth: "100%", height: "100%", background: "white", borderLeft: "1px solid #e5e7eb", boxShadow: "-4px 0 24px rgba(0,0,0,0.10)", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "1px solid #e5e7eb" }}>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "#111827", margin: 0 }}>Client Details</h2>
+          <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={20} /></button>
         </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {loading && (
-            <div className="p-6 text-sm text-[#606e74]">Loading...</div>
-          )}
-          {err && (
-            <div className="m-4 rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/5 p-4 text-xs text-[#ef4444]">
-              {err}
-            </div>
-          )}
+        <div style={{ flex: 1, overflowY: "auto", padding: 24 }}>
+          {loading && <p style={{ color: "#9ca3af" }}>Loading...</p>}
+          {err && <p style={{ color: "#dc2626" }}>{err}</p>}
           {detail && !loading && (
-            <div className="flex flex-col gap-6 p-5">
-              <section className="flex flex-col gap-3 rounded-xl border border-[#1a2332] bg-[#06080d] p-5">
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 20 }}>
                 {edit ? (
-                  <>
-                    <Field label="Name" required>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="kasse-input"
-                      />
-                    </Field>
-                    <Field label="Email">
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="kasse-input"
-                      />
-                    </Field>
-                    <Field label="Phone">
-                      <input
-                        type="tel"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="kasse-input font-mono"
-                      />
-                    </Field>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEdit(false);
-                          setName(detail.name);
-                          setEmail(detail.email ?? "");
-                          setPhone(detail.phone ?? "");
-                        }}
-                        className="flex-1 rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-2 text-xs font-medium text-[#7a8f96] transition-colors duration-150 hover:border-[#606e74] hover:text-white"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveFields}
-                        className="flex-1 rounded-lg bg-[#606e74] px-3 py-2 text-xs font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96]"
-                      >
-                        Save
-                      </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={iS} />
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={iS} placeholder="Email" />
+                    <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} placeholder="Phone" />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button type="button" onClick={() => { setEdit(false); setName(detail.name); setEmail(detail.email ?? ""); setPhone(detail.phone ?? ""); }} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+                      <button type="button" onClick={saveFields} className="btn btn-primary" style={{ flex: 1 }}>Save</button>
                     </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#1a2332] bg-[#0d1117]">
-                          <User size={16} className="text-[#7a8f96]" />
-                        </div>
-                        <div>
-                          <p className="text-lg font-semibold text-white">
-                            {detail.name}
-                          </p>
-                          <p className="font-mono text-[10px] uppercase tracking-wider text-[#606e74]">
-                            {detail.appointments.length} recent visit
-                            {detail.appointments.length === 1 ? "" : "s"}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setEdit(true)}
-                        className="flex items-center gap-1 rounded-lg border border-[#1a2332] bg-[#0d1117] px-3 py-1.5 text-xs font-medium text-[#7a8f96] transition-colors duration-150 hover:border-[#606e74] hover:text-white"
-                      >
-                        <Pencil size={12} />
-                        Edit
-                      </button>
-                    </div>
-                    <div className="flex flex-col gap-1.5 text-sm text-[#7a8f96]">
-                      {detail.phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone size={14} className="text-[#606e74]" />
-                          <span className="font-mono">{detail.phone}</span>
-                        </div>
-                      )}
-                      {detail.email && (
-                        <div className="flex items-center gap-2">
-                          <Mail size={14} className="text-[#606e74]" />
-                          <span>{detail.email}</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </section>
-
-              <section className="rounded-xl border border-[#1a2332] bg-[#06080d] p-5">
-                <p className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                  Total Spent
-                </p>
-                <p className="mt-1 font-mono text-2xl font-semibold text-white">
-                  {formatUSD(detail.totalSpent)}
-                </p>
-              </section>
-
-              <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-[#606e74]">
-                  Appointment History
-                </h3>
-                {detail.appointments.length === 0 ? (
-                  <div className="rounded-xl border border-[#1a2332] bg-[#06080d] p-6 text-center text-xs text-[#606e74]">
-                    No appointments yet
                   </div>
                 ) : (
-                  <ul className="flex flex-col gap-2">
-                    {detail.appointments.map((a) => (
-                      <li
-                        key={a.id}
-                        className="rounded-lg border border-[#1a2332] bg-[#06080d] px-4 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-white">
-                              {a.serviceName || "Service"}
-                            </p>
-                            <p className="font-mono text-[10px] uppercase tracking-wider text-[#606e74]">
-                              {DATETIME_FMT.format(new Date(a.startTime))}
-                              {a.staff?.name ? ` · ${a.staff.name}` : ""}
-                            </p>
-                          </div>
-                          {a.price !== null && (
-                            <span className="font-mono text-sm text-[#7a8f96]">
-                              {formatUSD(a.price)}
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg,#606E74,#4d5c62)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 600, color: "white" }}>{detail.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}</div>
+                        <div><p style={{ fontSize: 16, fontWeight: 600, color: "#111827", margin: 0 }}>{detail.name}</p><p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>{detail.appointments.length} visit{detail.appointments.length !== 1 ? "s" : ""}</p></div>
+                      </div>
+                      <button type="button" onClick={() => setEdit(true)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
+                    </div>
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {detail.phone && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#6b7280" }}><Phone size={14} style={{ color: "#9ca3af" }} /><span style={{ fontFamily: "var(--font-fira), monospace" }}>{detail.phone}</span></div>}
+                      {detail.email && <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#6b7280" }}><Mail size={14} style={{ color: "#9ca3af" }} />{detail.email}</div>}
+                    </div>
+                  </>
                 )}
-              </section>
-
-              <section>
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[#606e74]">
-                    Notes
-                  </h3>
-                  <span className="text-[10px] text-[#606e74]">
-                    {notesSaving ? "Saving..." : "Auto-saves"}
-                  </span>
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "16px 20px" }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Total Spent</p>
+                <p style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-fira), monospace", color: "#111827", margin: "4px 0 0" }}>{fmt(detail.totalSpent)}</p>
+              </div>
+              <div>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Appointment History</h3>
+                {detail.appointments.length === 0 ? <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: "24px 16px", textAlign: "center", fontSize: 13, color: "#9ca3af" }}>No appointments</div>
+                : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{detail.appointments.map((a) => (
+                  <div key={a.id} style={{ border: "1px solid #e5e7eb", borderRadius: 6, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
+                    <div><p style={{ fontSize: 14, fontWeight: 500, color: "#111827", margin: 0 }}>{a.serviceName || "Service"}</p><p style={{ fontSize: 12, color: "#9ca3af", margin: "2px 0 0" }}>{DATETIME_FMT.format(new Date(a.startTime))}{a.staff?.name ? ` \u00b7 ${a.staff.name}` : ""}</p></div>
+                    {a.price !== null && <span style={{ fontSize: 14, fontFamily: "var(--font-fira), monospace", color: "#6b7280" }}>{fmt(a.price)}</span>}
+                  </div>
+                ))}</div>}
+              </div>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <h3 style={{ fontSize: 13, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>Notes</h3>
+                  <span style={{ fontSize: 11, color: "#9ca3af" }}>{notesSaving ? "Saving..." : "Auto-saves"}</span>
                 </div>
-                <textarea
-                  value={notes}
-                  onChange={(e) => onNotesChange(e.target.value)}
-                  rows={5}
-                  placeholder="Add notes about this client..."
-                  className="kasse-input resize-none"
-                />
-              </section>
+                <textarea value={notes} onChange={(e) => onNotesChange(e.target.value)} rows={5} placeholder="Add notes..." style={{ ...iS, height: "auto", padding: "10px 12px", resize: "none" }} />
+              </div>
             </div>
           )}
         </div>
       </div>
-      <InputStyles />
     </div>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-wider text-[#606e74]">
-        {label}
-        {required && <span className="ml-1 text-[#ef4444]">*</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function InputStyles() {
-  return (
-    <style>{`
-      .kasse-input {
-        width: 100%;
-        border-radius: 0.5rem;
-        border: 1px solid #1a2332;
-        background: #06080d;
-        padding: 0.625rem 0.75rem;
-        font-size: 16px;
-        color: #ffffff;
-        outline: none;
-        transition: border-color 150ms;
-      }
-      .kasse-input:focus {
-        border-color: #7a8f96;
-      }
-      .kasse-input::placeholder {
-        color: #606e74;
-      }
-    `}</style>
   );
 }

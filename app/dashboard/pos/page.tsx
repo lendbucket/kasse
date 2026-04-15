@@ -1,56 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Search,
-  X,
-  Plus,
-  Trash2,
-  Banknote,
-  CreditCard,
-  MoreHorizontal,
-} from "lucide-react";
+import { Search, X, Plus, Trash2, Banknote, CreditCard, MoreHorizontal } from "lucide-react";
 
-type Service = {
-  id: string;
-  name: string;
-  price: number;
-  duration: number;
-  category: string | null;
-  locationId: string;
-};
-
-type Staff = {
-  id: string;
-  name: string;
-  locationId: string;
-};
-
-type CartItem = {
-  key: string;
-  serviceId: string;
-  name: string;
-  price: number;
-};
-
+type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string };
+type Staff = { id: string; name: string; locationId: string };
+type CartItem = { key: string; serviceId: string; name: string; price: number };
 type PaymentMethod = "cash" | "card" | "other";
 
 const TAX_RATE = 0.0825;
-const ALL_CATEGORY = "All";
-
-function formatUSD(n: number) {
-  return `$${n.toFixed(2)}`;
-}
+const ALL_CAT = "All";
+function fmt(n: number) { return `$${n.toFixed(2)}`; }
 
 export default function POSPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState(ALL_CATEGORY);
-
+  const [category, setCategory] = useState(ALL_CAT);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [staffId, setStaffId] = useState("");
   const [clientName, setClientName] = useState("");
@@ -60,395 +28,154 @@ export default function POSPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
+    let c = false;
+    (async () => {
       try {
-        const [svcRes, staffRes] = await Promise.all([
-          fetch("/api/services"),
-          fetch("/api/staff"),
-        ]);
-        if (!svcRes.ok) throw new Error("Failed to load services");
-        const svcData = (await svcRes.json()) as { services: Service[] };
-        const staffData = staffRes.ok
-          ? ((await staffRes.json()) as { staff: Staff[] })
-          : { staff: [] };
-        if (cancelled) return;
-        setServices(svcData.services);
-        setStaff(staffData.staff);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Load failed");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
+        const [sr, str] = await Promise.all([fetch("/api/services"), fetch("/api/staff")]);
+        if (!sr.ok) throw new Error("Failed to load services");
+        const sd = (await sr.json()) as { services: Service[] };
+        const std = str.ok ? ((await str.json()) as { staff: Staff[] }) : { staff: [] };
+        if (!c) { setServices(sd.services); setStaff(std.staff); }
+      } catch (e) { if (!c) setError(e instanceof Error ? e.message : "Load failed"); }
+      finally { if (!c) setLoading(false); }
+    })();
+    return () => { c = true; };
   }, []);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    services.forEach((s) => {
-      if (s.category) set.add(s.category);
-    });
-    return [ALL_CATEGORY, ...Array.from(set).sort()];
-  }, [services]);
-
-  const filteredServices = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return services.filter((s) => {
-      const catOk = category === ALL_CATEGORY || s.category === category;
-      const qOk = !q || s.name.toLowerCase().includes(q);
-      return catOk && qOk;
-    });
-  }, [services, search, category]);
-
-  const subtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price, 0),
-    [cart],
-  );
+  const categories = useMemo(() => { const s = new Set<string>(); services.forEach((sv) => { if (sv.category) s.add(sv.category); }); return [ALL_CAT, ...Array.from(s).sort()]; }, [services]);
+  const filtered = useMemo(() => { const q = search.trim().toLowerCase(); return services.filter((s) => (category === ALL_CAT || s.category === category) && (!q || s.name.toLowerCase().includes(q))); }, [services, search, category]);
+  const subtotal = useMemo(() => cart.reduce((s, i) => s + i.price, 0), [cart]);
   const tax = useMemo(() => +(subtotal * TAX_RATE).toFixed(2), [subtotal]);
-  const tip = useMemo(() => {
-    const n = parseFloat(tipInput);
-    return Number.isFinite(n) && n > 0 ? +n.toFixed(2) : 0;
-  }, [tipInput]);
+  const tip = useMemo(() => { const n = parseFloat(tipInput); return Number.isFinite(n) && n > 0 ? +n.toFixed(2) : 0; }, [tipInput]);
   const total = useMemo(() => +(subtotal + tax + tip).toFixed(2), [subtotal, tax, tip]);
 
-  function addToCart(service: Service) {
-    setCart((prev) => [
-      ...prev,
-      {
-        key: `${service.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        serviceId: service.id,
-        name: service.name,
-        price: service.price,
-      },
-    ]);
-  }
-
-  function removeFromCart(key: string) {
-    setCart((prev) => prev.filter((i) => i.key !== key));
-  }
-
-  function clearCart() {
-    setCart([]);
-    setClientName("");
-    setTipInput("");
-    setStaffId("");
-  }
+  function addToCart(s: Service) { setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price }]); }
+  function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); }
+  function clearCart() { setCart([]); setClientName(""); setTipInput(""); setStaffId(""); }
 
   async function charge() {
     if (cart.length === 0 || charging) return;
-    const locationId = services[0]?.locationId;
-    if (!locationId) {
-      setToast("No location available");
-      return;
-    }
-    setCharging(true);
-    setToast(null);
+    const locId = services[0]?.locationId;
+    if (!locId) { setToast("No location"); return; }
+    setCharging(true); setToast(null);
     try {
-      const res = await fetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          locationId,
-          staffId: staffId || undefined,
-          clientName: clientName.trim() || undefined,
-          amount: subtotal,
-          tax,
-          tip,
-          total,
-          paymentMethod: payment,
-        }),
-      });
-      if (!res.ok) throw new Error("Charge failed");
-      setToast(`Charged ${formatUSD(total)}`);
-      clearCart();
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : "Charge failed");
-    } finally {
-      setCharging(false);
-      setTimeout(() => setToast(null), 3000);
-    }
+      const r = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: locId, staffId: staffId || undefined, clientName: clientName.trim() || undefined, amount: subtotal, tax, tip, total, paymentMethod: payment }) });
+      if (!r.ok) throw new Error("Charge failed");
+      setToast(`Charged ${fmt(total)}`); clearCart();
+    } catch (e) { setToast(e instanceof Error ? e.message : "Charge failed"); }
+    finally { setCharging(false); setTimeout(() => setToast(null), 3000); }
   }
+
+  const iS: React.CSSProperties = { width: "100%", height: 36, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 
   return (
     <>
-      <header className="flex items-center justify-between border-b border-[#1a2332] bg-[#0d1117] px-6 py-5">
+      {/* Header */}
+      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid #e5e7eb", background: "white", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <p className="text-xs uppercase tracking-wider text-[#606e74]">
-            Terminal
-          </p>
-          <h1 className="text-xl font-semibold text-white">POS</h1>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>TERMINAL</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: 0 }}>Payments &amp; invoices</h1>
         </div>
-        {toast && (
-          <div className="rounded-lg border border-[#1a2332] bg-[#06080d] px-4 py-2 text-sm text-[#7a8f96]">
-            {toast}
+        {toast && <div style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 14, color: "#374151", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>{toast}</div>}
+      </div>
+
+      <div style={{ display: "flex", height: "calc(100vh - 100px)" }}>
+        {/* Left — Services */}
+        <div style={{ flex: 1, borderRight: "1px solid #e5e7eb", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Search */}
+          <div style={{ padding: 16, borderBottom: "1px solid #e5e7eb", position: "relative" }}>
+            <Search size={16} strokeWidth={1.5} style={{ position: "absolute", left: 28, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search services..." style={{ ...iS, height: 40, background: "#f7f8fa", paddingLeft: 36 }} />
           </div>
-        )}
-      </header>
+          {/* Categories */}
+          <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 8, overflowX: "auto" }}>
+            {categories.map((c) => (
+              <button key={c} type="button" onClick={() => setCategory(c)} style={{
+                height: 28, padding: "0 12px", borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", transition: "all 120ms",
+                border: c === category ? "1px solid #606E74" : "1px solid #e5e7eb",
+                background: c === category ? "#606E74" : "white",
+                color: c === category ? "white" : "#6b7280",
+              }}>{c}</button>
+            ))}
+          </div>
+          {/* Grid */}
+          <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, alignContent: "start" }}>
+            {loading && <p style={{ gridColumn: "1/-1", textAlign: "center", color: "#9ca3af", padding: 32 }}>Loading services...</p>}
+            {error && <p style={{ gridColumn: "1/-1", textAlign: "center", color: "#dc2626", padding: 32 }}>{error}</p>}
+            {!loading && !error && filtered.length === 0 && <p style={{ gridColumn: "1/-1", textAlign: "center", color: "#9ca3af", padding: 32 }}>No services match</p>}
+            {filtered.map((s) => (
+              <button key={s.id} type="button" onClick={() => addToCart(s)} style={{
+                background: "white", border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, cursor: "pointer", textAlign: "left", transition: "all 150ms", display: "flex", flexDirection: "column",
+              }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>{s.name}</span>
+                {s.category && <span style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>{s.category}</span>}
+                <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "var(--font-fira), monospace", color: "#606E74", marginTop: 8 }}>{fmt(s.price)}</span>
+                <span style={{ fontSize: 12, color: "#9ca3af" }}>{s.duration} min</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <main className="flex-1 px-4 py-6 sm:px-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
-          <section className="flex flex-col gap-4">
-            <div className="relative">
-              <Search
-                size={18}
-                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#606e74]"
-              />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search services"
-                className="w-full rounded-lg border border-[#1a2332] bg-[#0d1117] py-3 pl-11 pr-4 text-base text-white placeholder:text-[#606e74] outline-none transition-colors duration-150 focus:border-[#7a8f96]"
-              />
-            </div>
-
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {categories.map((c) => {
-                const active = c === category;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCategory(c)}
-                    className={`whitespace-nowrap rounded-lg border px-4 py-2 text-sm font-medium transition-colors duration-150 ${
-                      active
-                        ? "border-[#606e74] bg-[#06080d] text-white"
-                        : "border-[#1a2332] bg-[#0d1117] text-[#7a8f96] hover:border-[#606e74] hover:text-white"
-                    }`}
-                  >
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {loading && (
-                <p className="col-span-full text-sm text-[#606e74]">
-                  Loading services...
-                </p>
-              )}
-              {error && !loading && (
-                <p className="col-span-full text-sm text-[#ef4444]">{error}</p>
-              )}
-              {!loading && !error && filteredServices.length === 0 && (
-                <p className="col-span-full text-sm text-[#606e74]">
-                  No services match
-                </p>
-              )}
-              {filteredServices.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => addToCart(s)}
-                  className="group flex flex-col items-start gap-2 rounded-xl border border-[#1a2332] bg-[#0d1117] p-4 text-left transition-colors duration-150 hover:border-[#606e74] hover:bg-[#1a2332]"
-                >
-                  <span className="text-sm font-semibold text-white">
-                    {s.name}
-                  </span>
-                  {s.category && (
-                    <span className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                      {s.category}
-                    </span>
-                  )}
-                  <span className="mt-auto font-mono text-lg font-semibold text-[#7a8f96] group-hover:text-white">
-                    {formatUSD(s.price)}
-                  </span>
-                </button>
+        {/* Right — Cart */}
+        <div style={{ width: 320, flexShrink: 0, display: "flex", flexDirection: "column", background: "white" }}>
+          {/* Cart header */}
+          <div style={{ padding: "16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Current Order</span>
+            {cart.length > 0 && <button type="button" onClick={clearCart} style={{ border: "none", background: "transparent", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "#dc2626", display: "flex", alignItems: "center", gap: 4 }}><Trash2 size={14} /> Clear</button>}
+          </div>
+          {/* Items */}
+          <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+            {cart.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#9ca3af" }}>
+                <Plus size={24} style={{ margin: "0 auto 8px", color: "#d1d5db" }} />
+                <p style={{ fontSize: 14 }}>Tap a service to add</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {cart.map((item) => (
+                  <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 6 }}>
+                    <div>
+                      <p style={{ fontSize: 14, fontWeight: 500, color: "#111827", margin: 0 }}>{item.name}</p>
+                      <p style={{ fontSize: 13, fontFamily: "var(--font-fira), monospace", color: "#6b7280", margin: "2px 0 0" }}>{fmt(item.price)}</p>
+                    </div>
+                    <button type="button" onClick={() => removeFromCart(item.key)} aria-label="Remove" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Details */}
+          <div style={{ padding: 16, borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 8 }}>
+            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={iS}><option value="">Stylist (optional)</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client name (optional)" style={iS} />
+          </div>
+          {/* Totals */}
+          <div style={{ padding: 16, borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Subtotal</span><span style={{ fontFamily: "var(--font-fira), monospace" }}>{fmt(subtotal)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Tax ({(TAX_RATE * 100).toFixed(2)}%)</span><span style={{ fontFamily: "var(--font-fira), monospace" }}>{fmt(tax)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#6b7280" }}>Tip</span><input type="number" inputMode="decimal" min="0" step="0.01" value={tipInput} onChange={(e) => setTipInput(e.target.value)} placeholder="0.00" style={{ width: 80, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", textAlign: "right", fontSize: 14, fontFamily: "var(--font-fira), monospace", padding: "0 8px", outline: "none", color: "#111827" }} /></div>
+            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 600, color: "#111827" }}>Total</span><span style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--font-fira), monospace", color: "#111827" }}>{fmt(total)}</span></div>
+          </div>
+          {/* Payment */}
+          <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              {([["cash", Banknote, "Cash"], ["card", CreditCard, "Card"], ["other", MoreHorizontal, "Other"]] as const).map(([m, Ic, label]) => (
+                <button key={m} type="button" onClick={() => setPayment(m)} style={{
+                  flex: 1, height: 36, borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 120ms",
+                  border: payment === m ? "1px solid #606E74" : "1px solid #e5e7eb",
+                  background: payment === m ? "#606E74" : "white",
+                  color: payment === m ? "white" : "#6b7280",
+                }}><Ic size={14} /> {label}</button>
               ))}
             </div>
-          </section>
-
-          <aside className="flex flex-col rounded-xl border border-[#1a2332] bg-[#0d1117]">
-            <div className="flex items-center justify-between border-b border-[#1a2332] px-5 py-4">
-              <h2 className="text-sm font-semibold text-white">Current Order</h2>
-              <span className="font-mono text-xs text-[#606e74]">
-                {cart.length} item{cart.length === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div className="max-h-[260px] flex-1 overflow-y-auto px-5 py-3">
-              {cart.length === 0 ? (
-                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                  <Plus size={22} className="text-[#606e74]" />
-                  <p className="text-xs text-[#606e74]">
-                    Tap a service to add
-                  </p>
-                </div>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {cart.map((item) => (
-                    <li
-                      key={item.key}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-2"
-                    >
-                      <span className="truncate text-sm text-white">
-                        {item.name}
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-sm text-[#7a8f96]">
-                          {formatUSD(item.price)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeFromCart(item.key)}
-                          aria-label="Remove"
-                          className="text-[#606e74] transition-colors duration-150 hover:text-[#ef4444]"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-[#1a2332] px-5 py-4">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                  Stylist
-                </label>
-                <select
-                  value={staffId}
-                  onChange={(e) => setStaffId(e.target.value)}
-                  className="w-full rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-2 text-base text-white outline-none transition-colors duration-150 focus:border-[#7a8f96]"
-                >
-                  <option value="">Unassigned</option>
-                  {staff.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                  Client (optional)
-                </label>
-                <input
-                  type="text"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="Walk-in"
-                  className="w-full rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-2 text-base text-white placeholder:text-[#606e74] outline-none transition-colors duration-150 focus:border-[#7a8f96]"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                  Tip
-                </label>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  value={tipInput}
-                  onChange={(e) => setTipInput(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-2 text-base font-mono text-white placeholder:text-[#606e74] outline-none transition-colors duration-150 focus:border-[#7a8f96]"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5 border-t border-[#1a2332] px-5 py-4 font-mono text-sm">
-              <Row label="Subtotal" value={formatUSD(subtotal)} />
-              <Row label={`Tax (${(TAX_RATE * 100).toFixed(2)}%)`} value={formatUSD(tax)} />
-              <Row label="Tip" value={formatUSD(tip)} />
-              <div className="mt-2 flex items-center justify-between border-t border-[#1a2332] pt-2">
-                <span className="text-sm text-[#7a8f96]">Total</span>
-                <span className="text-xl font-semibold text-white">
-                  {formatUSD(total)}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-[#1a2332] px-5 py-4">
-              <div className="grid grid-cols-3 gap-2">
-                <PayButton
-                  active={payment === "cash"}
-                  onClick={() => setPayment("cash")}
-                  icon={<Banknote size={16} />}
-                  label="Cash"
-                />
-                <PayButton
-                  active={payment === "card"}
-                  onClick={() => setPayment("card")}
-                  icon={<CreditCard size={16} />}
-                  label="Card"
-                />
-                <PayButton
-                  active={payment === "other"}
-                  onClick={() => setPayment("other")}
-                  icon={<MoreHorizontal size={16} />}
-                  label="Other"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={charge}
-                disabled={cart.length === 0 || charging}
-                className="w-full rounded-lg bg-[#606e74] px-4 py-4 text-base font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {charging ? "Charging..." : `Charge ${formatUSD(total)}`}
-              </button>
-
-              <button
-                type="button"
-                onClick={clearCart}
-                disabled={cart.length === 0}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-transparent px-4 py-2 text-sm font-medium text-[#606e74] transition-colors duration-150 hover:border-[#1a2332] hover:text-[#ef4444] disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Trash2 size={14} />
-                Clear Cart
-              </button>
-            </div>
-          </aside>
+            <button type="button" onClick={charge} disabled={cart.length === 0 || charging} style={{
+              width: "100%", height: 48, borderRadius: 8, border: "none", fontSize: 16, fontWeight: 700, cursor: cart.length === 0 ? "not-allowed" : "pointer", transition: "all 140ms",
+              background: cart.length === 0 ? "#e5e7eb" : "#606E74",
+              color: cart.length === 0 ? "#9ca3af" : "white",
+            }}>{charging ? "Charging..." : `Charge ${fmt(total)}`}</button>
+          </div>
         </div>
-      </main>
+      </div>
     </>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-[#606e74]">{label}</span>
-      <span className="text-white">{value}</span>
-    </div>
-  );
-}
-
-function PayButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-1 rounded-lg border px-3 py-3 text-xs font-medium transition-colors duration-150 ${
-        active
-          ? "border-[#606e74] bg-[#06080d] text-white"
-          : "border-[#1a2332] bg-[#0d1117] text-[#7a8f96] hover:border-[#606e74] hover:text-white"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

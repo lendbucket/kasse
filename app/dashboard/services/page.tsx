@@ -1,599 +1,175 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-} from "react";
-import { Plus, Pencil, Power, Wrench, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Plus, Pencil, Power, Tag, X } from "lucide-react";
 
 type Location = { id: string; name: string };
+type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string; active: boolean };
 
-type Service = {
-  id: string;
-  name: string;
-  price: number;
-  duration: number;
-  category: string | null;
-  locationId: string;
-  active: boolean;
-};
-
-const ALL_CATEGORY = "All";
-const CATEGORY_SUGGESTIONS = [
-  "Hair",
-  "Color",
-  "Treatment",
-  "Nails",
-  "Waxing",
-  "Other",
-];
-
-function formatUSD(n: number) {
-  return `$${n.toFixed(2)}`;
-}
+const ALL_CAT = "All";
+const CAT_SUGGEST = ["Hair", "Color", "Treatment", "Nails", "Waxing", "Other"];
+function fmt(n: number) { return `$${n.toFixed(2)}`; }
 
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState(ALL_CATEGORY);
-  const [modalState, setModalState] = useState<
-    | { open: false }
-    | { open: true; mode: "create" }
-    | { open: true; mode: "edit"; service: Service }
-  >({ open: false });
+  const [category, setCategory] = useState(ALL_CAT);
+  const [modalState, setModalState] = useState<{ open: false } | { open: true; mode: "create" } | { open: true; mode: "edit"; service: Service }>({ open: false });
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const [svcRes, locRes] = await Promise.all([
-        fetch("/api/services?active=all"),
-        fetch("/api/locations"),
-      ]);
-      if (!svcRes.ok) throw new Error("Failed to load services");
-      const svcData = (await svcRes.json()) as { services: Service[] };
-      const locData = locRes.ok
-        ? ((await locRes.json()) as { locations: Location[] })
-        : { locations: [] };
-      setServices(svcData.services);
-      setLocations(locData.locations);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Load failed");
-    } finally {
-      setLoading(false);
-    }
+      const [sr, lr] = await Promise.all([fetch("/api/services?active=all"), fetch("/api/locations")]);
+      if (!sr.ok) throw new Error("Failed");
+      const sd = (await sr.json()) as { services: Service[] };
+      const ld = lr.ok ? ((await lr.json()) as { locations: Location[] }) : { locations: [] };
+      setServices(sd.services); setLocations(ld.locations);
+    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    services.forEach((s) => {
-      if (s.category) set.add(s.category);
-    });
-    return [ALL_CATEGORY, ...Array.from(set).sort()];
-  }, [services]);
+  const categories = useMemo(() => { const s = new Set<string>(); services.forEach((sv) => { if (sv.category) s.add(sv.category); }); return [ALL_CAT, ...Array.from(s).sort()]; }, [services]);
+  const filtered = useMemo(() => category === ALL_CAT ? services : services.filter((s) => s.category === category), [services, category]);
 
-  const filtered = useMemo(() => {
-    if (category === ALL_CATEGORY) return services;
-    return services.filter((s) => s.category === category);
-  }, [services, category]);
-
-  async function toggleActive(service: Service) {
-    const next = !service.active;
-    const prev = services;
-    setServices((list) =>
-      list.map((s) => (s.id === service.id ? { ...s, active: next } : s)),
-    );
-    try {
-      const res = await fetch(`/api/services/${service.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ active: next }),
-      });
-      if (!res.ok) throw new Error();
-    } catch {
-      setServices(prev);
-    }
+  async function toggleActive(svc: Service) {
+    const next = !svc.active; const prev = services;
+    setServices((l) => l.map((s) => (s.id === svc.id ? { ...s, active: next } : s)));
+    try { const r = await fetch(`/api/services/${svc.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: next }) }); if (!r.ok) throw new Error(); } catch { setServices(prev); }
   }
 
   return (
     <>
-      <header className="flex flex-col gap-4 border-b border-[#1a2332] bg-[#0d1117] px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid #e5e7eb", background: "white", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <p className="text-xs uppercase tracking-wider text-[#606e74]">
-            Menu
-          </p>
-          <h1 className="text-xl font-semibold text-white">Services</h1>
+          <p style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>SERVICES</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: 0 }}>Services &amp; items</h1>
         </div>
+        <button className="btn btn-primary" onClick={() => setModalState({ open: true, mode: "create" })}><Plus size={16} strokeWidth={1.5} /> Create service</button>
+      </div>
 
-        <button
-          type="button"
-          onClick={() => setModalState({ open: true, mode: "create" })}
-          className="flex items-center gap-2 self-start rounded-lg bg-[#606e74] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96]"
-        >
-          <Plus size={16} />
-          Add Service
-        </button>
-      </header>
+      {/* Category tabs */}
+      <div style={{ padding: "12px 32px", borderBottom: "1px solid #e5e7eb", background: "white", display: "flex", gap: 8, overflowX: "auto" }}>
+        {categories.map((c) => (
+          <button key={c} type="button" onClick={() => setCategory(c)} style={{
+            height: 28, padding: "0 12px", borderRadius: 999, fontSize: 13, fontWeight: 500, cursor: "pointer", whiteSpace: "nowrap", transition: "all 120ms",
+            border: c === category ? "1px solid #606E74" : "1px solid #e5e7eb",
+            background: c === category ? "#606E74" : "white", color: c === category ? "white" : "#6b7280",
+          }}>{c}</button>
+        ))}
+      </div>
 
-      <main className="flex-1 px-4 py-6 sm:px-6">
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-          {categories.map((c) => {
-            const active = c === category;
-            return (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCategory(c)}
-                className={`whitespace-nowrap rounded-lg border px-4 py-2 text-sm font-medium transition-colors duration-150 ${
-                  active
-                    ? "border-[#606e74] bg-[#06080d] text-white"
-                    : "border-[#1a2332] bg-[#0d1117] text-[#7a8f96] hover:border-[#606e74] hover:text-white"
-                }`}
-              >
-                {c}
-              </button>
-            );
-          })}
-        </div>
+      <div style={{ padding: "24px 32px" }}>
+        {loading ? <div className="card" style={{ padding: "48px 32px", textAlign: "center" }}><p style={{ color: "#9ca3af" }}>Loading services...</p></div>
+        : error ? <div className="card" style={{ padding: "48px 32px", textAlign: "center" }}><p style={{ color: "#dc2626" }}>{error}</p></div>
+        : filtered.length === 0 ? (
+          <div className="card" style={{ padding: "64px 32px", textAlign: "center" }}>
+            <Tag size={40} strokeWidth={1.5} style={{ color: "#e5e7eb", margin: "0 auto 16px" }} />
+            <p style={{ fontSize: 15, fontWeight: 600, color: "#374151", marginBottom: 6 }}>No services yet</p>
+            <p style={{ fontSize: 14, color: "#9ca3af", marginBottom: 20 }}>Add your first service to get started</p>
+            <button className="btn btn-primary" onClick={() => setModalState({ open: true, mode: "create" })}>+ Create service</button>
+          </div>
+        ) : (
+          <div className="card" style={{ overflow: "hidden" }}>
+            <table className="hidden lg:table">
+              <thead><tr><th>Name</th><th>Category</th><th>Duration</th><th>Price</th><th>Status</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
+              <tbody>
+                {filtered.map((s) => (
+                  <tr key={s.id}>
+                    <td style={{ fontWeight: 600 }}>{s.name}</td>
+                    <td>{s.category ? <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 12, background: "rgba(96,110,116,0.08)", color: "#606E74" }}>{s.category}</span> : "\u2014"}</td>
+                    <td style={{ fontFamily: "var(--font-fira), monospace", color: "#6b7280" }}>{s.duration} min</td>
+                    <td style={{ fontFamily: "var(--font-fira), monospace", fontWeight: 700 }}>{fmt(s.price)}</td>
+                    <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db" }} />
+                      <span style={{ color: s.active ? "#16a34a" : "#9ca3af" }}>{s.active ? "Active" : "Inactive"}</span>
+                    </span></td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                        <button onClick={() => setModalState({ open: true, mode: "edit", service: s })} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
+                        <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="lg:hidden" style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
+              {filtered.map((s) => (
+                <div key={s.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <div><p style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>{s.name}</p>{s.category && <span style={{ fontSize: 12, color: "#606E74" }}>{s.category}</span>}</div>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.active ? "#16a34a" : "#9ca3af" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db" }} />{s.active ? "Active" : "Inactive"}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontFamily: "var(--font-fira), monospace", fontSize: 14 }}><span style={{ fontWeight: 700, color: "#111827" }}>{fmt(s.price)}</span><span style={{ color: "#6b7280" }}>{s.duration} min</span></div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+                    <button onClick={() => setModalState({ open: true, mode: "edit", service: s })} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: "#6b7280", cursor: "pointer" }}>Edit</button>
+                    <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
-        <ServicesList
-          loading={loading}
-          error={error}
-          services={filtered}
-          onEdit={(service) =>
-            setModalState({ open: true, mode: "edit", service })
-          }
-          onToggle={toggleActive}
-        />
-      </main>
-
-      {modalState.open && (
-        <ServiceModal
-          mode={modalState.mode}
-          service={modalState.mode === "edit" ? modalState.service : null}
-          locations={locations}
-          onClose={() => setModalState({ open: false })}
-          onSaved={() => {
-            setModalState({ open: false });
-            load();
-          }}
-        />
-      )}
+      {modalState.open && <ServiceModal mode={modalState.mode} service={modalState.mode === "edit" ? modalState.service : null} locations={locations} onClose={() => setModalState({ open: false })} onSaved={() => { setModalState({ open: false }); load(); }} />}
     </>
   );
 }
 
-function ServicesList({
-  loading,
-  error,
-  services,
-  onEdit,
-  onToggle,
-}: {
-  loading: boolean;
-  error: string | null;
-  services: Service[];
-  onEdit: (service: Service) => void;
-  onToggle: (service: Service) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="rounded-xl border border-[#1a2332] bg-[#0d1117] p-10 text-center text-sm text-[#606e74]">
-        Loading services...
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-xl border border-[#ef4444]/40 bg-[#ef4444]/5 p-10 text-center text-sm text-[#ef4444]">
-        {error}
-      </div>
-    );
-  }
-  if (services.length === 0) {
-    return (
-      <div className="rounded-xl border border-[#1a2332] bg-[#0d1117] p-12 text-center">
-        <Wrench size={28} className="mx-auto text-[#606e74]" />
-        <p className="mt-3 text-sm text-[#7a8f96]">No services yet</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[#1a2332] bg-[#0d1117]">
-      <table className="hidden w-full lg:table">
-        <thead>
-          <tr className="border-b border-[#1a2332] text-left text-[10px] uppercase tracking-wider text-[#606e74]">
-            <th className="px-5 py-3 font-medium">Name</th>
-            <th className="px-5 py-3 font-medium">Category</th>
-            <th className="px-5 py-3 font-medium">Price</th>
-            <th className="px-5 py-3 font-medium">Duration</th>
-            <th className="px-5 py-3 font-medium">Status</th>
-            <th className="px-5 py-3 text-right font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {services.map((s) => (
-            <tr
-              key={s.id}
-              className="border-b border-[#1a2332] last:border-b-0 transition-colors duration-150 hover:bg-[#06080d]"
-            >
-              <td className="px-5 py-4 text-sm font-medium text-white">
-                {s.name}
-              </td>
-              <td className="px-5 py-4 text-sm text-[#7a8f96]">
-                {s.category || "—"}
-              </td>
-              <td className="px-5 py-4 font-mono text-sm text-white">
-                {formatUSD(s.price)}
-              </td>
-              <td className="px-5 py-4 font-mono text-sm text-[#7a8f96]">
-                {s.duration} min
-              </td>
-              <td className="px-5 py-4">
-                <StatusBadge active={s.active} />
-              </td>
-              <td className="px-5 py-4">
-                <div className="flex justify-end gap-2">
-                  <RowButton
-                    onClick={() => onEdit(s)}
-                    icon={<Pencil size={14} />}
-                    label="Edit"
-                  />
-                  <RowButton
-                    onClick={() => onToggle(s)}
-                    icon={<Power size={14} />}
-                    label={s.active ? "Deactivate" : "Activate"}
-                    tone={s.active ? "danger" : "success"}
-                  />
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <ul className="flex flex-col gap-3 p-4 lg:hidden">
-        {services.map((s) => (
-          <li
-            key={s.id}
-            className="flex flex-col gap-3 rounded-lg border border-[#1a2332] bg-[#06080d] p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-base font-semibold text-white">{s.name}</p>
-                <p className="mt-0.5 text-[10px] uppercase tracking-wider text-[#606e74]">
-                  {s.category || "Uncategorized"}
-                </p>
-              </div>
-              <StatusBadge active={s.active} />
-            </div>
-            <div className="flex items-center justify-between font-mono text-sm">
-              <span className="text-white">{formatUSD(s.price)}</span>
-              <span className="text-[#7a8f96]">{s.duration} min</span>
-            </div>
-            <div className="flex gap-2">
-              <RowButton
-                onClick={() => onEdit(s)}
-                icon={<Pencil size={14} />}
-                label="Edit"
-              />
-              <RowButton
-                onClick={() => onToggle(s)}
-                icon={<Power size={14} />}
-                label={s.active ? "Deactivate" : "Activate"}
-                tone={s.active ? "danger" : "success"}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function StatusBadge({ active }: { active: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
-        active
-          ? "border-[#22c55e]/40 bg-[#22c55e]/10 text-[#22c55e]"
-          : "border-[#606e74]/40 bg-[#606e74]/10 text-[#606e74]"
-      }`}
-    >
-      {active ? "Active" : "Inactive"}
-    </span>
-  );
-}
-
-function RowButton({
-  onClick,
-  icon,
-  label,
-  tone,
-}: {
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  tone?: "danger" | "success";
-}) {
-  const hover =
-    tone === "danger"
-      ? "hover:border-[#ef4444] hover:text-[#ef4444]"
-      : tone === "success"
-        ? "hover:border-[#22c55e] hover:text-[#22c55e]"
-        : "hover:border-[#606e74] hover:text-white";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex items-center gap-1 rounded-lg border border-[#1a2332] bg-[#06080d] px-3 py-1.5 text-xs font-medium text-[#7a8f96] transition-colors duration-150 ${hover}`}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-function ServiceModal({
-  mode,
-  service,
-  locations,
-  onClose,
-  onSaved,
-}: {
-  mode: "create" | "edit";
-  service: Service | null;
-  locations: Location[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [name, setName] = useState(service?.name ?? "");
-  const [category, setCategory] = useState(service?.category ?? "");
-  const [price, setPrice] = useState(service ? String(service.price) : "");
-  const [duration, setDuration] = useState(
-    service ? String(service.duration) : "",
-  );
-  const [locationId, setLocationId] = useState(
-    service?.locationId ?? locations[0]?.id ?? "",
-  );
+function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "create" | "edit"; service: Service | null; locations: Location[]; onClose: () => void; onSaved: () => void }) {
+  const [name, setName] = useState(service?.name ?? ""); const [cat, setCat] = useState(service?.category ?? "");
+  const [price, setPrice] = useState(service ? String(service.price) : ""); const [duration, setDuration] = useState(service ? String(service.duration) : "");
+  const [locationId, setLocationId] = useState(service?.locationId ?? locations[0]?.id ?? "");
   const [active, setActive] = useState(service?.active ?? true);
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const priceNum = parseFloat(price);
-    const durationNum = parseInt(duration, 10);
+    const pN = parseFloat(price); const dN = parseInt(duration, 10);
     if (!name.trim() || !locationId || submitting) return;
-    if (!Number.isFinite(priceNum) || priceNum < 0) {
-      setErr("Invalid price");
-      return;
-    }
-    if (!Number.isFinite(durationNum) || durationNum <= 0) {
-      setErr("Invalid duration");
-      return;
-    }
-    setSubmitting(true);
-    setErr(null);
-    const payload = {
-      name,
-      category: category || null,
-      price: priceNum,
-      duration: durationNum,
-      locationId,
-      active,
-    };
+    if (!Number.isFinite(pN) || pN < 0) { setErr("Invalid price"); return; }
+    if (!Number.isFinite(dN) || dN <= 0) { setErr("Invalid duration"); return; }
+    setSubmitting(true); setErr(null);
     try {
-      const res = await fetch(
-        mode === "edit" ? `/api/services/${service!.id}` : "/api/services",
-        {
-          method: mode === "edit" ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? "Save failed");
-      }
+      const r = await fetch(mode === "edit" ? `/api/services/${service!.id}` : "/api/services", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, category: cat || null, price: pN, duration: dN, locationId, active }) });
+      if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Save failed"); }
       onSaved();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); } finally { setSubmitting(false); }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/60 backdrop-blur-sm sm:items-center sm:justify-center sm:p-4">
-      <div className="flex w-full flex-col overflow-hidden border-t border-[#1a2332] bg-[#0d1117] sm:max-w-md sm:rounded-2xl sm:border">
-        <div className="flex items-center justify-between border-b border-[#1a2332] px-5 py-4">
-          <h2 className="text-base font-semibold text-white">
-            {mode === "edit" ? "Edit Service" : "Add Service"}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-[#606e74] transition-colors duration-150 hover:text-white"
-          >
-            <X size={18} />
-          </button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
+      <div style={{ background: "white", borderRadius: 12, width: 480, maxWidth: "100%", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 24px 0" }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>{mode === "edit" ? "Edit Service" : "Create Service"}</h2>
+          <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={20} /></button>
         </div>
-
-        <form
-          onSubmit={handleSubmit}
-          className="flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-5"
-        >
-          <Field label="Name" required>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              className="kasse-input"
-              placeholder="Haircut"
-            />
-          </Field>
-
-          <Field label="Category">
-            <input
-              type="text"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              list="category-suggestions"
-              className="kasse-input"
-              placeholder="Hair"
-            />
-            <datalist id="category-suggestions">
-              {CATEGORY_SUGGESTIONS.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Price ($)" required>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                inputMode="decimal"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                required
-                className="kasse-input font-mono"
-                placeholder="0.00"
-              />
-            </Field>
-            <Field label="Duration (min)" required>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                inputMode="numeric"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                required
-                className="kasse-input font-mono"
-                placeholder="45"
-              />
-            </Field>
+        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Name <span style={{ color: "#dc2626" }}>*</span></span><input type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Haircut" style={iS} /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Category</span><input type="text" value={cat} onChange={(e) => setCat(e.target.value)} list="cat-suggest" placeholder="Hair" style={iS} /><datalist id="cat-suggest">{CAT_SUGGEST.map((c) => <option key={c} value={c} />)}</datalist></label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Price ($) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Duration (min) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="1" step="1" inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} required placeholder="45" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
           </div>
-
-          <Field label="Location" required>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="kasse-input"
-              required
-            >
-              <option value="">Select a location</option>
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <div className="flex items-center justify-between rounded-lg border border-[#1a2332] bg-[#06080d] px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-white">Active</p>
-              <p className="text-[10px] uppercase tracking-wider text-[#606e74]">
-                Inactive services are hidden from POS
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={active}
-              onClick={() => setActive((v) => !v)}
-              className={`relative h-6 w-11 rounded-full transition-colors duration-150 ${
-                active ? "bg-[#22c55e]" : "bg-[#1a2332]"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-150 ${
-                  active ? "translate-x-5" : "translate-x-0.5"
-                }`}
-              />
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Location <span style={{ color: "#dc2626" }}>*</span></span><select value={locationId} onChange={(e) => setLocationId(e.target.value)} required style={iS}><option value="">Select location</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e5e7eb", borderRadius: 6, padding: "12px 16px" }}>
+            <div><p style={{ fontSize: 14, fontWeight: 500, color: "#111827", margin: 0 }}>Active</p><p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Inactive services hidden from POS</p></div>
+            <button type="button" role="switch" aria-checked={active} onClick={() => setActive((v) => !v)} style={{ position: "relative", width: 44, height: 24, borderRadius: 999, border: "none", cursor: "pointer", transition: "background 150ms", background: active ? "#16a34a" : "#e5e7eb" }}>
+              <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 150ms", transform: active ? "translateX(22px)" : "translateX(2px)" }} />
             </button>
           </div>
-
-          {err && (
-            <p className="rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/5 px-3 py-2 text-xs text-[#ef4444]">
-              {err}
-            </p>
-          )}
-
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-lg border border-[#1a2332] bg-[#06080d] px-4 py-3 text-sm font-medium text-[#7a8f96] transition-colors duration-150 hover:border-[#606e74] hover:text-white"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!name.trim() || !locationId || submitting}
-              className="flex-1 rounded-lg bg-[#606e74] px-4 py-3 text-sm font-semibold text-white transition-colors duration-150 hover:bg-[#7a8f96] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {submitting ? "Saving..." : "Save"}
-            </button>
+          {err && <p style={{ fontSize: 13, color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 6, padding: "8px 12px" }}>{err}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+            <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
+            <button type="submit" disabled={!name.trim() || !locationId || submitting} className="btn btn-primary" style={{ opacity: !name.trim() || !locationId || submitting ? 0.5 : 1 }}>{submitting ? "Saving..." : "Save"}</button>
           </div>
         </form>
       </div>
-      <style>{`
-        .kasse-input {
-          width: 100%;
-          border-radius: 0.5rem;
-          border: 1px solid #1a2332;
-          background: #06080d;
-          padding: 0.625rem 0.75rem;
-          font-size: 16px;
-          color: #ffffff;
-          outline: none;
-          transition: border-color 150ms;
-        }
-        .kasse-input:focus {
-          border-color: #7a8f96;
-        }
-        .kasse-input::placeholder {
-          color: #606e74;
-        }
-      `}</style>
     </div>
-  );
-}
-
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-wider text-[#606e74]">
-        {label}
-        {required && <span className="ml-1 text-[#ef4444]">*</span>}
-      </span>
-      {children}
-    </label>
   );
 }
