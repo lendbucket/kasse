@@ -5,6 +5,7 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { NAV_SECTIONS } from "./nav-items";
 import { Search, LogOut } from "lucide-react";
+import Image from "next/image";
 
 interface SidebarProps {
   user: {
@@ -50,16 +51,13 @@ export default function Sidebar({ user }: SidebarProps) {
           borderBottom: "1px solid rgba(0,0,0,0.06)",
         }}
       >
-        <span
-          style={{
-            fontSize: 17,
-            fontWeight: 700,
-            letterSpacing: "0.22em",
-            color: "#0a0c0e",
-          }}
-        >
-          KASSE
-        </span>
+        <Image
+          src="/kasse-logo.png"
+          alt="kasse."
+          width={88}
+          height={30}
+          style={{ objectFit: "contain", filter: "invert(1)" }}
+        />
         <span
           style={{
             background: "rgba(96,110,116,0.10)",

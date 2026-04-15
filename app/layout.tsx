@@ -15,8 +15,11 @@ const firaCode = Fira_Code({
 });
 
 export const metadata: Metadata = {
-  title: "Kasse — Salon Management Platform",
+  title: "kasse. — Salon Management Platform",
   description: "The operating system for modern salons.",
+  icons: {
+    icon: "/kasse-logo.png",
+  },
 };
 
 export default function RootLayout({

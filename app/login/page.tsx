@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { CheckCircle2 } from "lucide-react";
+import Image from "next/image";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -40,10 +41,17 @@ export default function LoginPage() {
         style={{ background: "linear-gradient(135deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.25) 50%, rgba(0,0,0,0.40) 100%)" }}
       />
 
-      {/* Top-left wordmark */}
+      {/* Top-left logo */}
       <div className="fixed left-8 top-8 z-30 flex flex-col">
-        <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: "0.25em", color: "white" }}>KASSE</span>
-        <span style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,0.7)", marginTop: 2 }}>
+        <Image
+          src="/kasse-logo.png"
+          alt="kasse."
+          width={110}
+          height={38}
+          style={{ objectFit: "contain" }}
+          priority
+        />
+        <span style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
           Salon Management Platform
         </span>
       </div>
@@ -65,13 +73,19 @@ export default function LoginPage() {
           }}
         >
           {/* Logo */}
-          <p
-            style={{
-              textAlign: "center", fontSize: 18, fontWeight: 700,
-              letterSpacing: "0.2em", color: "#0a0c0e",
-              animation: "fadeInUp 400ms ease-out 60ms both",
-            }}
-          >KASSE</p>
+          <div style={{
+            textAlign: "center",
+            animation: "fadeInUp 400ms ease-out 60ms both",
+          }}>
+            <Image
+              src="/kasse-logo.png"
+              alt="kasse."
+              width={80}
+              height={28}
+              style={{ objectFit: "contain", filter: "invert(1)", margin: "0 auto" }}
+              priority
+            />
+          </div>
 
           {/* Divider */}
           <div style={{

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import {
   ArrowLeft,
   Crown,
@@ -141,6 +142,15 @@ export default function OnboardingPage() {
         style={{ boxShadow: cardShadow, animation: "scaleIn 300ms ease-out both" }}
         key={step}
       >
+        {/* Logo */}
+        <Image
+          src="/kasse-logo.png"
+          alt="kasse."
+          width={80}
+          height={28}
+          style={{ objectFit: "contain", margin: "0 auto 24px", display: "block" }}
+        />
+
         {/* Step 1 — Welcome */}
         {step === 1 && (
           <div className="flex flex-col items-center text-center">
