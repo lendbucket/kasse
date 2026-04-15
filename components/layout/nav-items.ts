@@ -1,12 +1,14 @@
 import {
-  LayoutDashboard,
-  BarChart2,
-  ShoppingCart,
+  House,
   Calendar,
+  Tag,
+  CreditCard,
   Users,
+  BarChart2,
   UserCog,
-  Scissors,
   Settings,
+  LayoutDashboard,
+  ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
 
@@ -16,46 +18,21 @@ export type NavItem = {
   icon: LucideIcon;
 };
 
-export type NavSection = {
-  label: string;
-  items: NavItem[];
-};
-
-export const NAV_SECTIONS: NavSection[] = [
-  {
-    label: "OVERVIEW",
-    items: [
-      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { label: "Reports", href: "/dashboard/reports", icon: BarChart2 },
-    ],
-  },
-  {
-    label: "OPERATIONS",
-    items: [
-      { label: "POS Terminal", href: "/dashboard/pos", icon: ShoppingCart },
-      { label: "Appointments", href: "/dashboard/appointments", icon: Calendar },
-      { label: "Clients", href: "/dashboard/clients", icon: Users },
-    ],
-  },
-  {
-    label: "TEAM",
-    items: [
-      { label: "Staff", href: "/dashboard/staff", icon: UserCog },
-      { label: "Services", href: "/dashboard/services", icon: Scissors },
-    ],
-  },
-  {
-    label: "SETTINGS",
-    items: [
-      { label: "Settings", href: "/dashboard/settings", icon: Settings },
-    ],
-  },
+export const NAV_ITEMS: NavItem[] = [
+  { label: "Home", href: "/dashboard", icon: House },
+  { label: "Appointments", href: "/dashboard/appointments", icon: Calendar },
+  { label: "Services & items", href: "/dashboard/services", icon: Tag },
+  { label: "Payments & invoices", href: "/dashboard/pos", icon: CreditCard },
+  { label: "Clients", href: "/dashboard/clients", icon: Users },
+  { label: "Reports", href: "/dashboard/reports", icon: BarChart2 },
+  { label: "Staff", href: "/dashboard/staff", icon: UserCog },
+  { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 export const BOTTOM_NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Home", href: "/dashboard", icon: LayoutDashboard },
   { label: "POS", href: "/dashboard/pos", icon: ShoppingCart },
   { label: "Appointments", href: "/dashboard/appointments", icon: Calendar },
   { label: "Clients", href: "/dashboard/clients", icon: Users },
-  { label: "More", href: "/dashboard/staff", icon: UserCog },
+  { label: "More", href: "/dashboard/settings", icon: Settings },
 ];
