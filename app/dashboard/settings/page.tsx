@@ -2,159 +2,114 @@
 
 import { useState, useEffect, useCallback } from "react"
 import {
-  User, Lock, SlidersHorizontal, Building2, MapPin, Palette, Shield,
-  CreditCard, Receipt, Banknote, Bell, Calendar, Clock, ListOrdered,
-  Monitor, Printer, Users, Key, Webhook, Upload, Download,
-  ArrowLeftRight, FileText, Trash2, ChevronRight, Zap, ExternalLink, ToggleLeft,
+  User, Lock, Sliders, Building2, MapPin, Palette, Clock, CreditCard, Gift,
+  Percent, Tag, Receipt, Zap, Landmark, ArrowUpRight, Bell, Calendar, Users,
+  Megaphone, Globe, ListOrdered, XCircle, DollarSign, FileText, Monitor,
+  Tablet, Printer, Shield, BarChart2, Target, Star, Crown, Share2, Key,
+  Webhook, Puzzle, Upload, Download, Database, ArrowRightLeft, Eye, Trash2,
+  Network, ChevronDown, ChevronRight, Check,
 } from "lucide-react"
 
-type SettingsSection = string
+// ═══════════════════════════════════════
+// NAV CONFIG
+// ═══════════════════════════════════════
 
-const NAV_SECTIONS = [
-  {
-    title: "Account & Settings",
-    items: [
-      { id: "personal", label: "Personal information", icon: User },
-      { id: "security", label: "Sign in & security", icon: Lock },
-      { id: "preferences", label: "Preferences", icon: SlidersHorizontal },
-    ],
-  },
-  {
-    title: "My Business",
-    items: [
-      { id: "about", label: "About", icon: Building2 },
-      { id: "locations", label: "Locations", icon: MapPin },
-      { id: "branding", label: "Branding", icon: Palette },
-    ],
-  },
-  {
-    title: "Pricing & Subscriptions",
-    items: [
-      { id: "plans", label: "Plans & billing", icon: CreditCard },
-    ],
-  },
-  {
-    title: "Payments",
-    items: [
-      { id: "payment-methods", label: "Payment methods", icon: CreditCard },
-      { id: "sales-taxes", label: "Sales taxes", icon: Receipt },
-      { id: "receipts", label: "Receipts", icon: Receipt },
-    ],
-  },
-  {
-    title: "Banking",
-    items: [
-      { id: "salontransact", label: "SalonTransact", icon: Banknote },
-    ],
-  },
-  {
-    title: "Notifications",
-    items: [
-      { id: "notif-account", label: "Account", icon: Bell },
-      { id: "notif-appointments", label: "Appointments", icon: Calendar },
-      { id: "notif-staff", label: "Staff", icon: Users },
-    ],
-  },
-  {
-    title: "Fulfillment",
-    items: [
-      { id: "online-booking", label: "Online booking", icon: Calendar },
-      { id: "waitlist", label: "Waitlist", icon: Clock },
-      { id: "cancellation", label: "Cancellation policy", icon: ListOrdered },
-    ],
-  },
-  {
-    title: "Device Management",
-    items: [
-      { id: "devices", label: "Devices", icon: Monitor },
-      { id: "kiosk", label: "Kiosk settings", icon: Monitor },
-      { id: "printers", label: "Printer profiles", icon: Printer },
-    ],
-  },
-  {
-    title: "Team",
-    items: [
-      { id: "permissions", label: "Permissions", icon: Shield },
-      { id: "roles", label: "Roles", icon: Users },
-    ],
-  },
-  {
-    title: "Integrations",
-    items: [
-      { id: "api-keys", label: "API keys", icon: Key },
-      { id: "webhooks", label: "Webhooks", icon: Webhook },
-    ],
-  },
-  {
-    title: "Data",
-    items: [
-      { id: "import", label: "Import data", icon: Upload },
-      { id: "export", label: "Export data", icon: Download },
-    ],
-  },
-  {
-    title: "Advanced",
-    items: [
-      { id: "transfer", label: "Transfer account", icon: ArrowLeftRight },
-      { id: "privacy", label: "CCPA / Privacy", icon: FileText },
-      { id: "deactivate", label: "Deactivate account", icon: Trash2 },
-    ],
-  },
+const SETTINGS_NAV = [
+  { section: "Account & Settings", items: [
+    { id: "personal", label: "Personal information", icon: User },
+    { id: "security", label: "Sign in & security", icon: Lock },
+    { id: "preferences", label: "Preferences", icon: Sliders },
+  ]},
+  { section: "My Business", items: [
+    { id: "about", label: "About", icon: Building2 },
+    { id: "locations", label: "Locations", icon: MapPin },
+    { id: "branding", label: "Branding", icon: Palette },
+    { id: "hours", label: "Business hours", icon: Clock },
+  ]},
+  { section: "Pricing & Subscriptions", items: [
+    { id: "plans", label: "Plans & billing", icon: CreditCard },
+    { id: "trial", label: "Free trial", icon: Gift },
+  ]},
+  { section: "Payments", items: [
+    { id: "payment_methods", label: "Payment methods", icon: CreditCard },
+    { id: "sales_taxes", label: "Sales taxes", icon: Percent },
+    { id: "service_charges", label: "Service charges", icon: Tag },
+    { id: "receipts", label: "Receipts", icon: Receipt },
+    { id: "salon_transact", label: "SalonTransact", icon: Zap },
+  ]},
+  { section: "Banking", items: [
+    { id: "bank_accounts", label: "Bank accounts", icon: Landmark },
+    { id: "payouts", label: "Payouts", icon: ArrowUpRight },
+  ]},
+  { section: "Notifications", items: [
+    { id: "notif_account", label: "Account", icon: Bell },
+    { id: "notif_appointments", label: "Appointments", icon: Calendar },
+    { id: "notif_staff", label: "Staff", icon: Users },
+    { id: "notif_marketing", label: "Marketing", icon: Megaphone },
+  ]},
+  { section: "Booking & Fulfillment", items: [
+    { id: "online_booking", label: "Online booking", icon: Globe },
+    { id: "waitlist", label: "Waitlist", icon: ListOrdered },
+    { id: "cancellation", label: "Cancellation policy", icon: XCircle },
+    { id: "deposits", label: "Deposits", icon: DollarSign },
+    { id: "forms", label: "Client forms & waivers", icon: FileText },
+  ]},
+  { section: "Device Management", items: [
+    { id: "devices", label: "Devices", icon: Monitor },
+    { id: "kiosk", label: "Kiosk settings", icon: Tablet },
+    { id: "printer", label: "Printer profiles", icon: Printer },
+  ]},
+  { section: "Team", items: [
+    { id: "permissions", label: "Permissions & roles", icon: Shield },
+    { id: "commission", label: "Commission structure", icon: BarChart2 },
+    { id: "goals", label: "Goals & KPIs", icon: Target },
+  ]},
+  { section: "Marketing & Loyalty", items: [
+    { id: "loyalty", label: "Loyalty program", icon: Star },
+    { id: "gift_cards", label: "Gift cards", icon: Gift },
+    { id: "memberships", label: "Memberships", icon: Crown },
+    { id: "referrals", label: "Referral program", icon: Share2 },
+  ]},
+  { section: "Integrations", items: [
+    { id: "api_keys", label: "API keys", icon: Key },
+    { id: "webhooks", label: "Webhooks", icon: Webhook },
+    { id: "app_integrations", label: "App integrations", icon: Puzzle },
+  ]},
+  { section: "Data", items: [
+    { id: "import", label: "Import data", icon: Upload },
+    { id: "export", label: "Export data", icon: Download },
+    { id: "backup", label: "Backup & restore", icon: Database },
+  ]},
+  { section: "Advanced", items: [
+    { id: "franchise", label: "Franchise settings", icon: Network },
+    { id: "transfer", label: "Transfer account", icon: ArrowRightLeft },
+    { id: "ccpa", label: "CCPA / Privacy", icon: Eye },
+    { id: "deactivate", label: "Deactivate account", icon: Trash2 },
+  ]},
 ]
 
-type OrgData = {
-  name?: string; email?: string; phone?: string; website?: string; timezone?: string; language?: string;
-  address?: string; city?: string; state?: string; zip?: string;
-}
-type SettingsData = {
-  acceptCash?: boolean; acceptCard?: boolean; acceptGiftCard?: boolean; taxRate?: number;
-  tipPromptEnabled?: boolean; tipOptions?: number[];
-  autoSendReceipt?: boolean; receiptFooter?: string; receiptLogo?: boolean;
-  onlineBookingEnabled?: boolean; bookingLeadTime?: number; bookingMaxAdvance?: number;
-  allowWalkIns?: boolean; requireDeposit?: boolean; depositPercentage?: number;
-  sendConfirmations?: boolean; sendReminders?: boolean; reminderHours?: number;
-  cancellationWindow?: number; cancellationFee?: number; cancellationPolicy?: string;
-}
+type OrgData = Record<string, any>
+type SettingsData = Record<string, any>
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
-    <button onClick={onChange} className="cursor-pointer" aria-label="Toggle"
-      style={{
-        width: 44, height: 24, borderRadius: 12, border: "none",
-        background: on ? "#606e74" : "#d1d5db", position: "relative", transition: "background 200ms", flexShrink: 0,
-      }}>
-      <div style={{
-        width: 18, height: 18, borderRadius: "50%", background: "white",
-        position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 200ms",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-      }} />
+    <button onClick={onChange} className="cursor-pointer" aria-label="Toggle" style={{
+      width: 44, height: 24, borderRadius: 12, border: "none",
+      background: on ? "#606e74" : "#d1d5db", position: "relative", transition: "background 200ms", flexShrink: 0,
+    }}>
+      <div style={{ width: 18, height: 18, borderRadius: "50%", background: "white", position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 200ms", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
     </button>
   )
 }
 
-function SettingRow({ icon: Icon, label, desc, children }: {
-  icon: any; label: string; desc?: string; children?: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-[#f3f4f6] px-6 py-4 last:border-b-0">
-      <div className="flex items-center gap-3 min-w-0">
-        <Icon size={18} strokeWidth={1.5} className="shrink-0 text-[#9ca3af]" />
-        <div className="min-w-0">
-          <p className="text-[14px] font-medium text-[#111827]">{label}</p>
-          {desc && <p className="text-[13px] text-[#6b7280] truncate">{desc}</p>}
-        </div>
-      </div>
-      {children}
-    </div>
-  )
-}
-
 export default function SettingsPage() {
-  const [section, setSection] = useState<SettingsSection>("about")
+  const [section, setSection] = useState("about")
   const [org, setOrg] = useState<OrgData>({})
   const [settings, setSettings] = useState<SettingsData>({})
   const [loading, setLoading] = useState(true)
-  const [mobileNavOpen, setMobileNavOpen] = useState(true)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [editValues, setEditValues] = useState<Record<string, string>>({})
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -164,394 +119,317 @@ export default function SettingsPage() {
         if (data.organization) setOrg(data.organization)
         if (data.settings) setSettings(data.settings)
       }
-    } catch { /* ignore */ } finally { setLoading(false) }
+    } catch {} finally { setLoading(false) }
   }, [])
 
   useEffect(() => { fetchSettings() }, [fetchSettings])
 
-  async function saveSettings(orgUpdates?: Partial<OrgData>, settingsUpdates?: Partial<SettingsData>) {
-    if (orgUpdates) setOrg((prev) => ({ ...prev, ...orgUpdates }))
-    if (settingsUpdates) setSettings((prev) => ({ ...prev, ...settingsUpdates }))
+  async function saveOrgField(field: string) {
+    const value = editValues[field]
+    setOrg((p) => ({ ...p, [field]: value }))
+    setEditingField(null)
     await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ organizationUpdates: orgUpdates, settingsUpdates }),
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationUpdates: { [field]: value } }),
     })
   }
 
+  async function saveSettings(updates: Partial<SettingsData>) {
+    setSettings((p) => ({ ...p, ...updates }))
+    await fetch("/api/settings", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settingsUpdates: updates }),
+    })
+  }
+
+  function toggleSection(s: string) {
+    setCollapsed((p) => ({ ...p, [s]: !p[s] }))
+  }
+
   function renderContent() {
-    if (loading) return <div className="p-8 text-[14px] text-[#9ca3af]">Loading...</div>
+    if (loading) return <p style={{ color: "#9ca3af" }}>Loading...</p>
 
     switch (section) {
-      case "about":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">About</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Manage your business account and settings.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              {[
-                { label: "Display Business Name", value: org.name },
-                { label: "Email", value: org.email },
-                { label: "Phone", value: org.phone },
-                { label: "Website", value: org.website },
-                { label: "Address", value: [org.address, org.city, org.state, org.zip].filter(Boolean).join(", ") },
-                { label: "Language", value: org.language || "English" },
-                { label: "Timezone", value: org.timezone || "America/Chicago" },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center justify-between border-b border-[#f3f4f6] px-6 py-4 last:border-b-0">
-                  <div>
-                    <p className="text-[13px] text-[#6b7280]">{row.label}</p>
-                    <p className="text-[14px] font-medium text-[#111827]">{row.value || "\u2014"}</p>
-                  </div>
-                  <button className="cursor-pointer text-[13px] font-medium text-[#606e74] hover:underline"
-                    style={{ background: "none", border: "none" }}>Edit</button>
+      case "about": return (<div>
+        <SH title="About" sub="Manage your business account and settings." />
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>
+          {[
+            { label: "Display Business Name", value: org.name, field: "name" },
+            { label: "Legal Business Name", value: org.legalName, field: "legalName" },
+            { label: "Business Type", value: org.businessType, field: "businessType" },
+            { label: "Phone", value: org.phone, field: "phone" },
+            { label: "Email", value: org.email, field: "email" },
+            { label: "Website", value: org.website, field: "website" },
+            { label: "Language", value: "English", field: null },
+            { label: "Timezone", value: org.timezone || "America/Chicago", field: "timezone" },
+          ].map((row, i) => (
+            <div key={row.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: i < 7 ? "1px solid #f3f4f6" : "none", background: editingField === row.field ? "#f9fafb" : "white" }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: "0 0 2px", fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{row.label}</p>
+                {editingField === row.field ? (
+                  <input autoFocus value={editValues[row.field!] || ""} onChange={(e) => setEditValues((v) => ({ ...v, [row.field!]: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && saveOrgField(row.field!)}
+                    style={{ fontSize: 15, color: "#111827", border: "none", background: "transparent", outline: "none", width: "100%", fontFamily: "inherit" }} />
+                ) : (
+                  <p style={{ margin: 0, fontSize: 15, color: "#111827", fontWeight: 500 }}>{row.value || "\u2014"}</p>
+                )}
+              </div>
+              {row.field && (editingField === row.field ? (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => saveOrgField(row.field!)} style={{ height: 32, padding: "0 14px", background: "#606E74", color: "white", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+                  <button onClick={() => setEditingField(null)} style={{ height: 32, padding: "0 14px", background: "white", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
                 </div>
+              ) : (
+                <button onClick={() => { setEditingField(row.field); setEditValues((v) => ({ ...v, [row.field!]: row.value || "" })) }}
+                  style={{ color: "#606E74", background: "none", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
               ))}
             </div>
+          ))}
+        </div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: "0 0 8px" }}>Transfer business</h3>
+        <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 16px" }}>Transfer ownership to another user.</p>
+        <button style={{ height: 36, padding: "0 16px", background: "white", border: "1px solid #e5e7eb", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer", fontFamily: "inherit" }}>Transfer business</button>
+        <div style={{ marginTop: 40 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: "#dc2626", margin: "0 0 8px" }}>Deactivate your business</h3>
+          <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 16px" }}>This will permanently deactivate your account and cancel your subscription.</p>
+          <button style={{ height: 36, padding: "0 16px", background: "white", border: "1px solid #fecaca", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "#dc2626", cursor: "pointer", fontFamily: "inherit" }}>Deactivate your business</button>
+        </div>
+      </div>)
 
-            <div className="mt-10">
-              <h3 className="text-[18px] font-bold text-[#111827]">Transfer business</h3>
-              <p className="mt-1 text-[13px] text-[#6b7280]">Transfer ownership of this business to another user.</p>
-              <button className="mt-4 cursor-pointer rounded-lg border border-[#e5e7eb] px-4 py-2 text-[13px] font-medium text-[#374151] transition-colors hover:bg-[#f9fafb]"
-                style={{ background: "white" }}>Transfer business</button>
-            </div>
+      case "payment_methods": return (<div>
+        <SH title="Payment methods" sub="Configure which payment methods you accept." />
+        <Card>
+          <TR label="Accept cash payments" desc="Allow clients to pay with cash" on={settings.acceptCash !== false} onChange={() => saveSettings({ acceptCash: !(settings.acceptCash !== false) })} />
+          <TR label="Accept card payments" desc="Process cards via SalonTransact" on={settings.acceptCard !== false} onChange={() => saveSettings({ acceptCard: !(settings.acceptCard !== false) })} badge={settings.acceptCard !== false ? "Connected" : "Pending"} />
+          <TR label="Accept gift cards" desc="Allow gift card payments" on={settings.acceptGiftCard !== false} onChange={() => saveSettings({ acceptGiftCard: !(settings.acceptGiftCard !== false) })} />
+          <TR label="Accept loyalty points" desc="Redeem loyalty points at checkout" on={settings.loyaltyEnabled === true} onChange={() => saveSettings({ loyaltyEnabled: !settings.loyaltyEnabled })} />
+        </Card>
+      </div>)
 
-            <div className="mt-10">
-              <h3 className="text-[18px] font-bold text-[#dc2626]">Deactivate your business</h3>
-              <p className="mt-1 text-[13px] text-[#6b7280]">This will permanently deactivate your account and cancel your subscription.</p>
-              <button className="mt-4 cursor-pointer rounded-lg border border-[#fecaca] px-4 py-2 text-[13px] font-medium text-[#dc2626] transition-colors hover:bg-[#fef2f2]"
-                style={{ background: "white" }}>Deactivate your business</button>
-            </div>
-          </div>
-        )
-
-      case "payment-methods":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Payment methods</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Configure which payment methods you accept.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <SettingRow icon={Banknote} label="Accept cash" desc="Allow cash payments at checkout">
-                <Toggle on={settings.acceptCash !== false} onChange={() => saveSettings(undefined, { acceptCash: !settings.acceptCash })} />
-              </SettingRow>
-              <SettingRow icon={CreditCard} label="Accept card" desc="Process card payments via SalonTransact">
-                <Toggle on={settings.acceptCard !== false} onChange={() => saveSettings(undefined, { acceptCard: !settings.acceptCard })} />
-              </SettingRow>
-              <SettingRow icon={CreditCard} label="Accept gift cards" desc="Allow gift card payments">
-                <Toggle on={settings.acceptGiftCard !== false} onChange={() => saveSettings(undefined, { acceptGiftCard: !settings.acceptGiftCard })} />
-              </SettingRow>
-            </div>
-          </div>
-        )
-
-      case "sales-taxes":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Sales taxes</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Configure tax rates for your location.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white p-6">
-              <label className="mb-2 block text-[13px] font-medium text-[#374151]">Tax rate (%)</label>
-              <input type="number" step="0.01" value={settings.taxRate ?? 8.25}
-                onChange={(e) => saveSettings(undefined, { taxRate: parseFloat(e.target.value) })}
-                className="h-[44px] w-full max-w-[200px] rounded-xl border border-[#e5e7eb] px-4 text-[16px] text-[#111827] outline-none focus:border-[#606e74]" />
+      case "sales_taxes": return (<div>
+        <SH title="Sales taxes" sub="Configure tax rates for your locations." />
+        <Card>
+          <div style={{ padding: 20 }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Tax rate (%)</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="number" step="0.01" value={settings.taxRate ?? 8.25} onChange={(e) => saveSettings({ taxRate: parseFloat(e.target.value) })}
+                style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, color: "#111827", fontFamily: "var(--font-fira), monospace" }} />
+              <span style={{ fontSize: 14, color: "#9ca3af" }}>% applied to all taxable services</span>
             </div>
           </div>
-        )
+        </Card>
+      </div>)
 
-      case "receipts":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Receipts</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Customize receipt settings.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <SettingRow icon={Receipt} label="Auto-send receipt" desc="Email receipt after every transaction">
-                <Toggle on={settings.autoSendReceipt !== false} onChange={() => saveSettings(undefined, { autoSendReceipt: !settings.autoSendReceipt })} />
-              </SettingRow>
-              <SettingRow icon={Palette} label="Show logo on receipt" desc="Display your business logo">
-                <Toggle on={settings.receiptLogo !== false} onChange={() => saveSettings(undefined, { receiptLogo: !settings.receiptLogo })} />
-              </SettingRow>
-              <div className="border-b border-[#f3f4f6] px-6 py-4 last:border-b-0">
-                <label className="mb-2 block text-[13px] font-medium text-[#374151]">Receipt footer text</label>
-                <textarea value={settings.receiptFooter ?? ""}
-                  onChange={(e) => saveSettings(undefined, { receiptFooter: e.target.value })}
-                  placeholder="Thank you for your visit!"
-                  rows={3}
-                  className="w-full rounded-xl border border-[#e5e7eb] p-4 text-[14px] text-[#111827] outline-none focus:border-[#606e74]" />
-              </div>
-              <div className="flex items-center gap-2 px-6 py-3">
-                <Zap size={12} className="text-[#9ca3af]" />
-                <span className="text-[11px] text-[#9ca3af]">Powered by SalonTransact</span>
-              </div>
-            </div>
+      case "receipts": return (<div>
+        <SH title="Receipts" sub="Customize receipt settings." />
+        <Card>
+          <TR label="Auto-send receipts" desc="Email receipt after every transaction" on={settings.autoSendReceipt !== false} onChange={() => saveSettings({ autoSendReceipt: !settings.autoSendReceipt })} />
+          <TR label="Include logo" desc="Show your business logo on receipts" on={settings.receiptLogo !== false} onChange={() => saveSettings({ receiptLogo: !settings.receiptLogo })} />
+          <TR label="Include tip line" desc="Show tip options on receipt" on={settings.tipPromptEnabled !== false} onChange={() => saveSettings({ tipPromptEnabled: !settings.tipPromptEnabled })} />
+          <div style={{ padding: "16px 20px" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Receipt footer text</label>
+            <textarea value={settings.receiptFooter ?? ""} onChange={(e) => saveSettings({ receiptFooter: e.target.value })} placeholder="Thank you for your visit!" rows={3}
+              style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: 14, fontSize: 14, color: "#111827", fontFamily: "inherit", outline: "none", resize: "vertical" }} />
           </div>
-        )
+        </Card>
+      </div>)
 
-      case "online-booking":
-        return (
+      case "salon_transact": return (<div>
+        <SH title="SalonTransact" sub="Your payment processing account." />
+        <div style={{ background: "linear-gradient(135deg, #0a0c0e, #1a2332)", borderRadius: 14, padding: "28px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, border: "1px solid rgba(96,110,116,0.2)" }}>
           <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Online booking</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Configure your online booking experience.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <SettingRow icon={Calendar} label="Enable online booking" desc="Allow clients to book online">
-                <Toggle on={settings.onlineBookingEnabled !== false} onChange={() => saveSettings(undefined, { onlineBookingEnabled: !settings.onlineBookingEnabled })} />
-              </SettingRow>
-              <div className="border-b border-[#f3f4f6] px-6 py-4">
-                <label className="mb-2 block text-[13px] font-medium text-[#374151]">Booking lead time</label>
-                <select value={settings.bookingLeadTime ?? 60}
-                  onChange={(e) => saveSettings(undefined, { bookingLeadTime: parseInt(e.target.value) })}
-                  className="h-[40px] cursor-pointer rounded-lg border border-[#e5e7eb] px-3 text-[14px] text-[#111827] outline-none">
-                  <option value={30}>30 minutes</option>
-                  <option value={60}>1 hour</option>
-                  <option value={120}>2 hours</option>
-                  <option value={1440}>24 hours</option>
-                </select>
-              </div>
-              <div className="border-b border-[#f3f4f6] px-6 py-4">
-                <label className="mb-2 block text-[13px] font-medium text-[#374151]">Maximum advance booking</label>
-                <select value={settings.bookingMaxAdvance ?? 60}
-                  onChange={(e) => saveSettings(undefined, { bookingMaxAdvance: parseInt(e.target.value) })}
-                  className="h-[40px] cursor-pointer rounded-lg border border-[#e5e7eb] px-3 text-[14px] text-[#111827] outline-none">
-                  <option value={7}>1 week</option>
-                  <option value={14}>2 weeks</option>
-                  <option value={30}>1 month</option>
-                  <option value={90}>3 months</option>
-                </select>
-              </div>
-              <SettingRow icon={ToggleLeft} label="Allow walk-ins" desc="Accept walk-in appointments">
-                <Toggle on={settings.allowWalkIns !== false} onChange={() => saveSettings(undefined, { allowWalkIns: !settings.allowWalkIns })} />
-              </SettingRow>
-              <SettingRow icon={Banknote} label="Require deposit" desc="Require a deposit when booking">
-                <Toggle on={settings.requireDeposit === true} onChange={() => saveSettings(undefined, { requireDeposit: !settings.requireDeposit })} />
-              </SettingRow>
-              {settings.requireDeposit && (
-                <div className="px-6 py-4">
-                  <label className="mb-2 block text-[13px] font-medium text-[#374151]">Deposit percentage</label>
-                  <input type="number" step="1" value={settings.depositPercentage ?? 25}
-                    onChange={(e) => saveSettings(undefined, { depositPercentage: parseFloat(e.target.value) })}
-                    className="h-[40px] w-[120px] rounded-lg border border-[#e5e7eb] px-3 text-[14px] text-[#111827] outline-none" />
-                  <span className="ml-2 text-[14px] text-[#6b7280]">%</span>
-                </div>
-              )}
-            </div>
+            <p style={{ margin: "0 0 6px", fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Payments powered by</p>
+            <p style={{ margin: "0 0 4px", fontSize: 26, fontWeight: 800, color: "white" }}>SalonTransact</p>
+            <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.45)" }}>2.4% + $0.10 per transaction &middot; Same-day payouts</p>
           </div>
-        )
-
-      case "notif-appointments":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Appointment notifications</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Configure appointment notification settings.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <SettingRow icon={Bell} label="Send confirmations" desc="Email confirmation when an appointment is booked">
-                <Toggle on={settings.sendConfirmations !== false} onChange={() => saveSettings(undefined, { sendConfirmations: !settings.sendConfirmations })} />
-              </SettingRow>
-              <SettingRow icon={Clock} label="Send reminders" desc="Send reminder before the appointment">
-                <Toggle on={settings.sendReminders !== false} onChange={() => saveSettings(undefined, { sendReminders: !settings.sendReminders })} />
-              </SettingRow>
-              {settings.sendReminders !== false && (
-                <div className="border-b border-[#f3f4f6] px-6 py-4">
-                  <label className="mb-2 block text-[13px] font-medium text-[#374151]">Reminder timing</label>
-                  <select value={settings.reminderHours ?? 24}
-                    onChange={(e) => saveSettings(undefined, { reminderHours: parseInt(e.target.value) })}
-                    className="h-[40px] cursor-pointer rounded-lg border border-[#e5e7eb] px-3 text-[14px] text-[#111827] outline-none">
-                    <option value={24}>24 hours before</option>
-                    <option value={48}>48 hours before</option>
-                    <option value={168}>1 week before</option>
-                  </select>
-                </div>
-              )}
+          <Zap size={40} style={{ color: "#606E74" }} strokeWidth={1.5} />
+        </div>
+        <Card>
+          <div style={{ padding: 20, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "#111827" }}>Status</p>
+              <span style={{ fontSize: 12, fontWeight: 600, padding: "2px 10px", borderRadius: 999, background: "rgba(34,197,94,0.1)", color: "#16a34a" }}>Connected</span>
             </div>
+            <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>Processing since {new Date().toLocaleDateString()}</p>
           </div>
-        )
+        </Card>
+      </div>)
 
-      case "permissions":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Permissions</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Manage permission sets for your team.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              {["Owner", "Manager", "Stylist", "Front Desk", "Read Only"].map((role) => (
-                <div key={role} className="flex items-center justify-between border-b border-[#f3f4f6] px-6 py-4 last:border-b-0">
-                  <div>
-                    <p className="text-[14px] font-medium text-[#111827]">{role}</p>
-                    <p className="text-[13px] text-[#6b7280]">
-                      {role === "Owner" ? "Full access to all features" :
-                       role === "Manager" ? "Staff, clients, appointments, POS" :
-                       role === "Stylist" ? "Own appointments, clients, POS" :
-                       role === "Front Desk" ? "Appointments, check-in, POS" :
-                       "View-only access to dashboard and reports"}
-                    </p>
-                  </div>
-                  <button className="cursor-pointer text-[13px] font-medium text-[#606e74] hover:underline"
-                    style={{ background: "none", border: "none" }}>Edit</button>
-                </div>
+      case "online_booking": return (<div>
+        <SH title="Online booking" sub="Configure your online booking experience." />
+        <Card>
+          <TR label="Enable online booking" desc="Allow clients to book online" on={settings.onlineBookingEnabled !== false} onChange={() => saveSettings({ onlineBookingEnabled: !settings.onlineBookingEnabled })} />
+          <div style={{ padding: "12px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Booking lead time</label>
+            <select value={settings.bookingLeadTime ?? 60} onChange={(e) => saveSettings({ bookingLeadTime: parseInt(e.target.value) })}
+              style={{ height: 40, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 14, color: "#111827", cursor: "pointer", fontFamily: "inherit" }}>
+              <option value={30}>30 minutes</option><option value={60}>1 hour</option><option value={120}>2 hours</option><option value={1440}>24 hours</option>
+            </select>
+          </div>
+          <div style={{ padding: "12px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Max advance booking</label>
+            <select value={settings.bookingMaxAdvance ?? 60} onChange={(e) => saveSettings({ bookingMaxAdvance: parseInt(e.target.value) })}
+              style={{ height: 40, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 14, color: "#111827", cursor: "pointer", fontFamily: "inherit" }}>
+              <option value={7}>1 week</option><option value={14}>2 weeks</option><option value={30}>1 month</option><option value={90}>3 months</option>
+            </select>
+          </div>
+          <TR label="Allow walk-in requests" desc="Accept walk-in appointment requests" on={settings.allowWalkIns !== false} onChange={() => saveSettings({ allowWalkIns: !settings.allowWalkIns })} />
+          <TR label="Require deposit" desc="Require a deposit when booking" on={settings.requireDeposit === true} onChange={() => saveSettings({ requireDeposit: !settings.requireDeposit })} />
+          <TR label="Show stylist availability" desc="Let clients see stylist schedules" on={true} onChange={() => {}} />
+          <TR label="Allow stylist preference" desc="Let clients choose their stylist" on={true} onChange={() => {}} />
+        </Card>
+      </div>)
+
+      case "cancellation": return (<div>
+        <SH title="Cancellation policy" sub="Configure cancellation and no-show policies." />
+        <Card>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Cancellation window (hours)</label>
+            <input type="number" value={settings.cancellationWindow ?? 24} onChange={(e) => saveSettings({ cancellationWindow: parseInt(e.target.value) })}
+              style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, color: "#111827", fontFamily: "var(--font-fira), monospace" }} />
+          </div>
+          <TR label="Cancellation fee" desc="Charge clients for late cancellations" on={!!settings.cancellationFee} onChange={() => saveSettings({ cancellationFee: settings.cancellationFee ? null : 25 })} />
+          <div style={{ padding: "16px 20px" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Policy text (shown to clients)</label>
+            <textarea value={settings.cancellationPolicy ?? ""} onChange={(e) => saveSettings({ cancellationPolicy: e.target.value })} placeholder="Cancellations must be made at least 24 hours in advance..." rows={3}
+              style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 8, padding: 14, fontSize: 14, color: "#111827", fontFamily: "inherit", outline: "none", resize: "vertical" }} />
+          </div>
+        </Card>
+      </div>)
+
+      case "permissions": return (<div>
+        <SH title="Permissions & roles" sub="Control what each role can access." />
+        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: "#374151" }}>Feature</th>
+                {["Owner", "Manager", "Stylist", "Front Desk", "Read Only"].map((r) => (
+                  <th key={r} style={{ padding: "12px 8px", textAlign: "center", fontWeight: 600 }}>
+                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "rgba(96,110,116,0.08)", color: "#606E74" }}>{r}</span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {["Dashboard", "Reports", "POS Terminal", "Appointments", "Clients", "Staff", "Services", "Marketing", "Reputation", "Loyalty", "Settings", "Billing", "Data import", "API access"].map((feat, fi) => (
+                <tr key={feat} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                  <td style={{ padding: "10px 16px", color: "#374151", fontWeight: 500 }}>{feat}</td>
+                  {[true, fi < 10, fi < 6, fi < 5, fi < 2].map((on, ri) => (
+                    <td key={ri} style={{ padding: "10px 8px", textAlign: "center" }}>
+                      {on ? <Check size={16} style={{ color: "#16a34a" }} strokeWidth={2} /> : <span style={{ color: "#d1d5db" }}>&mdash;</span>}
+                    </td>
+                  ))}
+                </tr>
               ))}
-            </div>
-          </div>
-        )
+            </tbody>
+          </table>
+        </div>
+      </div>)
 
-      case "import":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Import data</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Import data from another system or CSV file.</p>
-            <div className="mt-6">
-              <label className="mb-2 block text-[13px] font-medium text-[#374151]">Source system</label>
-              <div className="flex flex-wrap gap-2">
-                {["Square", "Zenoti", "Mindbody", "Vagaro", "Booker", "Custom CSV"].map((src) => (
-                  <button key={src} className="cursor-pointer rounded-lg border border-[#e5e7eb] px-4 py-2 text-[13px] font-medium text-[#374151] transition-colors hover:border-[#606e74] hover:bg-[#606e74]/[0.04]"
-                    style={{ background: "white" }}>{src}</button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-6">
-              <div className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-[#d1d5db] p-10 transition-colors hover:border-[#606e74] hover:bg-[#f9fafb]">
-                <Upload size={32} strokeWidth={1.5} className="text-[#9ca3af]" />
-                <p className="text-[14px] font-medium text-[#6b7280]">Click to upload or drag and drop</p>
-                <p className="text-[12px] text-[#9ca3af]">CSV, XLSX up to 10MB</p>
-              </div>
-            </div>
-            <div className="mt-6">
-              <p className="mb-3 text-[13px] font-medium text-[#374151]">Import type</p>
-              <div className="flex gap-2">
-                {["Clients", "Staff", "Services", "Transactions", "Gift Cards"].map((t) => (
-                  <button key={t} className="cursor-pointer rounded-lg border border-[#e5e7eb] px-3 py-1.5 text-[12px] font-medium text-[#6b7280] transition-colors hover:border-[#606e74]"
-                    style={{ background: "white" }}>{t}</button>
-                ))}
-              </div>
-            </div>
+      case "loyalty": return (<div>
+        <SH title="Loyalty program" sub="Reward your clients for their loyalty." />
+        <Card>
+          <TR label="Enable loyalty program" desc="Clients earn points on every visit" on={settings.loyaltyEnabled === true} onChange={() => saveSettings({ loyaltyEnabled: !settings.loyaltyEnabled })} />
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Points per dollar spent</label>
+            <input type="number" defaultValue={1} style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, fontFamily: "var(--font-fira), monospace" }} />
           </div>
-        )
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Dollar value per point</label>
+            <input type="number" step="0.01" defaultValue={0.01} style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, fontFamily: "var(--font-fira), monospace" }} />
+          </div>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Minimum redemption points</label>
+            <input type="number" defaultValue={100} style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, fontFamily: "var(--font-fira), monospace" }} />
+          </div>
+          <TR label="Show balance to clients" desc="Display points balance at checkout" on={true} onChange={() => {}} />
+        </Card>
+      </div>)
 
-      case "api-keys":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">API keys</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Manage API keys for third-party integrations.</p>
-            <button className="mt-4 cursor-pointer rounded-lg bg-[#606e74] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#7a8f96]">
-              Create new key
-            </button>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <div className="px-6 py-8 text-center">
-                <Key size={32} strokeWidth={1.5} className="mx-auto text-[#d1d5db]" />
-                <p className="mt-3 text-[14px] text-[#6b7280]">No API keys yet</p>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <Zap size={12} className="text-[#9ca3af]" />
-              <span className="text-[11px] text-[#9ca3af]">Payment API powered by SalonTransact</span>
-            </div>
-          </div>
-        )
+      case "import": return (<div>
+        <SH title="Import data" sub="Import data from another system or CSV file." />
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+          {["Square", "Zenoti", "Mindbody", "Vagaro", "Booker", "Custom CSV"].map((src) => (
+            <button key={src} style={{ height: 36, padding: "0 16px", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer", background: "white", fontFamily: "inherit" }}>{src}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 40, border: "2px dashed #d1d5db", borderRadius: 10, cursor: "pointer", marginBottom: 20 }}>
+          <Upload size={32} style={{ color: "#d1d5db", marginBottom: 12 }} strokeWidth={1.5} />
+          <p style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 600, color: "#374151" }}>Click to upload or drag and drop</p>
+          <p style={{ margin: 0, fontSize: 13, color: "#9ca3af" }}>CSV, XLSX up to 50MB</p>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          {["Clients", "Staff", "Services", "Transactions", "Gift Cards"].map((t) => (
+            <button key={t} style={{ height: 32, padding: "0 12px", border: "1px solid #e5e7eb", borderRadius: 999, fontSize: 12, fontWeight: 600, color: "#6b7280", cursor: "pointer", background: "white", fontFamily: "inherit" }}>{t}</button>
+          ))}
+        </div>
+      </div>)
 
-      case "webhooks":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Webhooks</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Configure webhook endpoints for real-time events.</p>
-            <button className="mt-4 cursor-pointer rounded-lg bg-[#606e74] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#7a8f96]">
-              Create webhook
-            </button>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <div className="px-6 py-8 text-center">
-                <Webhook size={32} strokeWidth={1.5} className="mx-auto text-[#d1d5db]" />
-                <p className="mt-3 text-[14px] text-[#6b7280]">No webhooks configured</p>
-              </div>
-            </div>
+      case "api_keys": return (<div>
+        <SH title="API keys" sub="Manage API keys for third-party integrations." />
+        <button style={{ height: 36, padding: "0 16px", background: "#606e74", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 20 }}>Create new key</button>
+        <Card>
+          <div style={{ padding: "32px 20px", textAlign: "center" }}>
+            <Key size={32} style={{ color: "#d1d5db", margin: "0 auto 12px" }} strokeWidth={1.5} />
+            <p style={{ fontSize: 14, color: "#6b7280", margin: 0 }}>No API keys yet</p>
           </div>
-        )
+        </Card>
+      </div>)
 
-      case "locations":
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">Locations</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">Manage your salon locations.</p>
-            <button className="mt-4 cursor-pointer rounded-lg bg-[#606e74] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#7a8f96]">
-              Add location
-            </button>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white">
-              <div className="px-6 py-8 text-center">
-                <MapPin size={32} strokeWidth={1.5} className="mx-auto text-[#d1d5db]" />
-                <p className="mt-3 text-[14px] text-[#6b7280]">Locations will appear here after onboarding</p>
-              </div>
-            </div>
+      case "webhooks": return (<div>
+        <SH title="Webhooks" sub="Configure webhook endpoints for real-time events." />
+        <button style={{ height: 36, padding: "0 16px", background: "#606e74", color: "white", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", marginBottom: 20 }}>Create webhook</button>
+        <Card>
+          <div style={{ padding: "32px 20px", textAlign: "center" }}>
+            <Webhook size={32} style={{ color: "#d1d5db", margin: "0 auto 12px" }} strokeWidth={1.5} />
+            <p style={{ fontSize: 14, color: "#6b7280", margin: 0 }}>No webhooks configured</p>
           </div>
-        )
+        </Card>
+      </div>)
 
-      default:
-        return (
-          <div>
-            <h2 className="text-[22px] font-bold text-[#111827]">{NAV_SECTIONS.flatMap(s => s.items).find(i => i.id === section)?.label ?? section}</h2>
-            <p className="mt-1 text-[14px] text-[#6b7280]">This section is coming soon.</p>
-            <div className="mt-6 overflow-hidden rounded-xl border border-[#e5e7eb] bg-white px-6 py-8 text-center">
-              <ExternalLink size={32} strokeWidth={1.5} className="mx-auto text-[#d1d5db]" />
-              <p className="mt-3 text-[14px] text-[#6b7280]">Configuration options will be available here.</p>
-            </div>
-          </div>
-        )
+      default: {
+        const item = SETTINGS_NAV.flatMap((s) => s.items).find((i) => i.id === section)
+        return (<div>
+          <SH title={item?.label || section} sub="This section is coming soon." />
+          <Card><div style={{ padding: "40px 20px", textAlign: "center" }}>
+            <p style={{ fontSize: 14, color: "#9ca3af" }}>Configuration options will be available here.</p>
+          </div></Card>
+        </div>)
+      }
     }
   }
 
   return (
     <>
-      {/* Header */}
       <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid #e5e7eb", background: "white" }}>
         <p style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>ACCOUNT</p>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: 0 }}>Settings</h1>
       </div>
-
-      {/* Mobile section picker */}
-      <div className="md:hidden" style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", background: "#f9fafb" }}>
-        <button onClick={() => setMobileNavOpen(!mobileNavOpen)}
-          className="flex w-full cursor-pointer items-center justify-between rounded-lg border border-[#e5e7eb] bg-white px-4 py-3 text-[14px] font-medium text-[#111827]">
-          {NAV_SECTIONS.flatMap(s => s.items).find(i => i.id === section)?.label ?? "About"}
-          <ChevronRight size={16} className={`text-[#9ca3af] transition-transform ${mobileNavOpen ? "rotate-90" : ""}`} />
-        </button>
-        {mobileNavOpen && (
-          <div className="mt-2 max-h-[50vh] overflow-y-auto rounded-lg border border-[#e5e7eb] bg-white">
-            {NAV_SECTIONS.map((group) => (
-              <div key={group.title}>
-                <p className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#9ca3af]">{group.title}</p>
-                {group.items.map((item) => (
-                  <button key={item.id} onClick={() => { setSection(item.id); setMobileNavOpen(false) }}
-                    className={`flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors ${
-                      section === item.id ? "bg-[#606e74]/[0.06] font-semibold text-[#606e74]" : "text-[#374151] hover:bg-[#f9fafb]"
-                    }`} style={{ border: "none", background: section === item.id ? "rgba(96,110,116,0.06)" : "transparent" }}>
-                    <item.icon size={16} strokeWidth={1.5} className={section === item.id ? "text-[#606e74]" : "text-[#9ca3af]"} />
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Two-column layout */}
       <div className="flex" style={{ minHeight: "calc(100vh - 120px)" }}>
-        {/* Left nav — desktop */}
-        <nav className="hidden md:block" style={{
-          width: 220, borderRight: "1px solid #e5e7eb", background: "white",
-          overflowY: "auto", flexShrink: 0,
-        }}>
-          {NAV_SECTIONS.map((group) => (
-            <div key={group.title} style={{ padding: "8px 0" }}>
-              <p style={{ padding: "4px 16px", fontSize: 11, fontWeight: 600, color: "#9ca3af",
-                letterSpacing: "0.06em", textTransform: "uppercase" }}>{group.title}</p>
-              {group.items.map((item) => {
+        {/* Left nav */}
+        <nav className="hidden md:block" style={{ width: 240, borderRight: "1px solid #e5e7eb", background: "white", overflowY: "auto", flexShrink: 0 }}>
+          {SETTINGS_NAV.map((group) => (
+            <div key={group.section}>
+              <button onClick={() => toggleSection(group.section)} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+                padding: "16px 20px 4px", fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.08em",
+                textTransform: "uppercase", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit",
+              }}>
+                {group.section}
+                {collapsed[group.section] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              </button>
+              {!collapsed[group.section] && group.items.map((item) => {
                 const active = section === item.id
                 const Icon = item.icon
                 return (
-                  <button key={item.id} onClick={() => setSection(item.id)}
-                    className="cursor-pointer"
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      width: "100%", height: 34, padding: "0 16px", border: "none",
-                      fontSize: 13, fontWeight: active ? 600 : 400, textAlign: "left",
-                      color: active ? "#606e74" : "#374151",
-                      background: active ? "rgba(96,110,116,0.08)" : "transparent",
-                      transition: "all 120ms",
-                    }}>
+                  <button key={item.id} onClick={() => setSection(item.id)} style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%", height: 38,
+                    padding: "0 12px 0 20px", border: "none", fontSize: 13, fontWeight: active ? 600 : 400,
+                    color: active ? "#606e74" : "#374151", background: active ? "rgba(96,110,116,0.08)" : "transparent",
+                    borderLeft: active ? "3px solid #606E74" : "3px solid transparent",
+                    cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                  }}>
                     <Icon size={15} strokeWidth={1.5} style={{ color: active ? "#606e74" : "#9ca3af", flexShrink: 0 }} />
                     {item.label}
                   </button>
@@ -560,12 +438,37 @@ export default function SettingsPage() {
             </div>
           ))}
         </nav>
-
         {/* Right content */}
-        <div style={{ flex: 1, padding: "32px", maxWidth: 720, overflowY: "auto" }}>
+        <div style={{ flex: 1, padding: "40px 48px", maxWidth: 800, overflowY: "auto" }}>
           {renderContent()}
         </div>
       </div>
     </>
+  )
+}
+
+function SH({ title, sub }: { title: string; sub: string }) {
+  return (<div style={{ marginBottom: 24 }}>
+    <h2 style={{ fontSize: 22, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>{title}</h2>
+    <p style={{ fontSize: 14, color: "#6b7280", margin: 0 }}>{sub}</p>
+  </div>)
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", background: "white" }}>{children}</div>
+}
+
+function TR({ label, desc, on, onChange, badge }: { label: string; desc: string; on: boolean; onChange: () => void; badge?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111827" }}>{label}</p>
+          {badge && <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: on ? "rgba(34,197,94,0.1)" : "rgba(234,179,8,0.1)", color: on ? "#16a34a" : "#d97706" }}>{badge}</span>}
+        </div>
+        <p style={{ margin: "2px 0 0", fontSize: 13, color: "#6b7280" }}>{desc}</p>
+      </div>
+      <Toggle on={on} onChange={onChange} />
+    </div>
   )
 }

@@ -284,6 +284,7 @@ model Client {
   formSubmissions FormSubmission[]
   waitlistEntries WaitlistEntry[]
   campaigns      CampaignRecipient[]
+  messages       Message[]
 }
 
 model FamilyMember {
@@ -819,5 +820,33 @@ model AiReceptionistCall {
   summary        String?
   rating         Int?
   recordingUrl   String?
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// MESSAGING
+// ═══════════════════════════════════════════
+
+model Message {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  client         Client   @relation(fields: [clientId], references: [id])
+  direction      String
+  channel        String   @default("sms")
+  content        String
+  status         String   @default("sent")
+  staffId        String?
+  isRead         Boolean  @default(false)
+  sentAt         DateTime @default(now())
+  readAt         DateTime?
+}
+
+model SavedResponse {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  content        String
+  category       String?
   createdAt      DateTime @default(now())
 }
