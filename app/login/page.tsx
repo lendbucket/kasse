@@ -1,25 +1,149 @@
-"use client";
+"use client"
 
-import { useState, type FormEvent } from "react";
-import { signIn } from "next-auth/react";
-import { CheckCircle2 } from "lucide-react";
-import Image from "next/image";
+import { useState, type FormEvent, Suspense } from "react"
+import { signIn } from "next-auth/react"
+import { useSearchParams } from "next/navigation"
+import { CheckCircle2, Eye, EyeOff, Zap, Loader2 } from "lucide-react"
+import Image from "next/image"
+
+type Tab = "signin" | "signup"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [sent, setSent] = useState(false);
+  return (
+    <Suspense>
+      <LoginPageInner />
+    </Suspense>
+  )
+}
 
-  async function handleMagicLink(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!email || submitting) return;
-    setSubmitting(true);
+function getPasswordStrength(pw: string) {
+  let score = 0
+  if (pw.length >= 8) score++
+  if (/[A-Z]/.test(pw)) score++
+  if (/[0-9]/.test(pw)) score++
+  if (/[^A-Za-z0-9]/.test(pw)) score++
+  return score
+}
+
+const strengthColors = ["#ef4444", "#f97316", "#eab308", "#22c55e"]
+const strengthLabels = ["Weak", "Fair", "Good", "Strong"]
+
+function LoginPageInner() {
+  const searchParams = useSearchParams()
+  const errorParam = searchParams.get("error")
+
+  const [tab, setTab] = useState<Tab>("signin")
+  // Sign in state
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [showPw, setShowPw] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
+  const [signInError, setSignInError] = useState(
+    errorParam === "expired_token" ? "Your verification link has expired. Please register again." :
+    errorParam === "invalid_token" ? "Invalid verification link." : ""
+  )
+  const [showResendVerify, setShowResendVerify] = useState(false)
+
+  // Sign up state
+  const [regName, setRegName] = useState("")
+  const [regBiz, setRegBiz] = useState("")
+  const [regEmail, setRegEmail] = useState("")
+  const [regPw, setRegPw] = useState("")
+  const [showRegPw, setShowRegPw] = useState(false)
+  const [registering, setRegistering] = useState(false)
+  const [regError, setRegError] = useState("")
+  const [regSuccess, setRegSuccess] = useState(false)
+  const [regSuccessEmail, setRegSuccessEmail] = useState("")
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  async function handleSignIn(e: FormEvent) {
+    e.preventDefault()
+    if (!email || !password || signingIn) return
+    setSigningIn(true)
+    setSignInError("")
+    setShowResendVerify(false)
     try {
-      await signIn("email", { email, callbackUrl: "/dashboard", redirect: false });
-      setSent(true);
+      const res = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      })
+      if (res?.error) {
+        if (res.error.includes("EMAIL_NOT_VERIFIED")) {
+          setSignInError("Please verify your email. Check your inbox.")
+          setShowResendVerify(true)
+        } else if (res.error.includes("ACCOUNT_DISABLED")) {
+          setSignInError("This account has been disabled. Contact support.")
+        } else {
+          setSignInError("Invalid email or password")
+        }
+      } else if (res?.ok) {
+        window.location.href = "/dashboard"
+      }
+    } catch {
+      setSignInError("Something went wrong. Please try again.")
     } finally {
-      setSubmitting(false);
+      setSigningIn(false)
     }
+  }
+
+  async function handleSignUp(e: FormEvent) {
+    e.preventDefault()
+    if (!regName || !regBiz || !regEmail || !regPw || registering) return
+    setRegistering(true)
+    setRegError("")
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setRegError(data.error || "Registration failed")
+      } else {
+        setRegSuccess(true)
+        setRegSuccessEmail(regEmail)
+      }
+    } catch {
+      setRegError("Something went wrong. Please try again.")
+    } finally {
+      setRegistering(false)
+    }
+  }
+
+  async function handleResendVerification() {
+    if (resendCooldown > 0) return
+    setResendCooldown(60)
+    const interval = setInterval(() => {
+      setResendCooldown((c) => {
+        if (c <= 1) { clearInterval(interval); return 0 }
+        return c - 1
+      })
+    }, 1000)
+    // Re-register triggers a new verification email
+    try {
+      await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: regName || "User", email: regSuccessEmail || email, password: "resend-only", businessName: "resend" }),
+      })
+    } catch {
+      // Silent fail on resend
+    }
+  }
+
+  const pwStrength = getPasswordStrength(regPw)
+  const pwChecks = [
+    { label: "At least 8 characters", met: regPw.length >= 8 },
+    { label: "Contains uppercase letter", met: /[A-Z]/.test(regPw) },
+    { label: "Contains number", met: /[0-9]/.test(regPw) },
+  ]
+
+  const inputStyle: React.CSSProperties = {
+    height: 44, width: "100%", borderRadius: 12, padding: "0 16px",
+    fontSize: 16, background: "white", border: "1px solid rgba(0,0,0,0.09)",
+    color: "#0a0c0e", outline: "none", transition: "all 150ms",
   }
 
   return (
@@ -43,154 +167,209 @@ export default function LoginPage() {
 
       {/* Top-left logo */}
       <div className="fixed left-8 top-8 z-30 flex flex-col">
-        <Image
-          src="/kasse-logo.png"
-          alt="kasse."
-          width={110}
-          height={38}
-          style={{ objectFit: "contain" }}
-          priority
-        />
+        <Image src="/kasse-logo.png" alt="kasse." width={110} height={38} style={{ objectFit: "contain" }} priority />
         <span style={{ fontSize: 11, letterSpacing: "0.12em", color: "rgba(255,255,255,0.7)", marginTop: 4 }}>
           Salon Management Platform
         </span>
       </div>
 
       {/* Glass card */}
-      <div
-        className="relative z-10 mx-4 w-full max-w-[420px]"
-        style={{ animation: "cardFloat 600ms ease-out both" }}
-      >
-        <div
-          style={{
-            borderRadius: 24,
-            padding: 40,
-            background: "rgba(255,255,255,0.94)",
-            backdropFilter: "blur(28px) saturate(200%)",
-            WebkitBackdropFilter: "blur(28px) saturate(200%)",
-            border: "1px solid rgba(255,255,255,0.9)",
-            boxShadow: "0 0 0 1px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.08), 0 16px 32px rgba(0,0,0,0.10), 0 32px 64px rgba(0,0,0,0.06)",
-          }}
-        >
+      <div className="relative z-10 mx-4 w-full max-w-[420px]" style={{ animation: "cardFloat 600ms ease-out both" }}>
+        <div style={{
+          borderRadius: 24, padding: "32px 40px 28px",
+          background: "rgba(255,255,255,0.94)",
+          backdropFilter: "blur(28px) saturate(200%)",
+          WebkitBackdropFilter: "blur(28px) saturate(200%)",
+          border: "1px solid rgba(255,255,255,0.9)",
+          boxShadow: "0 0 0 1px rgba(0,0,0,0.08), 0 4px 8px rgba(0,0,0,0.08), 0 16px 32px rgba(0,0,0,0.10), 0 32px 64px rgba(0,0,0,0.06)",
+        }}>
           {/* Logo */}
-          <div style={{
-            textAlign: "center",
-            animation: "fadeInUp 400ms ease-out 60ms both",
-          }}>
-            <Image
-              src="/kasse-logo.png"
-              alt="kasse."
-              width={80}
-              height={28}
-              style={{ objectFit: "contain", filter: "invert(1)", margin: "0 auto" }}
-              priority
-            />
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <Image src="/kasse-logo.png" alt="kasse." width={80} height={28}
+              style={{ objectFit: "contain", filter: "invert(1)", margin: "0 auto" }} priority />
           </div>
 
-          {/* Divider */}
-          <div style={{
-            height: 1, background: "rgba(0,0,0,0.08)", margin: "20px 0",
-            animation: "fadeInUp 400ms ease-out 120ms both",
-          }} />
-
-          {/* Heading */}
-          <div style={{ animation: "fadeInUp 400ms ease-out 180ms both" }}>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: "#0a0c0e", margin: 0 }}>Welcome back</h1>
-            <p style={{ fontSize: 13, color: "#4a5568", margin: "4px 0 24px" }}>Sign in to your account</p>
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 0, marginBottom: 24, borderRadius: 10, background: "#f3f4f6", padding: 3 }}>
+            {(["signin", "signup"] as Tab[]).map((t) => (
+              <button key={t} onClick={() => { setTab(t); setSignInError(""); setRegError("") }}
+                style={{
+                  flex: 1, height: 36, borderRadius: 8, border: "none",
+                  fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 150ms",
+                  background: tab === t ? "white" : "transparent",
+                  color: tab === t ? "#0a0c0e" : "#6b7280",
+                  boxShadow: tab === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                }}>
+                {t === "signin" ? "Sign In" : "Create Account"}
+              </button>
+            ))}
           </div>
 
-          {/* Google */}
-          <button
-            type="button"
-            onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-            className="flex h-[44px] w-full cursor-pointer items-center justify-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-150"
-            style={{
-              background: "white", border: "1px solid rgba(0,0,0,0.10)",
-              color: "#0a0c0e", animation: "fadeInUp 400ms ease-out 240ms both",
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A11.96 11.96 0 0 0 1 12c0 1.97.48 3.82 1.18 5.27l3.66-3.18z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 3.18c.87-2.6 3.3-4.87 6.16-4.87z"/>
-            </svg>
-            Continue with Google
-          </button>
-
-          {/* Divider */}
-          <div className="my-5 flex items-center gap-4" style={{ animation: "fadeInUp 400ms ease-out 300ms both" }}>
-            <div style={{ height: 1, flex: 1, background: "rgba(0,0,0,0.08)" }} />
-            <span style={{ fontSize: 11, color: "#9ca3af" }}>&mdash; or &mdash;</span>
-            <div style={{ height: 1, flex: 1, background: "rgba(0,0,0,0.08)" }} />
-          </div>
-
-          {/* Form */}
-          <div style={{ animation: "fadeInUp 400ms ease-out 360ms both" }}>
-            {sent ? (
-              <div style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-                borderRadius: 12, padding: "24px 16px",
-                border: "1px solid rgba(22,163,74,0.2)", background: "rgba(22,163,74,0.06)",
-                animation: "scaleIn 300ms ease-out both",
-              }}>
-                <CheckCircle2 size={28} strokeWidth={1.5} style={{ color: "#16a34a" }} />
-                <p style={{ fontSize: 14, fontWeight: 500, color: "#16a34a", margin: 0 }}>
-                  Magic link sent! Check your inbox.
-                </p>
+          {/* SIGN IN TAB */}
+          {tab === "signin" && (
+            <form onSubmit={handleSignIn} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label htmlFor="si-email" className="sr-only">Email</label>
+                <input id="si-email" type="email" required value={email}
+                  onChange={(e) => setEmail(e.target.value)} placeholder="Email address"
+                  style={inputStyle} />
               </div>
-            ) : (
-              <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
-                <label htmlFor="email-input" className="sr-only">Email address</label>
-                <input
-                  id="email-input" type="email" required value={email}
-                  onChange={(e) => setEmail(e.target.value)} placeholder="Enter your email"
+              <div style={{ position: "relative" }}>
+                <label htmlFor="si-pw" className="sr-only">Password</label>
+                <input id="si-pw" type={showPw ? "text" : "password"} required value={password}
+                  onChange={(e) => setPassword(e.target.value)} placeholder="Password"
+                  style={{ ...inputStyle, paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowPw(!showPw)}
+                  aria-label={showPw ? "Hide password" : "Show password"}
                   style={{
-                    height: 44, width: "100%", borderRadius: 12, padding: "0 16px",
-                    fontSize: 16, background: "white", border: "1px solid rgba(0,0,0,0.09)",
-                    color: "#0a0c0e", outline: "none", transition: "all 150ms",
-                    letterSpacing: "-0.31px",
-                  }}
-                />
-                <button
-                  type="submit" disabled={submitting}
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 0,
+                  }}>
+                  {showPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <a href="/forgot-password" style={{ fontSize: 13, color: "#606E74", textDecoration: "none", fontWeight: 500 }}>
+                  Forgot password?
+                </a>
+              </div>
+              {signInError && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
+                  <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{signInError}</p>
+                  {showResendVerify && (
+                    <button type="button" onClick={handleResendVerification}
+                      style={{ fontSize: 13, color: "#606E74", background: "none", border: "none", cursor: "pointer", marginTop: 4, padding: 0, textDecoration: "underline" }}>
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification email"}
+                    </button>
+                  )}
+                </div>
+              )}
+              <button type="submit" disabled={signingIn}
+                style={{
+                  height: 44, width: "100%", borderRadius: 12, border: "none",
+                  background: "#606E74", color: "white", fontSize: 14, fontWeight: 600,
+                  cursor: "pointer", transition: "all 150ms", marginTop: 4,
+                  opacity: signingIn ? 0.6 : 1,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                {signingIn && <Loader2 size={16} className="animate-spin" />}
+                {signingIn ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+          )}
+
+          {/* SIGN UP TAB */}
+          {tab === "signup" && !regSuccess && (
+            <form onSubmit={handleSignUp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label htmlFor="reg-name" className="sr-only">Full name</label>
+                <input id="reg-name" type="text" required value={regName}
+                  onChange={(e) => setRegName(e.target.value)} placeholder="Full name"
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label htmlFor="reg-biz" className="sr-only">Business name</label>
+                <input id="reg-biz" type="text" required value={regBiz}
+                  onChange={(e) => setRegBiz(e.target.value)} placeholder="Business name"
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label htmlFor="reg-email" className="sr-only">Email</label>
+                <input id="reg-email" type="email" required value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)} placeholder="Email address"
+                  style={inputStyle} />
+              </div>
+              <div style={{ position: "relative" }}>
+                <label htmlFor="reg-pw" className="sr-only">Password</label>
+                <input id="reg-pw" type={showRegPw ? "text" : "password"} required value={regPw}
+                  onChange={(e) => setRegPw(e.target.value)} placeholder="Password"
+                  minLength={8}
+                  style={{ ...inputStyle, paddingRight: 44 }} />
+                <button type="button" onClick={() => setShowRegPw(!showRegPw)}
+                  aria-label={showRegPw ? "Hide password" : "Show password"}
                   style={{
-                    height: 44, width: "100%", borderRadius: 12, border: "none",
-                    background: "#606E74", color: "white", fontSize: 14, fontWeight: 600,
-                    cursor: "pointer", transition: "all 150ms", marginTop: 4,
-                    opacity: submitting ? 0.6 : 1,
-                  }}
-                >{submitting ? "Sending..." : "Send Magic Link"}</button>
-              </form>
-            )}
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 0,
+                  }}>
+                  {showRegPw ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+              {/* Password strength */}
+              {regPw.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {[0, 1, 2, 3].map((i) => (
+                      <div key={i} style={{
+                        flex: 1, height: 3, borderRadius: 2,
+                        background: i < pwStrength ? strengthColors[pwStrength - 1] : "#e5e7eb",
+                        transition: "background 200ms",
+                      }} />
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 11, color: pwStrength > 0 ? strengthColors[pwStrength - 1] : "#9ca3af", margin: 0 }}>
+                    {pwStrength > 0 ? strengthLabels[pwStrength - 1] : ""}
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    {pwChecks.map((c) => (
+                      <p key={c.label} style={{ fontSize: 12, margin: 0, color: c.met ? "#16a34a" : "#9ca3af" }}>
+                        {c.met ? "\u2713" : "\u25CB"} {c.label}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {regError && (
+                <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
+                  <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{regError}</p>
+                </div>
+              )}
+              <button type="submit" disabled={registering}
+                style={{
+                  height: 44, width: "100%", borderRadius: 12, border: "none",
+                  background: "#606E74", color: "white", fontSize: 14, fontWeight: 600,
+                  cursor: "pointer", transition: "all 150ms", marginTop: 4,
+                  opacity: registering ? 0.6 : 1,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                {registering && <Loader2 size={16} className="animate-spin" />}
+                {registering ? "Creating account..." : "Create Account"}
+              </button>
+            </form>
+          )}
+
+          {/* Sign up success */}
+          {tab === "signup" && regSuccess && (
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+              padding: "24px 16px", borderRadius: 12,
+              border: "1px solid rgba(22,163,74,0.2)", background: "rgba(22,163,74,0.06)",
+              animation: "scaleIn 300ms ease-out both",
+            }}>
+              <CheckCircle2 size={48} strokeWidth={1.5} style={{ color: "#16a34a" }} />
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>Check your email!</h3>
+              <p style={{ fontSize: 14, color: "#6b7280", textAlign: "center", margin: 0, lineHeight: 1.5 }}>
+                We sent a verification link to <strong>{regSuccessEmail}</strong>. Click it to activate your account.
+              </p>
+              <button type="button" onClick={handleResendVerification}
+                style={{ fontSize: 13, color: "#6b7280", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend email"}
+              </button>
+            </div>
+          )}
+
+          {/* Bottom */}
+          <div style={{ height: 1, background: "rgba(0,0,0,0.08)", margin: "20px 0" }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, marginBottom: 12 }}>
+            <Zap size={10} style={{ color: "#9ca3af" }} />
+            <span style={{ fontSize: 11, color: "#9ca3af" }}>Powered by SalonTransact</span>
           </div>
-
-          {/* Divider */}
-          <div style={{
-            height: 1, background: "rgba(0,0,0,0.08)", margin: "20px 0",
-            animation: "fadeInUp 400ms ease-out 420ms both",
-          }} />
-
-          {/* Links */}
-          <p style={{
-            textAlign: "center", fontSize: 13, color: "#4a5568",
-            animation: "fadeInUp 400ms ease-out 480ms both", margin: 0,
-          }}>
-            New to Kasse?{" "}
-            <a href="/onboarding" style={{ color: "#606E74", fontWeight: 600, textDecoration: "none" }}>
-              Create an account &rarr;
-            </a>
-          </p>
-          <p style={{
-            textAlign: "center", fontSize: 11, color: "rgba(0,0,0,0.35)", marginTop: 20,
-            animation: "fadeInUp 400ms ease-out 540ms both",
-          }}>
+          <p style={{ textAlign: "center", fontSize: 11, color: "rgba(0,0,0,0.35)", margin: 0 }}>
             Terms of Service &middot; Privacy Policy
           </p>
         </div>
       </div>
 
-      {/* Social proof */}
+      {/* Social proof pills */}
       <div className="fixed bottom-8 right-8 z-30 hidden items-center gap-2 md:flex">
         {["Trusted by 500+ salons", "PCI Compliant", "SOC 2 Type II"].map((pill) => (
           <span key={pill} style={{
@@ -204,11 +383,13 @@ export default function LoginPage() {
       <style>{`
         @keyframes kenBurns { from { transform: scale(1); } to { transform: scale(1.05); } }
         @keyframes cardFloat { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         @media (prefers-reduced-motion: reduce) {
           @keyframes kenBurns { from, to { transform: scale(1); } }
           @keyframes cardFloat { from, to { opacity: 1; transform: none; } }
+          @keyframes scaleIn { from, to { opacity: 1; transform: none; } }
         }
       `}</style>
     </main>
-  );
+  )
 }

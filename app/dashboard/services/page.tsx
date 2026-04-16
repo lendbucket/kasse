@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Plus, Pencil, Power, Tag, X } from "lucide-react";
 
 type Location = { id: string; name: string };
-type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string; active: boolean };
+type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string; isActive: boolean };
 
 const ALL_CAT = "All";
 const CAT_SUGGEST = ["Hair", "Color", "Treatment", "Nails", "Waxing", "Other"];
@@ -35,8 +35,8 @@ export default function ServicesPage() {
   const filtered = useMemo(() => category === ALL_CAT ? services : services.filter((s) => s.category === category), [services, category]);
 
   async function toggleActive(svc: Service) {
-    const next = !svc.active; const prev = services;
-    setServices((l) => l.map((s) => (s.id === svc.id ? { ...s, active: next } : s)));
+    const next = !svc.isActive; const prev = services;
+    setServices((l) => l.map((s) => (s.id === svc.id ? { ...s, isActive: next } : s)));
     try { const r = await fetch(`/api/services/${svc.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: next }) }); if (!r.ok) throw new Error(); } catch { setServices(prev); }
   }
 
@@ -83,13 +83,13 @@ export default function ServicesPage() {
                     <td style={{ fontFamily: "var(--font-fira), monospace", color: "#6b7280" }}>{s.duration} min</td>
                     <td style={{ fontFamily: "var(--font-fira), monospace", fontWeight: 700 }}>{fmt(s.price)}</td>
                     <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db" }} />
-                      <span style={{ color: s.active ? "#16a34a" : "#9ca3af" }}>{s.active ? "Active" : "Inactive"}</span>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "#16a34a" : "#d1d5db" }} />
+                      <span style={{ color: s.isActive ? "#16a34a" : "#9ca3af" }}>{s.isActive ? "Active" : "Inactive"}</span>
                     </span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
                         <button onClick={() => setModalState({ open: true, mode: "edit", service: s })} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
-                        <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                        <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                       </div>
                     </td>
                   </tr>
@@ -101,12 +101,12 @@ export default function ServicesPage() {
                 <div key={s.id} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                     <div><p style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>{s.name}</p>{s.category && <span style={{ fontSize: 12, color: "#606E74" }}>{s.category}</span>}</div>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.active ? "#16a34a" : "#9ca3af" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db" }} />{s.active ? "Active" : "Inactive"}</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.isActive ? "#16a34a" : "#9ca3af" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "#16a34a" : "#d1d5db" }} />{s.isActive ? "Active" : "Inactive"}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontFamily: "var(--font-fira), monospace", fontSize: 14 }}><span style={{ fontWeight: 700, color: "#111827" }}>{fmt(s.price)}</span><span style={{ color: "#6b7280" }}>{s.duration} min</span></div>
                   <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
                     <button onClick={() => setModalState({ open: true, mode: "edit", service: s })} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: "#6b7280", cursor: "pointer" }}>Edit</button>
-                    <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                    <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                   </div>
                 </div>
               ))}
@@ -124,7 +124,7 @@ function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "c
   const [name, setName] = useState(service?.name ?? ""); const [cat, setCat] = useState(service?.category ?? "");
   const [price, setPrice] = useState(service ? String(service.price) : ""); const [duration, setDuration] = useState(service ? String(service.duration) : "");
   const [locationId, setLocationId] = useState(service?.locationId ?? locations[0]?.id ?? "");
-  const [active, setActive] = useState(service?.active ?? true);
+  const [active, setActive] = useState(service?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 

@@ -78,6 +78,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Get organizationId from location
+  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
+  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+
   const client = await prisma.client.create({
     data: {
       name: body.name.trim(),
@@ -85,6 +89,7 @@ export async function POST(request: NextRequest) {
       phone: body.phone?.trim() || null,
       notes: body.notes?.trim() || null,
       locationId: body.locationId,
+      organizationId: location.organizationId,
     },
   });
 

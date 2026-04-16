@@ -56,7 +56,7 @@ export async function PATCH(
   if (typeof body.locationId === "string" && body.locationId) {
     data.locationId = body.locationId;
   }
-  if (typeof body.active === "boolean") data.active = body.active;
+  if (typeof body.active === "boolean") data.isActive = body.active;
 
   const service = await prisma.service.update({ where: { id }, data });
   return NextResponse.json({ service });
@@ -74,7 +74,7 @@ export async function DELETE(
   const { id } = await params;
   const service = await prisma.service.update({
     where: { id },
-    data: { active: false },
+    data: { isActive: false },
   });
   return NextResponse.json({ service });
 }

@@ -6,12 +6,26 @@ const prisma = new PrismaClient({
 });
 
 async function main() {
+  // Create a seed organization first
+  const org = await prisma.organization.upsert({
+    where: { slug: "seed-salon" },
+    update: {},
+    create: {
+      id: "seed-org",
+      name: "Seed Salon",
+      slug: "seed-salon",
+      plan: "starter",
+      planStatus: "trial",
+    },
+  });
+
   const location = await prisma.location.upsert({
     where: { id: "seed-main-location" },
     update: {},
     create: {
       id: "seed-main-location",
       name: "Main Location",
+      organizationId: org.id,
     },
   });
 
@@ -25,6 +39,7 @@ async function main() {
       duration: 45,
       category: "Hair",
       locationId: location.id,
+      organizationId: org.id,
     },
   });
 
@@ -38,6 +53,7 @@ async function main() {
       duration: 60,
       category: "Hair",
       locationId: location.id,
+      organizationId: org.id,
     },
   });
 
@@ -49,7 +65,8 @@ async function main() {
       name: "Clarissa Reyna",
       role: "manager",
       locationId: location.id,
-      active: true,
+      organizationId: org.id,
+      isActive: true,
     },
   });
 
@@ -61,11 +78,12 @@ async function main() {
       name: "Alexis Rodriguez",
       role: "stylist",
       locationId: location.id,
-      active: true,
+      organizationId: org.id,
+      isActive: true,
     },
   });
 
-  console.log("Seeded location + services + staff");
+  console.log("Seeded organization + location + services + staff");
 }
 
 main()

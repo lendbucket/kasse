@@ -31,12 +31,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
+  // Get organizationId from location
+  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
+  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+
   const transaction = await prisma.transaction.create({
     data: {
       locationId: body.locationId,
+      organizationId: location.organizationId,
       staffId: body.staffId ?? null,
       clientName: body.clientName ?? null,
-      amount: body.amount,
+      subtotal: body.amount,
       tip: body.tip ?? 0,
       tax: body.tax ?? 0,
       total: body.total,

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const where: Record<string, unknown> = {};
   if (locationId) where.locationId = locationId;
   if (activeParam !== "all") {
-    where.active = activeParam === "false" ? false : true;
+    where.isActive = activeParam === "false" ? false : true;
   }
 
   const staff = await prisma.staff.findMany({
@@ -61,6 +61,10 @@ export async function POST(request: NextRequest) {
 
   const role = body.role === "manager" ? "manager" : "stylist";
 
+  // Get organizationId from location
+  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
+  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+
   const staff = await prisma.staff.create({
     data: {
       name: body.name.trim(),
@@ -68,7 +72,8 @@ export async function POST(request: NextRequest) {
       phone: body.phone?.trim() || null,
       role,
       locationId: body.locationId,
-      active: body.active ?? true,
+      organizationId: location.organizationId,
+      isActive: body.active ?? true,
     },
   });
 

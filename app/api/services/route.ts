@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const where: Record<string, unknown> = {};
   if (locationId) where.locationId = locationId;
   if (activeParam !== "all") {
-    where.active = activeParam === "false" ? false : true;
+    where.isActive = activeParam === "false" ? false : true;
   }
 
   const services = await prisma.service.findMany({
@@ -63,6 +63,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Get organizationId from location
+  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
+  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+
   const service = await prisma.service.create({
     data: {
       name: body.name.trim(),
@@ -70,7 +74,8 @@ export async function POST(request: NextRequest) {
       duration: Math.round(body.duration),
       category: body.category?.trim() || null,
       locationId: body.locationId,
-      active: body.active ?? true,
+      organizationId: location.organizationId,
+      isActive: body.active ?? true,
     },
   });
 

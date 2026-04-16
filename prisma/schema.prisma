@@ -8,22 +8,92 @@ datasource db {
 }
 
 // ═══════════════════════════════════════════
-// AUTH
+// ORGANIZATIONS & FRANCHISING
+// ═══════════════════════════════════════════
+
+model Organization {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  logoUrl           String?
+  primaryColor      String?  @default("#606E74")
+  email             String?
+  phone             String?
+  website           String?
+  address           String?
+  city              String?
+  state             String?
+  zip               String?
+  country           String   @default("US")
+  timezone          String   @default("America/Chicago")
+  language          String   @default("en")
+  isFranchise       Boolean  @default(false)
+  franchiseFeeType  String?
+  franchiseFeeValue Float?
+  techFeeType       String?
+  techFeeValue      Float?
+  marketingFeeType  String?
+  marketingFeeValue Float?
+  parentOrgId       String?
+  parentOrg         Organization?  @relation("FranchiseHierarchy", fields: [parentOrgId], references: [id])
+  childOrgs         Organization[] @relation("FranchiseHierarchy")
+  plan              String   @default("starter")
+  planStatus        String   @default("trial")
+  trialEndsAt       DateTime?
+  stripeCustomerId  String?
+  stripeSubId       String?
+  salonTransactId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  locations         Location[]
+  users             User[]
+  staff             Staff[]
+  clients           Client[]
+  services          Service[]
+  appointments      Appointment[]
+  transactions      Transaction[]
+  giftCards         GiftCard[]
+  loyaltyProgram    LoyaltyProgram?
+  memberships       Membership[]
+  campaigns         Campaign[]
+  waitlistEntries   WaitlistEntry[]
+  importJobs        ImportJob[]
+  permissionSets    PermissionSet[]
+  apiKeys           ApiKey[]
+  webhooks          Webhook[]
+  devices           Device[]
+}
+
+// ═══════════════════════════════════════════
+// AUTH & USERS
 // ═══════════════════════════════════════════
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  image         String?
-  password      String?
-  role          String    @default("stylist") // owner | manager | stylist
-  locationId    String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
+  id               String    @id @default(cuid())
+  name             String?
+  email            String    @unique
+  emailVerified    DateTime?
+  emailVerifyToken String?
+  emailVerifyExp   DateTime?
+  password         String?
+  image            String?
+  role             String    @default("staff")
+  organizationId   String?
+  organization     Organization? @relation(fields: [organizationId], references: [id])
+  locationId       String?
+  staffId          String?
+  isActive         Boolean   @default(true)
+  lastLoginAt      DateTime?
+  passwordResetToken String?
+  passwordResetExp   DateTime?
+  twoFactorEnabled   Boolean  @default(false)
+  twoFactorSecret    String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  accounts         Account[]
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
 }
 
 model Account {
@@ -40,7 +110,6 @@ model Account {
   id_token          String?
   session_state     String?
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([provider, providerAccountId])
 }
 
@@ -56,94 +125,688 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
-
   @@unique([identifier, token])
 }
 
 // ═══════════════════════════════════════════
-// CORE BUSINESS
+// LOCATIONS
 // ═══════════════════════════════════════════
 
 model Location {
-  id           String        @id @default(cuid())
-  name         String
-  address      String?
-  phone        String?
-  email        String?
-  createdAt    DateTime      @default(now())
-  clients      Client[]
-  staff        Staff[]
-  services     Service[]
-  appointments Appointment[]
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  phone          String?
+  email          String?
+  timezone       String   @default("America/Chicago")
+  isActive       Boolean  @default(true)
+  taxRate        Float    @default(8.25)
+  logoUrl        String?
+  coverImageUrl  String?
+  lat            Float?
+  lng            Float?
+  geofenceRadius Int      @default(500)
+  businessHours  Json?
+  salonTransactLocationId String?
+  createdAt      DateTime @default(now())
+  staff          Staff[]
+  clients        Client[]
+  services       Service[]
+  appointments   Appointment[]
+  transactions   Transaction[]
+  devices        Device[]
+  waitlistEntries WaitlistEntry[]
 }
+
+// ═══════════════════════════════════════════
+// STAFF
+// ═══════════════════════════════════════════
 
 model Staff {
-  id           String        @id @default(cuid())
-  name         String
-  email        String?
-  phone        String?
-  role         String        @default("stylist") // manager | stylist
-  locationId   String
-  location     Location      @relation(fields: [locationId], references: [id])
-  active       Boolean       @default(true)
-  createdAt    DateTime      @default(now())
-  appointments Appointment[]
+  id               String   @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id])
+  userId           String?
+  name             String
+  email            String?
+  phone            String?
+  role             String   @default("stylist")
+  jobTitle         String?
+  commissionType   String   @default("percentage")
+  commissionRate   Float    @default(40)
+  isActive         Boolean  @default(true)
+  color            String?
+  bio              String?
+  avatarUrl        String?
+  licenseNumber    String?
+  licenseExpiry    DateTime?
+  hireDate         DateTime?
+  goals            Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  appointments     Appointment[]
+  clockEvents      ClockEvent[]
+  performanceStats PerformanceStat[]
 }
+
+model ClockEvent {
+  id         String   @id @default(cuid())
+  staffId    String
+  staff      Staff    @relation(fields: [staffId], references: [id])
+  type       String
+  timestamp  DateTime @default(now())
+  lat        Float?
+  lng        Float?
+  withinGeofence Boolean @default(false)
+  ipAddress  String?
+}
+
+model PerformanceStat {
+  id           String   @id @default(cuid())
+  staffId      String
+  staff        Staff    @relation(fields: [staffId], references: [id])
+  periodStart  DateTime
+  periodEnd    DateTime
+  revenue      Float    @default(0)
+  transactions Int      @default(0)
+  tips         Float    @default(0)
+  commission   Float    @default(0)
+  rebooks      Int      @default(0)
+  newClients   Int      @default(0)
+  retailSales  Float    @default(0)
+  createdAt    DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// CLIENTS
+// ═══════════════════════════════════════════
 
 model Client {
-  id           String        @id @default(cuid())
-  name         String
-  email        String?
-  phone        String?
-  locationId   String
-  location     Location      @relation(fields: [locationId], references: [id])
-  notes        String?
-  createdAt    DateTime      @default(now())
-  appointments Appointment[]
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id])
+  name           String
+  firstName      String?
+  lastName       String?
+  email          String?
+  phone          String?
+  altPhone       String?
+  dateOfBirth    DateTime?
+  gender         String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  notes          String?
+  preferredStaffId String?
+  genderPref     String?
+  referralSource String?
+  referredById   String?
+  tags           String[]
+  isActive       Boolean  @default(true)
+  marketingOptIn Boolean  @default(false)
+  smsOptIn       Boolean  @default(false)
+  emailOptIn     Boolean  @default(false)
+  loyaltyPoints  Int      @default(0)
+  totalSpent     Float    @default(0)
+  visitCount     Int      @default(0)
+  lastVisitAt    DateTime?
+  cardOnFile     Boolean  @default(false)
+  stripeCustomerId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  familyMembers  FamilyMember[]
+  appointments   Appointment[]
+  transactions   Transaction[]
+  giftCards      GiftCard[]
+  memberships    ClientMembership[]
+  loyaltyHistory LoyaltyEvent[]
+  formSubmissions FormSubmission[]
+  waitlistEntries WaitlistEntry[]
+  campaigns      CampaignRecipient[]
 }
+
+model FamilyMember {
+  id           String   @id @default(cuid())
+  primaryClientId String
+  primaryClient Client   @relation(fields: [primaryClientId], references: [id])
+  name         String
+  relationship String?
+  dateOfBirth  DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// SERVICES
+// ═══════════════════════════════════════════
 
 model Service {
-  id         String   @id @default(cuid())
-  name       String
-  price      Float
-  duration   Int // minutes
-  category   String?
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id])
+  name           String
+  description    String?
+  category       String?
+  price          Float
+  duration       Int
+  bufferTime     Int      @default(0)
+  isAddon        Boolean  @default(false)
+  addonAddsTime  Boolean  @default(false)
+  maxAddonTime   Int?
+  isActive       Boolean  @default(true)
+  taxable        Boolean  @default(true)
+  color          String?
+  imageUrl       String?
+  depositRequired Boolean @default(false)
+  depositAmount  Float?
+  depositType    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  appointments   Appointment[]
 }
+
+// ═══════════════════════════════════════════
+// APPOINTMENTS
+// ═══════════════════════════════════════════
 
 model Appointment {
-  id          String   @id @default(cuid())
-  clientId    String?
-  clientName  String?
-  staffId     String
-  locationId  String
-  serviceId   String?
-  serviceName String?
-  price       Float?
-  status      String   @default("scheduled") // scheduled | completed | cancelled | no_show
-  startTime   DateTime
-  endTime     DateTime
-  notes       String?
-  createdAt   DateTime @default(now())
-  client      Client?  @relation(fields: [clientId], references: [id])
-  staff       Staff    @relation(fields: [staffId], references: [id])
-  location    Location @relation(fields: [locationId], references: [id])
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  clientId       String?
+  client         Client?  @relation(fields: [clientId], references: [id])
+  staffId        String
+  staff          Staff    @relation(fields: [staffId], references: [id])
+  serviceId      String?
+  service        Service? @relation(fields: [serviceId], references: [id])
+  clientName     String?
+  serviceName    String?
+  price          Float?
+  depositPaid    Float    @default(0)
+  status         String   @default("scheduled")
+  startTime      DateTime
+  endTime        DateTime
+  notes          String?
+  internalNotes  String?
+  isWalkIn       Boolean  @default(false)
+  checkoutCode   String?  @unique
+  checkedInAt    DateTime?
+  completedAt    DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  reminderSent   Boolean  @default(false)
+  confirmationSent Boolean @default(false)
+  rebookedFrom   String?
+  addons         AppointmentAddon[]
+  formSubmissions FormSubmission[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
-model Transaction {
+model AppointmentAddon {
   id            String   @id @default(cuid())
-  appointmentId String?
-  locationId    String
-  staffId       String?
-  clientName    String?
-  amount        Float
-  tip           Float    @default(0)
-  tax           Float    @default(0)
-  total         Float
-  paymentMethod String? // cash | card | other
-  status        String   @default("completed")
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  name          String
+  price         Float
+  duration      Int      @default(0)
+  addedBy       String?
   createdAt     DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// TRANSACTIONS & PAYMENTS
+// ═══════════════════════════════════════════
+
+model Transaction {
+  id               String   @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id])
+  appointmentId    String?
+  clientId         String?
+  client           Client?  @relation(fields: [clientId], references: [id])
+  staffId          String?
+  clientName       String?
+  subtotal         Float
+  tax              Float    @default(0)
+  tip              Float    @default(0)
+  discount         Float    @default(0)
+  giftCardAmount   Float    @default(0)
+  loyaltyAmount    Float    @default(0)
+  depositApplied   Float    @default(0)
+  total            Float
+  paymentMethod    String?
+  salonTransactId  String?
+  stripePaymentId  String?
+  status           String   @default("completed")
+  receiptSent      Boolean  @default(false)
+  receiptEmail     String?
+  notes            String?
+  items            TransactionItem[]
+  createdAt        DateTime @default(now())
+}
+
+model TransactionItem {
+  id            String   @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  name          String
+  type          String
+  price         Float
+  quantity      Int      @default(1)
+  staffId       String?
+  commissionRate Float?
+  createdAt     DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// GIFT CARDS
+// ═══════════════════════════════════════════
+
+model GiftCard {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  clientId       String?
+  client         Client?  @relation(fields: [clientId], references: [id])
+  code           String   @unique
+  initialBalance Float
+  balance        Float
+  isActive       Boolean  @default(true)
+  expiresAt      DateTime?
+  purchasedAt    DateTime @default(now())
+  redemptions    GiftCardRedemption[]
+}
+
+model GiftCardRedemption {
+  id          String   @id @default(cuid())
+  giftCardId  String
+  giftCard    GiftCard @relation(fields: [giftCardId], references: [id])
+  amount      Float
+  transactionId String?
+  redeemedAt  DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// LOYALTY
+// ═══════════════════════════════════════════
+
+model LoyaltyProgram {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String   @default("Rewards")
+  pointsPerDollar Float   @default(1)
+  dollarPerPoint  Float   @default(0.01)
+  minRedemption  Int      @default(100)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model LoyaltyEvent {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id])
+  type      String
+  points    Int
+  balance   Int
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// MEMBERSHIPS
+// ═══════════════════════════════════════════
+
+model Membership {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  description    String?
+  price          Float
+  billingCycle   String   @default("monthly")
+  discountType   String?
+  discountValue  Float?
+  servicesIncluded Json?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  clients        ClientMembership[]
+}
+
+model ClientMembership {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+  membershipId String
+  membership   Membership @relation(fields: [membershipId], references: [id])
+  status       String   @default("active")
+  startDate    DateTime @default(now())
+  nextBillingDate DateTime?
+  stripeSubId  String?
+  createdAt    DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// WAITLIST
+// ═══════════════════════════════════════════
+
+model WaitlistEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  clientId       String?
+  client         Client?  @relation(fields: [clientId], references: [id])
+  clientName     String?
+  clientPhone    String?
+  clientEmail    String?
+  serviceId      String?
+  serviceName    String?
+  preferredStaffId String?
+  preferredDate  DateTime?
+  flexibleDates  Boolean  @default(true)
+  status         String   @default("waiting")
+  notifiedAt     DateTime?
+  expiresAt      DateTime?
+  notes          String?
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// MARKETING & CAMPAIGNS
+// ═══════════════════════════════════════════
+
+model Campaign {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  type           String
+  channel        String
+  status         String   @default("draft")
+  subject        String?
+  content        String?
+  htmlContent    String?
+  segmentRules   Json?
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  sentCount      Int      @default(0)
+  openCount      Int      @default(0)
+  clickCount     Int      @default(0)
+  triggerType    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  recipients     CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id])
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id])
+  status     String   @default("pending")
+  sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
+}
+
+// ═══════════════════════════════════════════
+// REPUTATION MANAGEMENT
+// ═══════════════════════════════════════════
+
+model ReviewRequest {
+  id             String   @id @default(cuid())
+  organizationId String
+  locationId     String?
+  clientId       String?
+  clientName     String?
+  clientEmail    String?
+  clientPhone    String?
+  transactionId  String?
+  channel        String
+  status         String   @default("sent")
+  rating         Int?
+  feedback       String?
+  pushedToGoogle Boolean  @default(false)
+  pushedToYelp   Boolean  @default(false)
+  sentAt         DateTime @default(now())
+  respondedAt    DateTime?
+}
+
+// ═══════════════════════════════════════════
+// FORMS & WAIVERS
+// ═══════════════════════════════════════════
+
+model FormTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  type           String
+  fields         Json
+  isActive       Boolean  @default(true)
+  requiresSignature Boolean @default(false)
+  createdAt      DateTime @default(now())
+  submissions    FormSubmission[]
+}
+
+model FormSubmission {
+  id             String   @id @default(cuid())
+  formTemplateId String
+  formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
+  clientId       String?
+  client         Client?  @relation(fields: [clientId], references: [id])
+  appointmentId  String?
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  data           Json
+  signature      String?
+  submittedAt    DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// PERMISSIONS
+// ═══════════════════════════════════════════
+
+model PermissionSet {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  permissions    Json
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════
+
+model BusinessSettings {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  onlineBookingEnabled Boolean @default(true)
+  bookingLeadTime      Int     @default(60)
+  bookingMaxAdvance    Int     @default(60)
+  allowWalkIns         Boolean @default(true)
+  requireDeposit       Boolean @default(false)
+  depositPercentage    Float   @default(25)
+  cancellationPolicy   String?
+  cancellationWindow   Int     @default(24)
+  cancellationFee      Float?
+  sendConfirmations    Boolean @default(true)
+  sendReminders        Boolean @default(true)
+  reminderHours        Int     @default(24)
+  sendReviewRequests   Boolean @default(true)
+  reviewRequestDelay   Int     @default(2)
+  acceptCash           Boolean @default(true)
+  acceptCard           Boolean @default(true)
+  acceptGiftCard       Boolean @default(true)
+  taxRate              Float   @default(8.25)
+  tipPromptEnabled     Boolean @default(true)
+  tipOptions           Json    @default("[15, 20, 25]")
+  receiptFooter        String?
+  receiptLogo          Boolean @default(true)
+  autoSendReceipt      Boolean @default(true)
+  loyaltyEnabled       Boolean @default(false)
+  googlePlaceId        String?
+  yelpBusinessId       String?
+  autoRequestReviews   Boolean @default(true)
+  minRatingForGoogle   Int     @default(4)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════
+// DATA IMPORT / MIGRATION
+// ═══════════════════════════════════════════
+
+model ImportJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  type           String
+  status         String   @default("pending")
+  fileName       String?
+  totalRows      Int      @default(0)
+  processedRows  Int      @default(0)
+  successRows    Int      @default(0)
+  failedRows     Int      @default(0)
+  errors         Json?
+  sourceSystem   String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+}
+
+// ═══════════════════════════════════════════
+// DEVICES & KIOSK
+// ═══════════════════════════════════════════
+
+model Device {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  name           String
+  type           String
+  deviceCode     String   @unique
+  isActive       Boolean  @default(true)
+  lastSeenAt     DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// AUDIT LOG
+// ═══════════════════════════════════════════
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+  organizationId String?
+  action         String
+  entity         String?
+  entityId       String?
+  before         Json?
+  after          Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// API KEYS & WEBHOOKS
+// ═══════════════════════════════════════════
+
+model ApiKey {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  keyHash        String   @unique
+  keyPrefix      String
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+}
+
+model Webhook {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  url            String
+  events         String[]
+  secret         String
+  isActive       Boolean  @default(true)
+  lastTriggeredAt DateTime?
+  createdAt      DateTime @default(now())
+}
+
+// ═══════════════════════════════════════════
+// AI RECEPTIONIST
+// ═══════════════════════════════════════════
+
+model AiReceptionistConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  isEnabled      Boolean  @default(false)
+  voiceId        String?
+  greeting       String?
+  businessHours  Json?
+  handoffNumber  String?
+  handoffEmail   String?
+  capabilities   Json     @default("{\"booking\": true, \"reschedule\": true, \"cancel\": true, \"faq\": true}")
+  callsHandled   Int      @default(0)
+  callsTransferred Int    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model AiReceptionistCall {
+  id             String   @id @default(cuid())
+  organizationId String
+  callerPhone    String?
+  callerName     String?
+  duration       Int?
+  outcome        String?
+  transcript     String?
+  summary        String?
+  rating         Int?
+  recordingUrl   String?
+  createdAt      DateTime @default(now())
 }

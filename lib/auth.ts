@@ -1,68 +1,84 @@
-import type { NextAuthOptions } from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
-import EmailProvider from "next-auth/providers/email";
-import { PrismaAdapter } from "@auth/prisma-adapter";
-import { prisma } from "@/lib/prisma";
-import { magicLinkEmail } from "./email-template";
-import { Resend } from "resend";
+import type { NextAuthOptions } from "next-auth"
+import { PrismaAdapter } from "@auth/prisma-adapter"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { prisma } from "./prisma"
+import bcrypt from "bcryptjs"
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma) as any,
+  session: { strategy: "jwt" },
+  pages: {
+    signIn: "/login",
+    newUser: "/onboarding",
+    error: "/login",
+  },
+  providers: [
+    CredentialsProvider({
+      name: "credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email.toLowerCase() },
+          include: { organization: true },
+        })
+        if (!user || !user.password) return null
+        if (!user.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
+        if (!user.isActive) throw new Error("ACCOUNT_DISABLED")
+        const valid = await bcrypt.compare(credentials.password, user.password)
+        if (!valid) return null
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        })
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          organizationId: user.organizationId,
+        }
+      },
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+        token.role = (user as any).role
+        token.organizationId = (user as any).organizationId
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string
+        session.user.role = token.role as string
+        session.user.organizationId = token.organizationId as string
+      }
+      return session
+    },
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith(baseUrl)) return url
+      return baseUrl + "/dashboard"
+    },
+  },
+}
 
 declare module "next-auth" {
   interface Session {
     user: {
-      id: string;
-      name?: string | null;
-      email?: string | null;
-      image?: string | null;
-    };
+      id: string
+      name?: string | null
+      email?: string | null
+      image?: string | null
+      role: string
+      organizationId?: string | null
+    }
   }
 }
 
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
-  providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
-    }),
-    EmailProvider({
-      server: {
-        host: "smtp.resend.com",
-        port: 465,
-        auth: {
-          user: "resend",
-          pass: process.env.RESEND_API_KEY,
-        },
-        secure: true,
-      },
-      from: "Kasse <noreply@kasseapp.com>",
-      sendVerificationRequest: async ({ identifier, url }) => {
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: "Kasse <noreply@kasseapp.com>",
-          to: identifier,
-          subject: "Sign in to Kasse",
-          html: magicLinkEmail(url),
-        });
-      },
-    }),
-  ],
-  session: { strategy: "database" },
-  pages: {
-    signIn: "/login",
-    newUser: "/onboarding",
-  },
-  callbacks: {
-    async session({ session, user }) {
-      if (session.user && user) {
-        session.user.id = user.id;
-      }
-      return session;
-    },
-    async redirect({ url, baseUrl }) {
-      if (url.startsWith(baseUrl)) return url;
-      return baseUrl + "/dashboard";
-    },
-  },
-};
-
-export default authOptions;
+export default authOptions

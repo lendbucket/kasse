@@ -85,9 +85,14 @@ export async function POST(request: NextRequest) {
 
   const end = new Date(start.getTime() + duration * 60_000);
 
+  // Get organizationId from location
+  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
+  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+
   const appointment = await prisma.appointment.create({
     data: {
       locationId: body.locationId,
+      organizationId: location.organizationId,
       staffId: body.staffId,
       serviceId: body.serviceId ?? null,
       serviceName,

@@ -1,10 +1,10 @@
-"use client";
+"use client"
 
-import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
-import Link from "next/link";
-import Image from "next/image";
-import { NAV_ITEMS } from "./nav-items";
+import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
+import Link from "next/link"
+import Image from "next/image"
+import { NAV_ITEMS } from "./nav-items"
 import {
   Search,
   CreditCard,
@@ -12,18 +12,25 @@ import {
   MessageSquare,
   FileText,
   HelpCircle,
-  User,
+  LogOut,
   ChevronDown,
-} from "lucide-react";
+  Shield,
+} from "lucide-react"
 
 interface SidebarProps {
-  user: { name?: string | null; email?: string | null; image?: string | null };
+  user: {
+    name?: string | null
+    email?: string | null
+    image?: string | null
+    role?: string
+    organizationId?: string | null
+  }
 }
 
 export default function Sidebar({ user }: SidebarProps) {
-  const pathname = usePathname();
+  const pathname = usePathname()
   const initials = (user.name ?? user.email ?? "?")
-    .split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+    .split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
 
   return (
     <aside style={{
@@ -62,8 +69,8 @@ export default function Sidebar({ user }: SidebarProps) {
         {NAV_ITEMS.map((item) => {
           const active = item.href === "/dashboard"
             ? pathname === "/dashboard"
-            : pathname.startsWith(item.href);
-          const Icon = item.icon;
+            : pathname.startsWith(item.href)
+          const Icon = item.icon
           return (
             <Link key={item.href} href={item.href} style={{
               height: 40, display: "flex", alignItems: "center", gap: 10,
@@ -76,8 +83,24 @@ export default function Sidebar({ user }: SidebarProps) {
               <Icon size={18} strokeWidth={1.5} style={{ color: active ? "#606E74" : "#6b7280", flexShrink: 0 }} />
               {item.label}
             </Link>
-          );
+          )
         })}
+
+        {/* Admin link — only for superadmin */}
+        {user.role === "superadmin" && (
+          <Link href="/admin" style={{
+            height: 40, display: "flex", alignItems: "center", gap: 10,
+            padding: "0 10px", borderRadius: 6, fontSize: 14,
+            fontWeight: pathname.startsWith("/admin") ? 600 : 500, textDecoration: "none",
+            transition: "all 120ms",
+            color: pathname.startsWith("/admin") ? "#606E74" : "#374151",
+            background: pathname.startsWith("/admin") ? "rgba(96,110,116,0.10)" : "transparent",
+            marginTop: 8, borderTop: "1px solid #e5e7eb", paddingTop: 12,
+          }}>
+            <Shield size={18} strokeWidth={1.5} style={{ color: "#606E74", flexShrink: 0 }} />
+            Admin Portal
+          </Link>
+        )}
       </nav>
 
       {/* Bottom */}
@@ -113,10 +136,10 @@ export default function Sidebar({ user }: SidebarProps) {
               color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center",
               justifyContent: "center", transition: "all 120ms",
             }}>
-            <User size={18} strokeWidth={1.5} />
+            <LogOut size={18} strokeWidth={1.5} />
           </button>
         </div>
       </div>
     </aside>
-  );
+  )
 }

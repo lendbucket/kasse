@@ -46,7 +46,7 @@ export async function PATCH(
   if (typeof body.locationId === "string" && body.locationId) {
     data.locationId = body.locationId;
   }
-  if (typeof body.active === "boolean") data.active = body.active;
+  if (typeof body.active === "boolean") data.isActive = body.active;
 
   const staff = await prisma.staff.update({ where: { id }, data });
   return NextResponse.json({ staff });
@@ -65,7 +65,7 @@ export async function DELETE(
 
   const staff = await prisma.staff.update({
     where: { id },
-    data: { active: false },
+    data: { isActive: false },
   });
 
   return NextResponse.json({ staff });

@@ -5,7 +5,7 @@ import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users } from "lucide-
 
 type Location = { id: string; name: string };
 type Role = "manager" | "stylist";
-type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; active: boolean; location: { id: string; name: string } | null };
+type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; isActive: boolean; location: { id: string; name: string } | null };
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -28,8 +28,8 @@ export default function StaffPage() {
   useEffect(() => { load(); }, [load]);
 
   async function toggleActive(m: StaffMember) {
-    const next = !m.active; const prev = staff;
-    setStaff((l) => l.map((s) => (s.id === m.id ? { ...s, active: next } : s)));
+    const next = !m.isActive; const prev = staff;
+    setStaff((l) => l.map((s) => (s.id === m.id ? { ...s, isActive: next } : s)));
     try { const r = await fetch(`/api/staff/${m.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: next }) }); if (!r.ok) throw new Error(); } catch { setStaff(prev); }
   }
 
@@ -73,13 +73,13 @@ export default function StaffPage() {
                     <td style={{ color: "#6b7280" }}>{s.email || "\u2014"}</td>
                     <td style={{ fontFamily: "var(--font-fira), monospace", color: "#6b7280" }}>{s.phone || "\u2014"}</td>
                     <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db", display: "inline-block" }} />
-                      <span style={{ color: s.active ? "#16a34a" : "#9ca3af" }}>{s.active ? "Active" : "Inactive"}</span>
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "#16a34a" : "#d1d5db", display: "inline-block" }} />
+                      <span style={{ color: s.isActive ? "#16a34a" : "#9ca3af" }}>{s.isActive ? "Active" : "Inactive"}</span>
                     </span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
                         <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
-                        <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                        <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                       </div>
                     </td>
                   </tr>
@@ -93,14 +93,14 @@ export default function StaffPage() {
                     <div><p style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>{s.name}</p>
                       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                         <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: s.role === "manager" ? "rgba(96,110,116,0.08)" : "rgba(0,0,0,0.04)", color: s.role === "manager" ? "#606E74" : "#6b7280" }}>{s.role === "manager" ? "Manager" : "Stylist"}</span>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.active ? "#16a34a" : "#9ca3af" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.active ? "#16a34a" : "#d1d5db" }} />{s.active ? "Active" : "Inactive"}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.isActive ? "#16a34a" : "#9ca3af" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "#16a34a" : "#d1d5db" }} />{s.isActive ? "Active" : "Inactive"}</span>
                       </div>
                     </div>
                   </div>
                   {s.location?.name && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280", marginBottom: 4 }}><MapPin size={12} />{s.location.name}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                     <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: "#6b7280", cursor: "pointer" }}>Edit</button>
-                    <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.active ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.active ? "Deactivate" : "Activate"}</button>
+                    <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                   </div>
                 </div>
               ))}
@@ -118,7 +118,7 @@ function StaffModal({ mode, member, locations, onClose, onSaved }: { mode: "crea
   const [name, setName] = useState(member?.name ?? ""); const [email, setEmail] = useState(member?.email ?? ""); const [phone, setPhone] = useState(member?.phone ?? "");
   const [role, setRole] = useState<Role>((member?.role as Role) === "manager" ? "manager" : "stylist");
   const [locationId, setLocationId] = useState(member?.locationId ?? locations[0]?.id ?? "");
-  const [active, setActive] = useState(member?.active ?? true);
+  const [active, setActive] = useState(member?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
 
