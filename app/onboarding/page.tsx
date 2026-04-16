@@ -4,8 +4,9 @@ import { useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import {
-  ArrowLeft, CheckCircle2, Scissors, Sparkles, Shield, Zap,
-  User, Users, Building2, CreditCard, UserCog, ChevronRight, X, Plus,
+  CheckCircle2, Scissors, Sparkles, Shield, Zap, Info,
+  User, Users, Building2, CreditCard, UserCog, X, Plus,
+  MapPin, Grid3X3, Heart,
 } from "lucide-react"
 
 export default function OnboardingPage() {
@@ -13,20 +14,20 @@ export default function OnboardingPage() {
 }
 
 const BUSINESS_TYPES = [
-  { id: "hair_salon", label: "Hair Salon", icon: Scissors },
-  { id: "barbershop", label: "Barbershop", icon: Scissors },
-  { id: "nail_salon", label: "Nail Salon", icon: Sparkles },
-  { id: "spa", label: "Spa", icon: Sparkles },
-  { id: "med_spa", label: "Med Spa", icon: Shield },
-  { id: "multi_service", label: "Multi-service", icon: Building2 },
+  { value: "hair_salon", label: "Hair Salon", icon: Scissors },
+  { value: "barbershop", label: "Barbershop", icon: User },
+  { value: "nail_salon", label: "Nail Salon", icon: Sparkles },
+  { value: "spa", label: "Spa", icon: Heart },
+  { value: "med_spa", label: "Med Spa", icon: Shield },
+  { value: "multi_service", label: "Multi-service", icon: Grid3X3 },
 ]
 
 const TEAM_SIZES = [
-  { id: "solo", label: "Just me" },
-  { id: "small", label: "2\u20135" },
-  { id: "medium", label: "6\u201315" },
-  { id: "large", label: "16\u201330" },
-  { id: "enterprise", label: "30+" },
+  { value: "solo", label: "Just me", icon: User },
+  { value: "small", label: "2\u20135", icon: Users },
+  { value: "medium", label: "6\u201315", icon: Users },
+  { value: "large", label: "16\u201330", icon: Building2 },
+  { value: "enterprise", label: "30+", icon: Building2 },
 ]
 
 const US_STATES = [
@@ -47,62 +48,95 @@ const US_TIMEZONES = [
 
 const SERVICE_CATEGORIES = ["Hair", "Color", "Nails", "Waxing", "Spa", "Other"]
 const DURATION_OPTIONS = Array.from({ length: 16 }, (_, i) => (i + 1) * 15)
-const SOURCE_SYSTEMS = ["None", "Square", "Zenoti", "Mindbody", "Vagaro", "Booker", "Salon Iris"]
+const SOURCE_SYSTEMS = ["None (starting fresh)", "Square", "Zenoti", "Mindbody", "Vagaro", "Booker", "Salon Iris", "Other"]
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = Array.from({ length: CURRENT_YEAR - 1949 }, (_, i) => CURRENT_YEAR - i)
 
-type ServiceItem = { name: string; category: string; price: string; duration: number }
+type ServiceItem = { name: string; category: string; price: string; duration: string }
 
-type FormData = {
-  businessName: string; businessType: string; phone: string; businessEmail: string
-  website: string; description: string
-  legalName: string; businessStructure: string; ein: string; useSsn: boolean
-  stateOfFormation: string; yearEstablished: string
-  address: string; suite: string; city: string; state: string; zip: string
-  country: string; locationPhone: string; timezone: string
-  teamSize: string; multiLocation: boolean; locationCount: string
-  isFranchise: boolean; sourceSystem: string
+type OnboardingData = {
+  // Step 2
+  businessName: string; businessType: string; phone: string; email: string; website: string; description: string
+  // Step 3
+  legalName: string; structure: string; ein: string; ssnInstead: boolean; stateOfFormation: string; yearEstablished: string
+  // Step 4
+  address: string; suite: string; city: string; state: string; zip: string; country: string; locationPhone: string; timezone: string
+  // Step 5
+  teamSize: string; multipleLocations: string; locationCount: string; isFranchise: string; currentSystem: string
+  // Step 6
   services: ServiceItem[]
-  taxRate: string; acceptTips: boolean; tipOptions: number[]
-  requireDeposit: boolean; depositAmount: string
-  cancellationFee: boolean; cancellationFeeAmount: string; cancellationHours: string
+  // Step 7
+  taxRate: string; tipsEnabled: boolean; tipOptions: number[]; requireDeposit: boolean; depositPercent: string; cancellationFee: boolean; cancellationFeeAmount: string; cancellationWindow: string
+}
+
+const iS: React.CSSProperties = {
+  width: "100%", height: 44, border: "1px solid #e5e7eb", borderRadius: 8,
+  padding: "0 14px", fontSize: 15, color: "#111827", background: "white",
+  outline: "none", boxSizing: "border-box", transition: "border-color 150ms",
+}
+
+function InputField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
+        {label} {required && <span style={{ color: "#ef4444" }}>*</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function StepHeading({ stepNum, title, subtitle }: { stepNum: number; title: string; subtitle: string }) {
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 8 }}>
+        Step {stepNum} of 7
+      </p>
+      <h2 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: "0 0 8px" }}>{title}</h2>
+      <p style={{ fontSize: 14, color: "#6b7280", margin: 0, lineHeight: 1.6 }}>{subtitle}</p>
+    </div>
+  )
+}
+
+function ToggleRow({ label, desc, on, onChange }: { label: string; desc: string; on: boolean; onChange: () => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 0", borderBottom: "1px solid #f3f4f6" }}>
+      <div>
+        <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 600, color: "#111827" }}>{label}</p>
+        <p style={{ margin: 0, fontSize: 13, color: "#6b7280" }}>{desc}</p>
+      </div>
+      <button onClick={onChange} aria-label={`Toggle ${label}`}
+        style={{ width: 44, height: 24, background: on ? "#606E74" : "#e5e7eb", borderRadius: 999, border: "none", cursor: "pointer", position: "relative" as const, transition: "background 150ms", flexShrink: 0 }}>
+        <div style={{ width: 18, height: 18, background: "white", borderRadius: "50%", position: "absolute" as const, top: 3, left: on ? 23 : 3, transition: "left 150ms", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+      </button>
+    </div>
+  )
 }
 
 function OnboardingInner() {
   const searchParams = useSearchParams()
   const verified = searchParams.get("verified") === "true"
   const [step, setStep] = useState(verified ? 1 : 2)
-  const totalSteps = 8
   const [saving, setSaving] = useState(false)
 
-  // Service form inline state
-  const [showServiceForm, setShowServiceForm] = useState(false)
+  // Service form
   const [svcName, setSvcName] = useState("")
   const [svcCat, setSvcCat] = useState("Hair")
   const [svcPrice, setSvcPrice] = useState("")
-  const [svcDuration, setSvcDuration] = useState(45)
+  const [svcDuration, setSvcDuration] = useState("60")
 
-  const [form, setForm] = useState<FormData>({
-    businessName: "", businessType: "", phone: "", businessEmail: "",
-    website: "", description: "",
-    legalName: "", businessStructure: "", ein: "", useSsn: false,
-    stateOfFormation: "", yearEstablished: "",
-    address: "", suite: "", city: "", state: "", zip: "",
-    country: "US", locationPhone: "", timezone: "America/Chicago",
-    teamSize: "", multiLocation: false, locationCount: "",
-    isFranchise: false, sourceSystem: "None",
+  const [data, setData] = useState<OnboardingData>({
+    businessName: "", businessType: "", phone: "", email: "", website: "", description: "",
+    legalName: "", structure: "", ein: "", ssnInstead: false, stateOfFormation: "", yearEstablished: "",
+    address: "", suite: "", city: "", state: "", zip: "", country: "United States", locationPhone: "", timezone: "America/Chicago",
+    teamSize: "", multipleLocations: "no", locationCount: "", isFranchise: "no", currentSystem: "None (starting fresh)",
     services: [],
-    taxRate: "8.25", acceptTips: true, tipOptions: [15, 20, 25],
-    requireDeposit: false, depositAmount: "25",
-    cancellationFee: false, cancellationFeeAmount: "25", cancellationHours: "24",
+    taxRate: "8.25", tipsEnabled: true, tipOptions: [15, 18, 20, 25], requireDeposit: false, depositPercent: "25", cancellationFee: false, cancellationFeeAmount: "25", cancellationWindow: "24",
   })
 
-  function update<K extends keyof FormData>(field: K, value: FormData[K]) {
-    setForm((prev) => ({ ...prev, [field]: value }))
+  function upd<K extends keyof OnboardingData>(field: K, value: OnboardingData[K]) {
+    setData((prev) => ({ ...prev, [field]: value }))
   }
-
-  function next() { if (step < totalSteps) setStep(step + 1) }
-  function back() { if (step > 1) setStep(step - 1) }
 
   async function saveStep(stepNum: number) {
     setSaving(true)
@@ -110,508 +144,484 @@ function OnboardingInner() {
       await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: stepNum, data: form }),
+        body: JSON.stringify({ step: stepNum, data }),
       })
-    } catch { /* continue even if save fails */ }
+    } catch { /* continue */ }
     finally { setSaving(false) }
   }
 
-  async function handleContinue() {
+  async function handleNext() {
+    if (step === 8) {
+      await saveStep(8)
+      window.location.href = "/dashboard"
+      return
+    }
     await saveStep(step)
-    next()
+    setStep((s) => s + 1)
   }
 
   function addService() {
     if (!svcName.trim() || !svcPrice) return
-    update("services", [...form.services, { name: svcName.trim(), category: svcCat, price: svcPrice, duration: svcDuration }])
-    setSvcName(""); setSvcPrice(""); setSvcDuration(45); setShowServiceForm(false)
-  }
-
-  function removeService(idx: number) {
-    update("services", form.services.filter((_, i) => i !== idx))
+    upd("services", [...data.services, { name: svcName.trim(), category: svcCat, price: svcPrice, duration: svcDuration }])
+    setSvcName(""); setSvcPrice(""); setSvcDuration("60")
   }
 
   const canContinue = (() => {
     switch (step) {
-      case 1: return true
-      case 2: return form.businessName.trim().length > 0 && form.businessType.length > 0 && form.phone.length > 0 && form.businessEmail.length > 0
-      case 3: return form.legalName.trim().length > 0 && form.businessStructure.length > 0
-      case 4: return form.city.trim().length > 0 && form.state.length > 0 && form.address.trim().length > 0
-      case 5: return form.teamSize.length > 0
-      case 6: return true
-      case 7: return true
+      case 2: return data.businessName.trim() && data.businessType && data.phone && data.email
+      case 3: return data.legalName.trim() && data.structure
+      case 4: return data.address.trim() && data.city.trim() && data.state
+      case 5: return !!data.teamSize
       default: return true
     }
   })()
 
-  const inputStyle = "h-[44px] w-full rounded-lg border border-[#e5e7eb] bg-white px-[14px] text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none transition-all duration-150 focus:border-[#606e74] focus:shadow-[0_0_0_3px_rgba(96,110,116,0.12)]"
-  const labelStyle = "block text-[13px] font-semibold text-[#374151] mb-1.5"
-
-  // Step 1 — Verified welcome (full viewport)
+  // ═══════════════════════════════════════
+  // STEP 1 — Email Verified Welcome
+  // ═══════════════════════════════════════
   if (step === 1) {
     return (
-      <main style={{ minHeight: "100vh", background: "#f7f8fa", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "100vh", background: "#f7f8fa", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
         <div style={{ marginBottom: 32 }}>
           <Image src="/kasse-logo.png" alt="kasse." width={80} height={28} style={{ objectFit: "contain", filter: "invert(1)" }} priority />
         </div>
         <div style={{
-          background: "white", borderRadius: 16, padding: "48px 40px", maxWidth: 440, width: "100%",
-          textAlign: "center", boxShadow: "0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #f3f4f6",
+          background: "white", borderRadius: 16,
+          padding: "clamp(32px, 5vw, 48px) clamp(24px, 5vw, 40px)",
+          maxWidth: 440, width: "100%", textAlign: "center",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06)", border: "1px solid #f3f4f6",
         }}>
-          <div style={{
-            width: 72, height: 72, background: "rgba(22,163,74,0.08)", border: "2px solid rgba(22,163,74,0.2)",
-            borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 24px", animation: "scaleIn 400ms ease-out",
-          }}>
+          <div style={{ width: 72, height: 72, background: "rgba(22,163,74,0.08)", border: "2px solid rgba(22,163,74,0.2)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
             <CheckCircle2 size={36} style={{ color: "#16a34a" }} strokeWidth={1.5} />
           </div>
-          <div style={{
-            display: "inline-block", background: "rgba(22,163,74,0.08)", color: "#16a34a",
-            fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
-            padding: "4px 12px", borderRadius: 999, marginBottom: 16,
-          }}>Email Verified</div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: "0 0 12px" }}>
-            Welcome to Kasse!
-          </h1>
+          <div style={{ display: "inline-block", background: "rgba(22,163,74,0.08)", color: "#16a34a", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" as const, padding: "4px 12px", borderRadius: 999, marginBottom: 16 }}>
+            Email Verified
+          </div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: "0 0 12px" }}>Welcome to Kasse!</h1>
           <p style={{ fontSize: 15, color: "#6b7280", lineHeight: 1.6, margin: "0 0 32px" }}>
             Your email has been verified. Let&apos;s set up your salon &mdash; it only takes a few minutes.
           </p>
-          <button onClick={() => setStep(2)} className="cursor-pointer" style={{
-            width: "100%", height: 48, background: "#606E74", color: "white", border: "none",
-            borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.2px",
-            transition: "background 150ms",
-          }}>Let&apos;s go &rarr;</button>
-          <p style={{ margin: "20px 0 0", fontSize: 12, color: "#9ca3af" }}>14-day free trial &middot; No credit card required</p>
+          <button onClick={() => setStep(2)} style={{ width: "100%", height: 48, background: "#606E74", color: "white", border: "none", borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.2px", transition: "background 150ms" }}>
+            Let&apos;s go &rarr;
+          </button>
+          <p style={{ margin: "16px 0 0", fontSize: 12, color: "#9ca3af" }}>14-day free trial &middot; No credit card required</p>
         </div>
-        <p style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>
-          Powered by <strong style={{ color: "#606E74" }}>SalonTransact</strong>
-        </p>
-        <style>{`@keyframes scaleIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
-          @media (prefers-reduced-motion: reduce) { @keyframes scaleIn { from, to { opacity: 1; transform: none; } } }
-          @media (max-width: 480px) { main > div:nth-child(2) { padding: 40px 24px !important; } }`}
-        </style>
-      </main>
+        <p style={{ marginTop: 24, fontSize: 12, color: "#9ca3af" }}>Powered by <strong style={{ color: "#606E74" }}>SalonTransact</strong></p>
+        <style>{`@keyframes scaleIn { from { opacity:0; transform:scale(0.8); } to { opacity:1; transform:scale(1); } }
+          @media (prefers-reduced-motion:reduce) { @keyframes scaleIn { from,to { opacity:1; transform:none; } } }`}</style>
+      </div>
     )
   }
 
-  // Steps 2-8
+  // ═══════════════════════════════════════
+  // STEPS 2-8 — Main wizard layout
+  // ═══════════════════════════════════════
   return (
-    <main className="flex min-h-screen flex-col items-center bg-[#f7f8fa]">
+    <div style={{ minHeight: "100vh", background: "#f7f8fa", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+      {/* Top bar */}
+      <div style={{ background: "white", borderBottom: "1px solid #e5e7eb", padding: "0 24px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+        <Image src="/kasse-logo.png" alt="kasse." width={72} height={24} style={{ objectFit: "contain", filter: "invert(1)" }} priority />
+        <span style={{ fontSize: 13, color: "#9ca3af", fontWeight: 500 }}>{step <= 8 ? `Step ${step - 1} of 7` : ""}</span>
+      </div>
+
       {/* Progress bar */}
-      <div className="fixed inset-x-0 top-0 z-50 h-1 bg-[#e5e7eb]">
-        <div className="h-full bg-[#606e74] transition-all duration-500 ease-out" style={{ width: `${(step / totalSteps) * 100}%` }} />
+      <div style={{ height: 3, background: "#f3f4f6" }}>
+        <div style={{ height: "100%", background: "#606E74", width: `${((step - 1) / 7) * 100}%`, transition: "width 300ms ease" }} />
       </div>
 
-      {/* Header */}
-      <div className="flex w-full max-w-[560px] items-center justify-between px-6 pt-12">
-        {step > 1 && step < 8 ? (
-          <button onClick={back} className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-[#e5e7eb] text-[#6b7280] transition-colors hover:bg-white hover:text-[#111827]">
-            <ArrowLeft size={16} strokeWidth={1.5} />
-          </button>
-        ) : <div className="w-9" />}
-        <Image src="/kasse-logo.png" alt="kasse." width={60} height={20} style={{ objectFit: "contain", filter: "invert(1)" }} priority />
-        <span className="text-[13px] text-[#9ca3af]">{step < 8 ? `Step ${step} of ${totalSteps}` : ""}</span>
-      </div>
+      {/* Content */}
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "clamp(24px, 4vw, 48px) 24px" }}>
+        {/* White card */}
+        <div style={{ background: "white", borderRadius: 16, padding: "clamp(28px, 4vw, 48px) clamp(24px, 4vw, 40px)", border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
 
-      {/* Card */}
-      <div className="mt-8 mb-12 w-full max-w-[560px] rounded-2xl border border-[#e5e7eb] bg-white p-8 sm:p-10" style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04), 0 8px 16px rgba(0,0,0,0.06)" }} key={step}>
-
-        {/* STEP 2 — Business Basics */}
-        {step === 2 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">Tell us about your business</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">This information appears on your receipts and client communications.</p>
-            <div className="mt-8 flex flex-col gap-5">
-              <div><label className={labelStyle}>Business Name *</label>
-                <input type="text" value={form.businessName} onChange={(e) => update("businessName", e.target.value)} placeholder="Luxe Hair Studio" className={inputStyle} autoFocus /></div>
-              <div>
-                <label className={labelStyle}>Business Type *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {BUSINESS_TYPES.map((bt) => {
-                    const Icon = bt.icon; const selected = form.businessType === bt.id
-                    return (
-                      <button key={bt.id} onClick={() => update("businessType", bt.id)}
-                        className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border p-3 transition-all ${selected ? "border-[#606e74] bg-[#606e74]/[0.06]" : "border-[#e5e7eb] hover:border-[#d1d5db]"}`}>
-                        <Icon size={16} strokeWidth={1.5} className={selected ? "text-[#606e74]" : "text-[#9ca3af]"} />
-                        <span className={`text-[11px] font-medium ${selected ? "text-[#606e74]" : "text-[#6b7280]"}`}>{bt.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
+          {/* ═══ STEP 2 — Business Basics ═══ */}
+          {step === 2 && (<div>
+            <StepHeading stepNum={1} title="Tell us about your business" subtitle="This information appears on your receipts and client communications." />
+            <InputField label="Business Name" required>
+              <input type="text" value={data.businessName} onChange={(e) => upd("businessName", e.target.value)} placeholder="Luxe Hair Studio" style={iS} autoFocus
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <InputField label="Business Type" required>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+                {BUSINESS_TYPES.map((opt) => (
+                  <button key={opt.value} onClick={() => upd("businessType", opt.value)} style={{
+                    padding: "16px 12px", borderRadius: 10, cursor: "pointer",
+                    border: data.businessType === opt.value ? "2px solid #606E74" : "1px solid #e5e7eb",
+                    background: data.businessType === opt.value ? "rgba(96,110,116,0.06)" : "white",
+                    textAlign: "center" as const, transition: "all 150ms", display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 8,
+                  }}>
+                    <opt.icon size={22} strokeWidth={1.5} style={{ color: data.businessType === opt.value ? "#606E74" : "#9ca3af" }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: data.businessType === opt.value ? "#606E74" : "#374151" }}>{opt.label}</span>
+                  </button>
+                ))}
               </div>
-              <div><label className={labelStyle}>Business Phone *</label>
-                <input type="tel" value={form.phone} onChange={(e) => update("phone", e.target.value)} placeholder="(512) 555-0100" className={inputStyle} /></div>
-              <div><label className={labelStyle}>Business Email *</label>
-                <input type="email" value={form.businessEmail} onChange={(e) => update("businessEmail", e.target.value)} placeholder="hello@luxehairstudio.com" className={inputStyle} /></div>
-              <div><label className={labelStyle}>Website <span className="font-normal text-[#9ca3af]">(optional)</span></label>
-                <input type="url" value={form.website} onChange={(e) => update("website", e.target.value)} placeholder="https://luxehairstudio.com" className={inputStyle} /></div>
-              <div><label className={labelStyle}>Business Description <span className="font-normal text-[#9ca3af]">(optional)</span></label>
-                <textarea value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="Describe your salon for clients..." rows={3}
-                  className="w-full rounded-lg border border-[#e5e7eb] bg-white p-3 text-[15px] text-[#111827] placeholder:text-[#9ca3af] outline-none focus:border-[#606e74] focus:shadow-[0_0_0_3px_rgba(96,110,116,0.12)]" /></div>
+            </InputField>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <InputField label="Business Phone" required>
+                <input type="tel" value={data.phone} onChange={(e) => upd("phone", e.target.value)} placeholder="(512) 555-0100" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+              </InputField>
+              <InputField label="Business Email" required>
+                <input type="email" value={data.email} onChange={(e) => upd("email", e.target.value)} placeholder="hello@studio.com" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+              </InputField>
             </div>
-          </div>
-        )}
+            <InputField label="Website">
+              <input type="url" value={data.website} onChange={(e) => upd("website", e.target.value)} placeholder="https://luxehairstudio.com" style={iS}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <InputField label="Description">
+              <textarea value={data.description} onChange={(e) => upd("description", e.target.value)} placeholder="Describe your salon for clients..." rows={3}
+                style={{ ...iS, height: "auto", padding: "12px 14px", resize: "vertical" as const }}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+          </div>)}
 
-        {/* STEP 3 — Legal & Tax */}
-        {step === 3 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">Legal & tax information</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">Required for payment processing and tax reporting. This information is kept secure.</p>
-            <div className="mt-8 flex flex-col gap-5">
-              <div><label className={labelStyle}>Legal Business Name *</label>
-                <input type="text" value={form.legalName} onChange={(e) => update("legalName", e.target.value)} placeholder="The name registered with the IRS" className={inputStyle} /></div>
-              <div>
-                <label className={labelStyle}>Business Structure *</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {["Sole Proprietor", "LLC", "Corporation", "Partnership"].map((s) => (
-                    <button key={s} onClick={() => update("businessStructure", s)}
-                      className={`cursor-pointer rounded-lg border p-3 text-center text-[13px] font-medium transition-all ${form.businessStructure === s ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#606e74]" : "border-[#e5e7eb] text-[#6b7280] hover:border-[#d1d5db]"}`}>{s}</button>
+          {/* ═══ STEP 3 — Legal & Tax ═══ */}
+          {step === 3 && (<div>
+            <StepHeading stepNum={2} title="Legal & tax information" subtitle="Required for payment processing and tax reporting. This information is kept secure." />
+            <InputField label="Legal Business Name" required>
+              <input type="text" value={data.legalName} onChange={(e) => upd("legalName", e.target.value)} placeholder="The name registered with the IRS" style={iS}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <InputField label="Business Structure" required>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {["Sole Proprietor", "LLC", "Corporation", "Partnership"].map((s) => (
+                  <button key={s} onClick={() => upd("structure", s)} style={{
+                    padding: "14px 12px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                    border: data.structure === s ? "2px solid #606E74" : "1px solid #e5e7eb",
+                    background: data.structure === s ? "rgba(96,110,116,0.06)" : "white",
+                    color: data.structure === s ? "#606E74" : "#374151", transition: "all 150ms",
+                  }}>{s}</button>
+                ))}
+              </div>
+            </InputField>
+            {data.structure === "Sole Proprietor" && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={data.ssnInstead} onChange={(e) => upd("ssnInstead", e.target.checked)} style={{ width: 16, height: 16, accentColor: "#606E74" }} />
+                  <span style={{ fontSize: 13, color: "#374151" }}>I&apos;m a sole proprietor using my SSN instead</span>
+                </label>
+              </div>
+            )}
+            {!(data.structure === "Sole Proprietor" && data.ssnInstead) && (
+              <InputField label="EIN / Tax ID" required={data.structure !== "Sole Proprietor"}>
+                <input type="text" value={data.ein} onChange={(e) => {
+                  let v = e.target.value.replace(/[^0-9-]/g, "")
+                  if (v.length === 2 && !v.includes("-") && data.ein.length < v.length) v += "-"
+                  if (v.length > 10) v = v.slice(0, 10)
+                  upd("ein", v)
+                }} placeholder="XX-XXXXXXX" maxLength={10} style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#9ca3af" }}>Your Employer Identification Number from the IRS</p>
+              </InputField>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <InputField label="State of Formation">
+                <select value={data.stateOfFormation} onChange={(e) => upd("stateOfFormation", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer", color: data.stateOfFormation ? "#111827" : "#9ca3af" }}>
+                  <option value="" disabled>Select state</option>
+                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </InputField>
+              <InputField label="Year Established">
+                <select value={data.yearEstablished} onChange={(e) => upd("yearEstablished", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer", color: data.yearEstablished ? "#111827" : "#9ca3af" }}>
+                  <option value="" disabled>Select year</option>
+                  {YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+                </select>
+              </InputField>
+            </div>
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 10, alignItems: "flex-start", marginTop: 20 }}>
+              <Shield size={16} style={{ color: "#16a34a", flexShrink: 0, marginTop: 2 }} strokeWidth={1.5} />
+              <p style={{ margin: 0, fontSize: 13, color: "#15803d", lineHeight: 1.5 }}>
+                Your legal and tax information is encrypted and used only for payment processing compliance through SalonTransact.
+              </p>
+            </div>
+          </div>)}
+
+          {/* ═══ STEP 4 — Location ═══ */}
+          {step === 4 && (<div>
+            <StepHeading stepNum={3} title="Where is your salon located?" subtitle="Your primary location. You can add more locations later." />
+            <InputField label="Street Address" required>
+              <input type="text" value={data.address} onChange={(e) => upd("address", e.target.value)} placeholder="123 Main St" style={iS}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <InputField label="Suite / Unit">
+              <input type="text" value={data.suite} onChange={(e) => upd("suite", e.target.value)} placeholder="Suite 200" style={iS}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <InputField label="City" required>
+                <input type="text" value={data.city} onChange={(e) => upd("city", e.target.value)} placeholder="Austin" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+              </InputField>
+              <InputField label="State" required>
+                <select value={data.state} onChange={(e) => upd("state", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer", color: data.state ? "#111827" : "#9ca3af" }}>
+                  <option value="" disabled>Select</option>
+                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </InputField>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <InputField label="ZIP Code" required>
+                <input type="text" value={data.zip} onChange={(e) => upd("zip", e.target.value)} placeholder="78701" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+              </InputField>
+              <InputField label="Country">
+                <select value={data.country} onChange={(e) => upd("country", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                  <option value="United States">United States</option>
+                </select>
+              </InputField>
+            </div>
+            <InputField label="Timezone" required>
+              <select value={data.timezone} onChange={(e) => upd("timezone", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                {US_TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+              </select>
+            </InputField>
+          </div>)}
+
+          {/* ═══ STEP 5 — Team & Operations ═══ */}
+          {step === 5 && (<div>
+            <StepHeading stepNum={4} title="About your team" subtitle="Help us configure Kasse for how your salon operates." />
+            <InputField label="Number of stylists" required>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10 }}>
+                {TEAM_SIZES.map((opt) => (
+                  <button key={opt.value} onClick={() => upd("teamSize", opt.value)} style={{
+                    padding: "16px 12px", borderRadius: 10, cursor: "pointer",
+                    border: data.teamSize === opt.value ? "2px solid #606E74" : "1px solid #e5e7eb",
+                    background: data.teamSize === opt.value ? "rgba(96,110,116,0.06)" : "white",
+                    textAlign: "center" as const, transition: "all 150ms", display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 8,
+                  }}>
+                    <opt.icon size={20} strokeWidth={1.5} style={{ color: data.teamSize === opt.value ? "#606E74" : "#9ca3af" }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: data.teamSize === opt.value ? "#606E74" : "#374151" }}>{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+            </InputField>
+            <InputField label="Multiple locations?">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[{ v: "no", label: "No", ic: MapPin }, { v: "yes", label: "Yes", ic: Building2 }].map((o) => (
+                  <button key={o.v} onClick={() => upd("multipleLocations", o.v)} style={{
+                    padding: "16px 12px", borderRadius: 10, cursor: "pointer",
+                    border: data.multipleLocations === o.v ? "2px solid #606E74" : "1px solid #e5e7eb",
+                    background: data.multipleLocations === o.v ? "rgba(96,110,116,0.06)" : "white",
+                    textAlign: "center" as const, transition: "all 150ms", display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 8,
+                  }}>
+                    <o.ic size={20} strokeWidth={1.5} style={{ color: data.multipleLocations === o.v ? "#606E74" : "#9ca3af" }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: data.multipleLocations === o.v ? "#606E74" : "#374151" }}>{o.label}</span>
+                  </button>
+                ))}
+              </div>
+            </InputField>
+            {data.multipleLocations === "yes" && (
+              <InputField label="How many total locations?">
+                <div style={{ display: "flex", gap: 8 }}>
+                  {["2", "3-5", "6-10", "10+"].map((v) => (
+                    <button key={v} onClick={() => upd("locationCount", v)} style={{
+                      flex: 1, padding: "10px 8px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                      border: data.locationCount === v ? "2px solid #606E74" : "1px solid #e5e7eb",
+                      background: data.locationCount === v ? "rgba(96,110,116,0.06)" : "white",
+                      color: data.locationCount === v ? "#606E74" : "#374151", transition: "all 150ms",
+                    }}>{v}</button>
                   ))}
                 </div>
+              </InputField>
+            )}
+            <InputField label="Franchise model?">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {["no", "yes"].map((v) => (
+                  <button key={v} onClick={() => upd("isFranchise", v)} style={{
+                    padding: "14px 12px", borderRadius: 10, cursor: "pointer", fontSize: 14, fontWeight: 600,
+                    border: data.isFranchise === v ? "2px solid #606E74" : "1px solid #e5e7eb",
+                    background: data.isFranchise === v ? "rgba(96,110,116,0.06)" : "white",
+                    color: data.isFranchise === v ? "#111827" : "#6b7280", transition: "all 150ms", textTransform: "capitalize" as const,
+                  }}>{v === "yes" ? "Yes" : "No"}</button>
+                ))}
               </div>
-              {form.businessStructure !== "Sole Proprietor" && (
-                <div><label className={labelStyle}>EIN / Tax ID {form.businessStructure === "Sole Proprietor" ? "" : "*"}</label>
-                  <input type="text" value={form.ein} onChange={(e) => update("ein", e.target.value)} placeholder="XX-XXXXXXX" className={inputStyle} />
-                  <p className="mt-1 text-[12px] text-[#9ca3af]">Your Employer Identification Number from the IRS</p></div>
-              )}
-              {form.businessStructure === "Sole Proprietor" && (
-                <div>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input type="checkbox" checked={form.useSsn} onChange={(e) => update("useSsn", e.target.checked)}
-                      className="h-4 w-4 rounded border-[#d1d5db] accent-[#606e74]" />
-                    <span className="text-[13px] text-[#374151]">I use my SSN instead of an EIN</span>
-                  </label>
-                  {!form.useSsn && (
-                    <div className="mt-3"><label className={labelStyle}>EIN / Tax ID <span className="font-normal text-[#9ca3af]">(optional)</span></label>
-                      <input type="text" value={form.ein} onChange={(e) => update("ein", e.target.value)} placeholder="XX-XXXXXXX" className={inputStyle} /></div>
-                  )}
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className={labelStyle}>State of Formation</label>
-                  <select value={form.stateOfFormation} onChange={(e) => update("stateOfFormation", e.target.value)}
-                    className={`${inputStyle} appearance-none cursor-pointer ${!form.stateOfFormation ? "text-[#9ca3af]" : ""}`}>
-                    <option value="" disabled>Select state</option>
-                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select></div>
-                <div><label className={labelStyle}>Year Established</label>
-                  <select value={form.yearEstablished} onChange={(e) => update("yearEstablished", e.target.value)}
-                    className={`${inputStyle} appearance-none cursor-pointer ${!form.yearEstablished ? "text-[#9ca3af]" : ""}`}>
-                    <option value="" disabled>Select year</option>
-                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-                  </select></div>
-              </div>
-              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <Shield size={16} style={{ color: "#16a34a", flexShrink: 0, marginTop: 2 }} strokeWidth={1.5} />
-                <p style={{ margin: 0, fontSize: 13, color: "#15803d", lineHeight: 1.5 }}>
-                  Your legal and tax information is encrypted and used only for payment processing compliance and tax reporting through SalonTransact.
+            </InputField>
+            {data.isFranchise === "yes" && (
+              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 10, marginBottom: 16 }}>
+                <Info size={16} style={{ color: "#2563eb", flexShrink: 0, marginTop: 2 }} />
+                <p style={{ margin: 0, fontSize: 13, color: "#1d4ed8", lineHeight: 1.5 }}>
+                  You&apos;ll be able to configure franchise fees, royalties, and sub-accounts in your Settings after setup.
                 </p>
               </div>
-            </div>
-          </div>
-        )}
+            )}
+            <InputField label="Do you currently use another system?">
+              <select value={data.currentSystem} onChange={(e) => upd("currentSystem", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                {SOURCE_SYSTEMS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </InputField>
+            {data.currentSystem !== "None (starting fresh)" && data.currentSystem !== "Other" && (
+              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "14px 16px", display: "flex", gap: 10 }}>
+                <Info size={16} style={{ color: "#2563eb", flexShrink: 0, marginTop: 2 }} />
+                <p style={{ margin: 0, fontSize: 13, color: "#1d4ed8", lineHeight: 1.5 }}>We&apos;ll help you import your data from {data.currentSystem} after setup.</p>
+              </div>
+            )}
+          </div>)}
 
-        {/* STEP 4 — Location */}
-        {step === 4 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">Where is your salon located?</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">Your primary location. You can add more locations later.</p>
-            <div className="mt-8 flex flex-col gap-4">
-              <div><label className={labelStyle}>Street Address *</label>
-                <input type="text" value={form.address} onChange={(e) => update("address", e.target.value)} placeholder="123 Main St" className={inputStyle} /></div>
-              <div><label className={labelStyle}>Suite / Unit <span className="font-normal text-[#9ca3af]">(optional)</span></label>
-                <input type="text" value={form.suite} onChange={(e) => update("suite", e.target.value)} placeholder="Suite 200" className={inputStyle} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className={labelStyle}>City *</label>
-                  <input type="text" value={form.city} onChange={(e) => update("city", e.target.value)} placeholder="Austin" className={inputStyle} /></div>
-                <div><label className={labelStyle}>State *</label>
-                  <select value={form.state} onChange={(e) => update("state", e.target.value)}
-                    className={`${inputStyle} appearance-none cursor-pointer ${!form.state ? "text-[#9ca3af]" : ""}`}>
-                    <option value="" disabled>Select</option>
-                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className={labelStyle}>ZIP Code *</label>
-                  <input type="text" value={form.zip} onChange={(e) => update("zip", e.target.value)} placeholder="78701" className={inputStyle} /></div>
-                <div><label className={labelStyle}>Timezone *</label>
-                  <select value={form.timezone} onChange={(e) => update("timezone", e.target.value)}
-                    className={`${inputStyle} appearance-none cursor-pointer`}>
-                    {US_TIMEZONES.map((tz) => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
-                  </select></div>
-              </div>
-              <div><label className={labelStyle}>Location Phone</label>
-                <input type="tel" value={form.locationPhone || form.phone} onChange={(e) => update("locationPhone", e.target.value)} className={inputStyle} /></div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 5 — Team & Operations */}
-        {step === 5 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">About your team</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">Help us configure Kasse for how your salon operates.</p>
-            <div className="mt-8 flex flex-col gap-6">
-              <div>
-                <label className={labelStyle}>Number of stylists *</label>
-                <div className="flex gap-2">
-                  {TEAM_SIZES.map((ts) => (
-                    <button key={ts.id} onClick={() => update("teamSize", ts.id)}
-                      className={`flex-1 cursor-pointer rounded-lg border p-3 text-center text-[13px] font-medium transition-all ${form.teamSize === ts.id ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#606e74]" : "border-[#e5e7eb] text-[#6b7280] hover:border-[#d1d5db]"}`}>{ts.label}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className={labelStyle}>Multiple locations?</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {[false, true].map((v) => (
-                    <button key={String(v)} onClick={() => update("multiLocation", v)}
-                      className={`cursor-pointer rounded-lg border p-4 text-center text-[14px] font-semibold transition-all ${form.multiLocation === v ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#111827]" : "border-[#e5e7eb] text-[#6b7280] hover:border-[#d1d5db]"}`}>
-                      {v ? "Yes" : "No"}
-                    </button>
-                  ))}
-                </div>
-                {form.multiLocation && (
-                  <div className="mt-3">
-                    <label className={labelStyle}>How many total locations?</label>
-                    <div className="flex gap-2">
-                      {["2", "3-5", "6-10", "10+"].map((v) => (
-                        <button key={v} onClick={() => update("locationCount", v)}
-                          className={`flex-1 cursor-pointer rounded-lg border p-2 text-center text-[13px] font-medium transition-all ${form.locationCount === v ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#606e74]" : "border-[#e5e7eb] text-[#6b7280]"}`}>{v}</button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className={labelStyle}>Franchise model?</label>
-                <div className="grid grid-cols-2 gap-3">
-                  {[false, true].map((v) => (
-                    <button key={String(v)} onClick={() => update("isFranchise", v)}
-                      className={`cursor-pointer rounded-lg border p-4 text-center text-[14px] font-semibold transition-all ${form.isFranchise === v ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#111827]" : "border-[#e5e7eb] text-[#6b7280] hover:border-[#d1d5db]"}`}>
-                      {v ? "Yes" : "No"}
-                    </button>
-                  ))}
-                </div>
-                {form.isFranchise && (
-                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "12px 14px", marginTop: 12 }}>
-                    <p style={{ margin: 0, fontSize: 13, color: "#1d4ed8", lineHeight: 1.5 }}>You&apos;ll be able to set up franchise fees and sub-accounts in Settings.</p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className={labelStyle}>Do you currently use another system?</label>
-                <select value={form.sourceSystem} onChange={(e) => update("sourceSystem", e.target.value)}
-                  className={`${inputStyle} appearance-none cursor-pointer`}>
-                  {SOURCE_SYSTEMS.map((s) => <option key={s} value={s}>{s}</option>)}
+          {/* ═══ STEP 6 — Services ═══ */}
+          {step === 6 && (<div>
+            <StepHeading stepNum={5} title="What services do you offer?" subtitle="Add your most popular services to get started. You can add more after setup." />
+            {/* Inline add form */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <input type="text" value={svcName} onChange={(e) => setSvcName(e.target.value)} placeholder="Service name" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+                <select value={svcCat} onChange={(e) => setSvcCat(e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                  {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
-                {form.sourceSystem !== "None" && (
-                  <p className="mt-2 text-[12px] text-[#606e74]">We&apos;ll help you import your data from {form.sourceSystem} after setup.</p>
-                )}
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                <input type="number" value={svcPrice} onChange={(e) => setSvcPrice(e.target.value)} placeholder="Price ($)" min="0" step="0.01" style={iS}
+                  onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+                <select value={svcDuration} onChange={(e) => setSvcDuration(e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                  {DURATION_OPTIONS.map((d) => <option key={d} value={String(d)}>{d >= 60 ? `${Math.floor(d / 60)}h${d % 60 ? ` ${d % 60}m` : ""}` : `${d} min`}</option>)}
+                </select>
+              </div>
+              <button onClick={addService} disabled={!svcName.trim() || !svcPrice} style={{
+                width: "100%", height: 40, borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                border: "1px solid #e5e7eb", background: "white", color: "#374151", transition: "all 150ms",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                opacity: !svcName.trim() || !svcPrice ? 0.4 : 1,
+              }}>
+                <Plus size={14} /> Add Service
+              </button>
             </div>
-          </div>
-        )}
-
-        {/* STEP 6 — Services */}
-        {step === 6 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">What services do you offer?</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">Add your most popular services now. You can add more in your dashboard.</p>
-            <div className="mt-8">
-              {/* Service list */}
-              {form.services.length > 0 && (
-                <div className="mb-4 flex flex-col gap-2">
-                  {form.services.map((svc, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg border border-[#e5e7eb] p-3">
-                      <div>
-                        <p className="text-[14px] font-semibold text-[#111827]">{svc.name}</p>
-                        <p className="text-[12px] text-[#6b7280]">{svc.category} &middot; {svc.duration}min &middot; ${svc.price}</p>
-                      </div>
-                      <button onClick={() => removeService(i)} className="cursor-pointer text-[#9ca3af] hover:text-[#dc2626]" style={{ background: "none", border: "none" }}>
-                        <X size={16} />
-                      </button>
+            {/* Service list */}
+            {data.services.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                {data.services.map((svc, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "white", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>{svc.name}</span>
+                      <span style={{ fontSize: 12, padding: "2px 8px", borderRadius: 4, background: "rgba(96,110,116,0.08)", color: "#606E74" }}>{svc.category}</span>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Inline add form */}
-              {showServiceForm ? (
-                <div className="rounded-lg border border-[#606e74] bg-[#f9fafb] p-4">
-                  <div className="flex flex-col gap-3">
-                    <input type="text" value={svcName} onChange={(e) => setSvcName(e.target.value)} placeholder="Service name" className={inputStyle} autoFocus />
-                    <div className="grid grid-cols-3 gap-3">
-                      <select value={svcCat} onChange={(e) => setSvcCat(e.target.value)} className={`${inputStyle} appearance-none cursor-pointer`}>
-                        {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <input type="number" value={svcPrice} onChange={(e) => setSvcPrice(e.target.value)} placeholder="$35" min="0" step="0.01" className={inputStyle} />
-                      <select value={svcDuration} onChange={(e) => setSvcDuration(parseInt(e.target.value))} className={`${inputStyle} appearance-none cursor-pointer`}>
-                        {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{d >= 60 ? `${Math.floor(d / 60)}h${d % 60 ? ` ${d % 60}m` : ""}` : `${d}min`}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={addService} disabled={!svcName.trim() || !svcPrice}
-                        className="cursor-pointer rounded-lg bg-[#606e74] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-40">Add service</button>
-                      <button onClick={() => setShowServiceForm(false)}
-                        className="cursor-pointer rounded-lg border border-[#e5e7eb] px-4 py-2 text-[13px] font-medium text-[#6b7280]" style={{ background: "white" }}>Cancel</button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 13, color: "#6b7280" }}>{parseInt(svc.duration) >= 60 ? `${Math.floor(parseInt(svc.duration) / 60)}h${parseInt(svc.duration) % 60 ? ` ${parseInt(svc.duration) % 60}m` : ""}` : `${svc.duration} min`}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>${svc.price}</span>
+                      <button onClick={() => upd("services", data.services.filter((_, j) => j !== i))} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={14} /></button>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <button onClick={() => setShowServiceForm(true)}
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[#d1d5db] p-4 text-[14px] font-medium text-[#6b7280] transition-colors hover:border-[#606e74] hover:text-[#606e74]" style={{ background: "transparent" }}>
-                  <Plus size={16} /> Add a service
-                </button>
-              )}
+                ))}
+              </div>
+            )}
+            <p style={{ textAlign: "center", marginTop: 8 }}>
+              <button onClick={() => { handleNext() }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "#9ca3af" }}>
+                Skip for now, I&apos;ll add services later &rarr;
+              </button>
+            </p>
+          </div>)}
 
-              {form.services.length === 0 && (
-                <button onClick={() => { next(); saveStep(6) }}
-                  className="mt-4 cursor-pointer text-[13px] font-medium text-[#9ca3af] underline" style={{ background: "none", border: "none" }}>
-                  Set up services later
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* STEP 7 — Payment Setup */}
-        {step === 7 && (
-          <div>
-            <h1 className="text-[24px] font-bold text-[#111827]">Set up payments</h1>
-            <p className="mt-1 text-[13px] text-[#6b7280]">All payments are processed securely.</p>
-
-            <div style={{
-              background: "linear-gradient(135deg, #0a0c0e, #1a2332)", borderRadius: 12,
-              padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between",
-              marginTop: 24, marginBottom: 24,
-            }}>
+          {/* ═══ STEP 7 — Payment Setup ═══ */}
+          {step === 7 && (<div>
+            <StepHeading stepNum={6} title="Set up payments" subtitle="Configure how you accept and process payments." />
+            <div style={{ background: "linear-gradient(135deg, #0a0c0e 0%, #1a2332 100%)", borderRadius: 12, padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
               <div>
-                <p style={{ margin: "0 0 4px", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Payments powered by</p>
-                <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "white", letterSpacing: "0.05em" }}>SalonTransact</p>
+                <p style={{ margin: "0 0 4px", fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.12em", textTransform: "uppercase" }}>Payments powered by</p>
+                <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "white", letterSpacing: "0.05em" }}>SalonTransact</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "rgba(255,255,255,0.4)" }}>2.4% + $0.10 per transaction &middot; Same-day payouts</p>
               </div>
-              <Zap size={32} style={{ color: "#606E74" }} strokeWidth={1.5} />
+              <Zap size={36} style={{ color: "#606E74", flexShrink: 0 }} strokeWidth={1.5} />
             </div>
-
-            <div className="flex flex-col gap-5">
-              <div><label className={labelStyle}>Sales tax rate %</label>
-                <input type="number" step="0.01" value={form.taxRate} onChange={(e) => update("taxRate", e.target.value)} className={`${inputStyle} max-w-[200px]`} /></div>
-
-              <ToggleRow label="Accept tips" on={form.acceptTips} onChange={() => update("acceptTips", !form.acceptTips)} />
-              {form.acceptTips && (
-                <div>
-                  <label className={labelStyle}>Tip options</label>
-                  <div className="flex gap-2">
-                    {[15, 18, 20, 25].map((tip) => {
-                      const selected = form.tipOptions.includes(tip)
-                      return <button key={tip} onClick={() => update("tipOptions", selected ? form.tipOptions.filter((t) => t !== tip) : [...form.tipOptions, tip])}
-                        className={`cursor-pointer rounded-lg border px-4 py-2 text-[13px] font-medium transition-all ${selected ? "border-[#606e74] bg-[#606e74]/[0.06] text-[#606e74]" : "border-[#e5e7eb] text-[#6b7280]"}`}>{tip}%</button>
-                    })}
-                    <button className="cursor-pointer rounded-lg border border-[#e5e7eb] px-4 py-2 text-[13px] font-medium text-[#6b7280]">Custom</button>
-                  </div>
+            <InputField label="Sales tax rate (%)">
+              <input type="number" step="0.01" value={data.taxRate} onChange={(e) => upd("taxRate", e.target.value)} style={{ ...iS, maxWidth: 160 }}
+                onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+            </InputField>
+            <ToggleRow label="Accept tips" desc="Show tip prompt at checkout" on={data.tipsEnabled} onChange={() => upd("tipsEnabled", !data.tipsEnabled)} />
+            {data.tipsEnabled && (
+              <div style={{ padding: "12px 0 16px", borderBottom: "1px solid #f3f4f6" }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 8px" }}>Tip options</p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[15, 18, 20, 25].map((tip) => {
+                    const sel = data.tipOptions.includes(tip)
+                    return <button key={tip} onClick={() => upd("tipOptions", sel ? data.tipOptions.filter((t) => t !== tip) : [...data.tipOptions, tip])} style={{
+                      padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                      border: sel ? "2px solid #606E74" : "1px solid #e5e7eb", background: sel ? "rgba(96,110,116,0.06)" : "white", color: sel ? "#606E74" : "#6b7280", transition: "all 150ms",
+                    }}>{tip}%</button>
+                  })}
+                  <button style={{ padding: "8px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600, border: "1px solid #e5e7eb", background: "white", color: "#6b7280" }}>Custom</button>
                 </div>
-              )}
+              </div>
+            )}
+            <ToggleRow label="Require deposit" desc="Collected at booking, applied at checkout" on={data.requireDeposit} onChange={() => upd("requireDeposit", !data.requireDeposit)} />
+            {data.requireDeposit && (
+              <div style={{ padding: "12px 0 16px", borderBottom: "1px solid #f3f4f6" }}>
+                <InputField label="Deposit amount (%)">
+                  <input type="number" value={data.depositPercent} onChange={(e) => upd("depositPercent", e.target.value)} style={{ ...iS, maxWidth: 120 }}
+                    onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+                </InputField>
+              </div>
+            )}
+            <ToggleRow label="Cancellation fee" desc="Charge clients for late cancellations" on={data.cancellationFee} onChange={() => upd("cancellationFee", !data.cancellationFee)} />
+            {data.cancellationFee && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, paddingTop: 12 }}>
+                <InputField label="Fee amount ($)">
+                  <input type="number" value={data.cancellationFeeAmount} onChange={(e) => upd("cancellationFeeAmount", e.target.value)} style={iS}
+                    onFocus={(e) => e.target.style.borderColor = "#606E74"} onBlur={(e) => e.target.style.borderColor = "#e5e7eb"} />
+                </InputField>
+                <InputField label="Notice required (hours)">
+                  <select value={data.cancellationWindow} onChange={(e) => upd("cancellationWindow", e.target.value)} style={{ ...iS, appearance: "none" as const, cursor: "pointer" }}>
+                    {[2, 4, 12, 24, 48].map((h) => <option key={h} value={String(h)}>{h} hours</option>)}
+                  </select>
+                </InputField>
+              </div>
+            )}
+          </div>)}
 
-              <ToggleRow label="Require deposit for bookings" on={form.requireDeposit} onChange={() => update("requireDeposit", !form.requireDeposit)} />
-              {form.requireDeposit && (
-                <div><label className={labelStyle}>Deposit amount (%)</label>
-                  <input type="number" value={form.depositAmount} onChange={(e) => update("depositAmount", e.target.value)} className={`${inputStyle} max-w-[160px]`} /></div>
-              )}
-
-              <ToggleRow label="Cancellation fee" on={form.cancellationFee} onChange={() => update("cancellationFee", !form.cancellationFee)} />
-              {form.cancellationFee && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label className={labelStyle}>Fee amount ($)</label>
-                    <input type="number" value={form.cancellationFeeAmount} onChange={(e) => update("cancellationFeeAmount", e.target.value)} className={inputStyle} /></div>
-                  <div><label className={labelStyle}>Hours notice required</label>
-                    <input type="number" value={form.cancellationHours} onChange={(e) => update("cancellationHours", e.target.value)} className={inputStyle} /></div>
-                </div>
-              )}
+          {/* ═══ STEP 8 — All Set ═══ */}
+          {step === 8 && (<div style={{ textAlign: "center", padding: "16px 0" }}>
+            <div style={{ width: 80, height: 80, background: "rgba(22,163,74,0.08)", border: "2px solid rgba(22,163,74,0.2)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px", animation: "scaleIn 500ms ease-out" }}>
+              <CheckCircle2 size={40} style={{ color: "#16a34a" }} strokeWidth={1.5} />
             </div>
-          </div>
-        )}
-
-        {/* STEP 8 — All Set */}
-        {step === 8 && (
-          <div className="flex flex-col items-center py-4 text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#22c55e]/10">
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className="text-[#22c55e]">
-                <path d="M8 16.5L13.5 22L24 11" stroke="currentColor" strokeWidth="2.5"
-                  strokeLinecap="round" strokeLinejoin="round"
-                  style={{ strokeDasharray: 50, strokeDashoffset: 0, animation: "checkmark 500ms ease-out both" }} />
-              </svg>
-            </div>
-            <h1 className="text-[26px] font-bold text-[#111827]">
-              You&apos;re all set{form.businessName ? `, ${form.businessName}` : ""}!
-            </h1>
-            <p className="mt-2 text-[14px] text-[#6b7280]">Your Kasse portal is ready. Here&apos;s what to do next:</p>
-
-            <div className="mt-8 flex w-full flex-col gap-3">
+            <h2 style={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: "0 0 8px" }}>
+              You&apos;re all set{data.businessName ? `, ${data.businessName}` : ""}!
+            </h2>
+            <p style={{ fontSize: 15, color: "#6b7280", margin: "0 0 40px", lineHeight: 1.6 }}>
+              Your Kasse portal is ready. Here&apos;s what to do next:
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 32 }}>
               {[
-                { icon: UserCog, title: "Add your team", desc: "Invite staff and set their roles", href: "/dashboard/staff", color: "#606E74" },
+                { icon: UserCog, title: "Add your team", desc: "Invite staff and set roles", href: "/dashboard/staff", color: "#606E74" },
                 { icon: Scissors, title: "Set up services", desc: "Add services and pricing", href: "/dashboard/services", color: "#2563eb" },
                 { icon: CreditCard, title: "Try the POS", desc: "Take your first payment", href: "/dashboard/pos", color: "#16a34a" },
-              ].map((item) => {
-                const Icon = item.icon
-                return (
-                  <a key={item.href} href={item.href}
-                    className="flex cursor-pointer items-center gap-4 rounded-xl border border-[#e5e7eb] p-5 text-left transition-all hover:border-[#606e74]">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg" style={{ background: `${item.color}12` }}>
-                      <Icon size={18} strokeWidth={1.5} style={{ color: item.color }} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[14px] font-semibold text-[#111827]">{item.title}</p>
-                      <p className="text-[13px] text-[#6b7280]">{item.desc}</p>
-                    </div>
-                    <ChevronRight size={16} className="text-[#d1d5db]" />
-                  </a>
-                )
-              })}
+              ].map((action) => (
+                <a key={action.href} href={action.href} style={{ display: "block", padding: "20px 16px", background: "white", border: "1px solid #e5e7eb", borderRadius: 12, textDecoration: "none", transition: "border-color 150ms, box-shadow 150ms", cursor: "pointer" }}>
+                  <div style={{ width: 40, height: 40, background: `${action.color}15`, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+                    <action.icon size={20} style={{ color: action.color }} strokeWidth={1.5} />
+                  </div>
+                  <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: "#111827" }}>{action.title}</p>
+                  <p style={{ margin: 0, fontSize: 12, color: "#9ca3af" }}>{action.desc}</p>
+                </a>
+              ))}
             </div>
-
-            <a href="/dashboard"
-              className="mt-8 flex h-[52px] w-full cursor-pointer items-center justify-center rounded-xl bg-[#606e74] text-[18px] font-bold text-white transition-all hover:bg-[#7a8f96]"
-              style={{ boxShadow: "0 4px 12px rgba(96,110,116,0.3)" }}>
+            <a href="/dashboard" style={{ display: "block", width: "100%", height: 52, background: "#606E74", color: "white", border: "none", borderRadius: 10, fontSize: 16, fontWeight: 700, letterSpacing: "-0.2px", cursor: "pointer", textDecoration: "none", lineHeight: "52px", textAlign: "center" as const, transition: "background 150ms" }}>
               Go to Dashboard &rarr;
             </a>
-            <p className="mt-4 text-[12px] text-[#9ca3af]">
-              Powered by <strong className="text-[#606e74]">SalonTransact</strong>
-            </p>
-          </div>
-        )}
+            <p style={{ margin: "20px 0 0", fontSize: 12, color: "#9ca3af" }}>Powered by <strong style={{ color: "#606E74" }}>SalonTransact</strong></p>
+          </div>)}
 
-        {/* Continue button (steps 2-7) */}
+        </div>
+
+        {/* Navigation buttons (outside card, steps 2-7) */}
         {step >= 2 && step <= 7 && (
-          <button onClick={handleContinue} disabled={!canContinue || saving}
-            className="mt-8 flex h-[44px] w-full cursor-pointer items-center justify-center rounded-lg bg-[#606e74] text-[14px] font-semibold text-white transition-all hover:bg-[#7a8f96] disabled:cursor-not-allowed disabled:opacity-40">
-            {saving ? "Saving..." : "Continue"}
-          </button>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
+            {step > 2 ? (
+              <button onClick={() => setStep((s) => s - 1)} style={{ height: 44, padding: "0 20px", background: "white", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 14, fontWeight: 600, color: "#374151", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                &larr; Back
+              </button>
+            ) : <div />}
+            <button onClick={handleNext} disabled={!canContinue || saving} style={{
+              height: 44, padding: "0 28px", background: "#606E74", color: "white", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", letterSpacing: "-0.2px", opacity: !canContinue || saving ? 0.5 : 1,
+            }}>
+              {saving ? "Saving..." : "Continue \u2192"}
+            </button>
+          </div>
         )}
       </div>
 
-      <style>{`
-        @keyframes checkmark { from { stroke-dashoffset: 50; } to { stroke-dashoffset: 0; } }
-        @media (prefers-reduced-motion: reduce) { @keyframes checkmark { from, to { stroke-dashoffset: 0; } } }
-      `}</style>
-    </main>
-  )
-}
-
-function ToggleRow({ label, on, onChange }: { label: string; on: boolean; onChange: () => void }) {
-  return (
-    <div className="flex items-center justify-between rounded-lg border border-[#e5e7eb] p-4">
-      <span className="text-[14px] font-medium text-[#374151]">{label}</span>
-      <button onClick={onChange} className="cursor-pointer" aria-label={`Toggle ${label}`}
-        style={{
-          width: 44, height: 24, borderRadius: 12, border: "none",
-          background: on ? "#606e74" : "#d1d5db", position: "relative", transition: "background 200ms",
-        }}>
-        <div style={{
-          width: 18, height: 18, borderRadius: "50%", background: "white",
-          position: "absolute", top: 3, left: on ? 23 : 3, transition: "left 200ms",
-          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-        }} />
-      </button>
+      <style>{`@keyframes scaleIn { from { opacity:0; transform:scale(0.8); } to { opacity:1; transform:scale(1); } }
+        @media (prefers-reduced-motion:reduce) { @keyframes scaleIn { from,to { opacity:1; transform:none; } } }
+        @media (max-width:640px) { div[style*="grid-template-columns: repeat(3"] { grid-template-columns: 1fr !important; } }`}</style>
     </div>
   )
 }

@@ -5,97 +5,77 @@ import { prisma } from "@/lib/prisma"
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
-  if (!session?.user?.id) {
+  if (!session?.user?.organizationId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  const { step, data } = await req.json()
+  const orgId = session.user.organizationId
+
   try {
-    const { step, data } = await req.json()
-
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      include: { organization: true },
-    })
-
-    if (!user?.organizationId) {
-      return NextResponse.json({ error: "No organization found" }, { status: 400 })
-    }
-
-    const orgId = user.organizationId
-
     switch (step) {
-      case 2: {
-        // Business Basics
+      case 2: // Business basics
         await prisma.organization.update({
           where: { id: orgId },
           data: {
-            name: data.businessName || user.organization?.name,
+            name: data.businessName,
             businessType: data.businessType,
             phone: data.phone,
-            email: data.businessEmail,
+            email: data.email,
             website: data.website,
             description: data.description,
-            onboardingStep: Math.max(user.organization?.onboardingStep ?? 0, 2),
+            onboardingStep: 2,
           },
         })
         break
-      }
 
-      case 3: {
-        // Legal & Tax
+      case 3: // Legal & tax
         await prisma.organization.update({
           where: { id: orgId },
           data: {
             legalName: data.legalName,
-            businessStructure: data.businessStructure,
+            businessStructure: data.structure,
             ein: data.ein || null,
-            stateOfFormation: data.stateOfFormation,
+            stateOfFormation: data.stateOfFormation || null,
             yearEstablished: data.yearEstablished ? parseInt(data.yearEstablished) : null,
-            onboardingStep: Math.max(user.organization?.onboardingStep ?? 0, 3),
+            onboardingStep: 3,
           },
         })
         break
-      }
 
-      case 4: {
-        // Location
+      case 4: // Location
+        const existingLocation = await prisma.location.findFirst({
+          where: { organizationId: orgId },
+        })
         const fullAddress = data.suite ? `${data.address}, ${data.suite}` : data.address
 
-        // Upsert primary location
-        const existingLocations = await prisma.location.findMany({
-          where: { organizationId: orgId },
-          take: 1,
-        })
-
-        if (existingLocations.length > 0) {
+        if (existingLocation) {
           await prisma.location.update({
-            where: { id: existingLocations[0].id },
+            where: { id: existingLocation.id },
             data: {
-              name: user.organization?.name || "Main Location",
               address: fullAddress,
               city: data.city,
               state: data.state,
               zip: data.zip,
-              phone: data.locationPhone || data.phone,
               timezone: data.timezone || "America/Chicago",
+              phone: data.locationPhone || data.phone,
             },
           })
         } else {
+          const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
           await prisma.location.create({
             data: {
               organizationId: orgId,
-              name: user.organization?.name || "Main Location",
+              name: org?.name || "Main Location",
               address: fullAddress,
               city: data.city,
               state: data.state,
               zip: data.zip,
-              phone: data.locationPhone || data.phone,
               timezone: data.timezone || "America/Chicago",
+              phone: data.locationPhone || data.phone,
             },
           })
         }
-
-        // Also update org address
         await prisma.organization.update({
           where: { id: orgId },
           data: {
@@ -104,78 +84,69 @@ export async function POST(req: NextRequest) {
             state: data.state,
             zip: data.zip,
             timezone: data.timezone || "America/Chicago",
-            onboardingStep: Math.max(user.organization?.onboardingStep ?? 0, 4),
+            onboardingStep: 4,
           },
         })
         break
-      }
 
-      case 5: {
-        // Team & Operations
+      case 5: // Team & operations
         await prisma.organization.update({
           where: { id: orgId },
           data: {
             teamSize: data.teamSize,
-            isFranchise: data.isFranchise === true,
-            sourceSystem: data.sourceSystem !== "None" ? data.sourceSystem : null,
-            onboardingStep: Math.max(user.organization?.onboardingStep ?? 0, 5),
+            isFranchise: data.isFranchise === "yes",
+            sourceSystem: data.currentSystem !== "None (starting fresh)" ? data.currentSystem : null,
+            onboardingStep: 5,
           },
         })
         break
-      }
 
-      case 6: {
-        // Services
-        if (data.services && Array.isArray(data.services) && data.services.length > 0) {
-          const locations = await prisma.location.findMany({
+      case 6: // Services
+        if (data.services && data.services.length > 0) {
+          const location = await prisma.location.findFirst({
             where: { organizationId: orgId },
-            take: 1,
           })
-          const locationId = locations[0]?.id
-
           for (const svc of data.services) {
             await prisma.service.create({
               data: {
                 organizationId: orgId,
-                locationId: locationId || undefined,
+                locationId: location?.id,
                 name: svc.name,
                 category: svc.category,
                 price: parseFloat(svc.price) || 0,
-                duration: svc.duration || 45,
+                duration: parseInt(svc.duration) || 60,
+                isActive: true,
               },
             })
           }
         }
-
         await prisma.organization.update({
           where: { id: orgId },
-          data: { onboardingStep: Math.max(user.organization?.onboardingStep ?? 0, 6) },
+          data: { onboardingStep: 6 },
         })
         break
-      }
 
-      case 7: {
-        // Payment Setup
+      case 7: // Payment setup
         await prisma.businessSettings.upsert({
           where: { organizationId: orgId },
-          update: {
-            taxRate: data.taxRate ? parseFloat(data.taxRate) : 8.25,
-            tipPromptEnabled: data.acceptTips !== false,
-            tipOptions: data.tipOptions || [15, 20, 25],
-            requireDeposit: data.requireDeposit === true,
-            depositPercentage: data.depositAmount ? parseFloat(data.depositAmount) : 25,
-            cancellationFee: data.cancellationFee ? parseFloat(data.cancellationFeeAmount || "25") : null,
-            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationHours || "24") : 24,
-          },
           create: {
             organizationId: orgId,
-            taxRate: data.taxRate ? parseFloat(data.taxRate) : 8.25,
-            tipPromptEnabled: data.acceptTips !== false,
-            tipOptions: data.tipOptions || [15, 20, 25],
+            taxRate: parseFloat(data.taxRate) || 8.25,
+            tipPromptEnabled: data.tipsEnabled !== false,
+            tipOptions: data.tipOptions || [15, 18, 20, 25],
             requireDeposit: data.requireDeposit === true,
-            depositPercentage: data.depositAmount ? parseFloat(data.depositAmount) : 25,
+            depositPercentage: parseFloat(data.depositPercent) || 25,
             cancellationFee: data.cancellationFee ? parseFloat(data.cancellationFeeAmount || "25") : null,
-            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationHours || "24") : 24,
+            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationWindow || "24") : 24,
+          },
+          update: {
+            taxRate: parseFloat(data.taxRate) || 8.25,
+            tipPromptEnabled: data.tipsEnabled !== false,
+            tipOptions: data.tipOptions || [15, 18, 20, 25],
+            requireDeposit: data.requireDeposit === true,
+            depositPercentage: parseFloat(data.depositPercent) || 25,
+            cancellationFee: data.cancellationFee ? parseFloat(data.cancellationFeeAmount || "25") : null,
+            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationWindow || "24") : 24,
           },
         })
 
@@ -194,21 +165,26 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Mark onboarding complete
         await prisma.organization.update({
           where: { id: orgId },
-          data: { onboardingStep: 8, onboardingCompleted: true },
+          data: { onboardingStep: 7 },
         })
         break
-      }
 
-      default:
+      case 8: // Complete
+        await prisma.organization.update({
+          where: { id: orgId },
+          data: {
+            onboardingStep: 8,
+            onboardingCompleted: true,
+          },
+        })
         break
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Onboarding error:", error)
-    return NextResponse.json({ error: "Failed to save onboarding data" }, { status: 500 })
+    console.error("Onboarding save error:", error)
+    return NextResponse.json({ error: "Failed to save" }, { status: 500 })
   }
 }
