@@ -43,11 +43,6 @@ export default function Sidebar({ user }: SidebarProps) {
         height: 56, padding: "0 16px", display: "flex", alignItems: "center", gap: 10,
         borderBottom: "1px solid #e5e7eb",
       }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: "50%", background: "#606E74",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 12, fontWeight: 600, color: "white", flexShrink: 0,
-        }}>{initials}</div>
         <Image src="/kasse-logo.png" alt="kasse." width={60} height={20}
           style={{ objectFit: "contain", filter: "invert(1)" }} />
         <ChevronDown size={16} strokeWidth={1.5} style={{ color: "#9ca3af", marginLeft: "auto" }} />

@@ -43,51 +43,27 @@ export async function POST(req: NextRequest) {
         })
         break
 
-      case 4: // Location
-        const existingLocation = await prisma.location.findFirst({
-          where: { organizationId: orgId },
-        })
+      case 4: { // Location
+        const existingLocation = await prisma.location.findFirst({ where: { organizationId: orgId } })
         const fullAddress = data.suite ? `${data.address}, ${data.suite}` : data.address
 
         if (existingLocation) {
           await prisma.location.update({
             where: { id: existingLocation.id },
-            data: {
-              address: fullAddress,
-              city: data.city,
-              state: data.state,
-              zip: data.zip,
-              timezone: data.timezone || "America/Chicago",
-              phone: data.locationPhone || data.phone,
-            },
+            data: { address: fullAddress, city: data.city, state: data.state, zip: data.zip, timezone: data.timezone || "America/Chicago", phone: data.phone },
           })
         } else {
           const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
           await prisma.location.create({
-            data: {
-              organizationId: orgId,
-              name: org?.name || "Main Location",
-              address: fullAddress,
-              city: data.city,
-              state: data.state,
-              zip: data.zip,
-              timezone: data.timezone || "America/Chicago",
-              phone: data.locationPhone || data.phone,
-            },
+            data: { organizationId: orgId, name: org?.name || "Main Location", address: fullAddress, city: data.city, state: data.state, zip: data.zip, timezone: data.timezone || "America/Chicago", phone: data.phone },
           })
         }
         await prisma.organization.update({
           where: { id: orgId },
-          data: {
-            address: fullAddress,
-            city: data.city,
-            state: data.state,
-            zip: data.zip,
-            timezone: data.timezone || "America/Chicago",
-            onboardingStep: 4,
-          },
+          data: { address: fullAddress, city: data.city, state: data.state, zip: data.zip, timezone: data.timezone || "America/Chicago", onboardingStep: 4 },
         })
         break
+      }
 
       case 5: // Team & operations
         await prisma.organization.update({
@@ -101,32 +77,24 @@ export async function POST(req: NextRequest) {
         })
         break
 
-      case 6: // Services
+      case 6: { // Services
         if (data.services && data.services.length > 0) {
-          const location = await prisma.location.findFirst({
-            where: { organizationId: orgId },
-          })
+          const location = await prisma.location.findFirst({ where: { organizationId: orgId } })
           for (const svc of data.services) {
             await prisma.service.create({
               data: {
-                organizationId: orgId,
-                locationId: location?.id,
-                name: svc.name,
-                category: svc.category,
-                price: parseFloat(svc.price) || 0,
-                duration: parseInt(svc.duration) || 60,
-                isActive: true,
+                organizationId: orgId, locationId: location?.id,
+                name: svc.name, category: svc.category,
+                price: parseFloat(svc.price) || 0, duration: parseInt(svc.duration) || 60, isActive: true,
               },
             })
           }
         }
-        await prisma.organization.update({
-          where: { id: orgId },
-          data: { onboardingStep: 6 },
-        })
+        await prisma.organization.update({ where: { id: orgId }, data: { onboardingStep: 6 } })
         break
+      }
 
-      case 7: // Payment setup
+      case 7: { // Payment setup
         await prisma.businessSettings.upsert({
           where: { organizationId: orgId },
           create: {
@@ -136,8 +104,6 @@ export async function POST(req: NextRequest) {
             tipOptions: data.tipOptions || [15, 18, 20, 25],
             requireDeposit: data.requireDeposit === true,
             depositPercentage: parseFloat(data.depositPercent) || 25,
-            cancellationFee: data.cancellationFee ? parseFloat(data.cancellationFeeAmount || "25") : null,
-            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationWindow || "24") : 24,
           },
           update: {
             taxRate: parseFloat(data.taxRate) || 8.25,
@@ -145,11 +111,17 @@ export async function POST(req: NextRequest) {
             tipOptions: data.tipOptions || [15, 18, 20, 25],
             requireDeposit: data.requireDeposit === true,
             depositPercentage: parseFloat(data.depositPercent) || 25,
-            cancellationFee: data.cancellationFee ? parseFloat(data.cancellationFeeAmount || "25") : null,
-            cancellationWindow: data.cancellationFee ? parseInt(data.cancellationWindow || "24") : 24,
           },
         })
+        await prisma.organization.update({ where: { id: orgId }, data: { onboardingStep: 7 } })
+        break
+      }
 
+      case 8: // Import data (just mark step complete, files handled separately)
+        await prisma.organization.update({ where: { id: orgId }, data: { onboardingStep: 8 } })
+        break
+
+      case 9: { // Complete
         // Create default permission sets if none exist
         const existingPerms = await prisma.permissionSet.count({ where: { organizationId: orgId } })
         if (existingPerms === 0) {
@@ -164,22 +136,9 @@ export async function POST(req: NextRequest) {
             await prisma.permissionSet.create({ data: { organizationId: orgId, ...perm } })
           }
         }
-
-        await prisma.organization.update({
-          where: { id: orgId },
-          data: { onboardingStep: 7 },
-        })
+        await prisma.organization.update({ where: { id: orgId }, data: { onboardingStep: 9, onboardingCompleted: true } })
         break
-
-      case 8: // Complete
-        await prisma.organization.update({
-          where: { id: orgId },
-          data: {
-            onboardingStep: 8,
-            onboardingCompleted: true,
-          },
-        })
-        break
+      }
     }
 
     return NextResponse.json({ success: true })
