@@ -52,8 +52,26 @@ model Organization {
   description       String?
   teamSize          String?
   sourceSystem      String?
-  onboardingStep    Int      @default(0)
-  onboardingCompleted Boolean @default(false)
+  dbaName                String?
+  ownerFirstName         String?
+  ownerLastName          String?
+  ownerDob               String?
+  ownerSsnLast4          String?
+  ownerTitle             String?
+  ownershipPercentage    Int?
+  ownerAddress           String?
+  bankAccountHolder      String?
+  bankRoutingNumber      String?
+  bankAccountNumber      String?
+  bankAccountType        String?
+  fundingSpeed           String?
+  monthlyVolume          String?
+  avgTransaction         String?
+  paymentMethods         String[]
+  applicationStatus      String?  @default("not_started")
+  applicationSubmittedAt DateTime?
+  onboardingStep         Int      @default(0)
+  onboardingCompleted    Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   locations         Location[]
