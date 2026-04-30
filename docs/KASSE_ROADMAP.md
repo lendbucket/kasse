@@ -236,3 +236,67 @@
 | 12.8 | Kasse Hardware bundle | Order "Kasse Station" bundle from portal |
 | 12.9 | Kasse Insurance quotes | Auto-quote based on revenue + staff data |
 | 12.10 | Aggregate data API (anonymized) | Sell benchmarks to brands, PE, researchers |
+
+---
+
+## PHASE 5.5 — KASSE COLOR (Weeks 12-14)
+**Goal:** Replace Vish. Every color service has a digital formula card with AI intelligence.
+
+| # | Commit | Acceptance Criteria |
+|---|--------|---------------------|
+| 5.5.1 | Formula card Prisma schema + API routes | FormulaCard model, linked to Appointment + Client |
+| 5.5.2 | Formula card creation UI in POS | Stylist can enter formula during/after service |
+| 5.5.3 | Photo upload (before/after) to S3 | Photos tagged to appointment, display on client profile |
+| 5.5.4 | Client formula history page | All color history in chronological order with photos |
+| 5.5.5 | Result rating + stylist notes | 1-5 rating + text notes saved on formula card |
+| 5.5.6 | AI formula recommendation engine | Claude API reads history, suggests next formula |
+| 5.5.7 | AI color matching from photo | Upload inspiration photo → formula suggestion |
+| 5.5.8 | Product cost calculation per formula | Auto-calculate from inventory cost data |
+| 5.5.9 | Pricing intelligence vs market benchmarks | "You are undercharging by $X for this service type" |
+| 5.5.10 | Auto-deduct inventory on service complete | Formula card amounts deducted from inventory |
+| 5.5.11 | Pre-appointment inventory check + alert | 24hr before: check inventory vs formula needed |
+| 5.5.12 | Purchase order generation | Auto-generate PO from upcoming formula needs |
+| 5.5.13 | Waste tracking per stylist | Prescribed vs actual amounts, waste % |
+| 5.5.14 | Multi-location formula library | Share formulas across franchise locations |
+| 5.5.15 | Franchise formula standardization | Approved product lists, compliance alerts |
+| 5.5.16 | Client-facing formula portal | Client reads their own history (read-only) |
+| 5.5.17 | Formula PDF export (salon-approved) | Controlled export with owner approval |
+| 5.5.18 | Bluetooth scale integration | Live weight reading during mixing |
+| 5.5.19 | Portfolio auto-populate from photos | Tagged photos appear on marketplace profile |
+| 5.5.20 | Kasse Color command center section | All formula data in admin portal |
+
+---
+
+## PHASE 7.5 — AI INTELLIGENCE LAYER (Weeks 18-20)
+**Goal:** Every AI feature from the AI strategy doc. This is the moat.
+
+| # | Commit | Acceptance Criteria |
+|---|--------|---------------------|
+| 7.5.1 | Kasse Consult — pre-appointment intake | Booking flow includes consultation form |
+| 7.5.2 | Kasse Consult — AI photo analysis | Upload photo at booking → pre-populates apt notes |
+| 7.5.3 | Kasse Coach — weekly stylist AI summary | Every stylist gets personalized weekly performance coaching |
+| 7.5.4 | Kasse Forecast — revenue projection | 30/60/90 day forecast with confidence intervals |
+| 7.5.5 | Kasse Forecast — slow period detection | Historical pattern analysis + promotion suggestions |
+| 7.5.6 | Kasse Forecast — staffing recommendations | Peak hour analysis + understaffing alerts |
+| 7.5.7 | Kasse Guard — compliance AI alerts | Overtime, license expiry, waiver gaps, booth rental renewals |
+| 7.5.8 | Kasse Guard — HR risk detection | Patterns suggesting stylist turnover risk |
+| 7.5.9 | Intelligence subscription product | Weekly benchmark JSON delivered via API, $49/month add-on |
+| 7.5.10 | Kasse Professional Score v1 | Composite score from revenue + consistency + retention + compliance |
+
+---
+
+## PHASE 10.5 — AGENT-NATIVE API (Weeks 24-26)
+**Goal:** AI agents can discover, understand, and use Kasse API without human help.
+
+| # | Commit | Acceptance Criteria |
+|---|--------|---------------------|
+| 10.5.1 | OpenAPI 3.1 spec auto-generated | Scalar docs live at docs.kasseapp.com |
+| 10.5.2 | HATEOAS links on all responses | Every response includes _links for next actions |
+| 10.5.3 | Natural language endpoint descriptions | Every endpoint has agent-readable description |
+| 10.5.4 | Agent tier API key type | Separate key type, usage-based pricing, agent audit log |
+| 10.5.5 | Agent-specific rate limits | Higher call volume allowed for agent keys |
+| 10.5.6 | Idempotency audit — all POST endpoints | Verify every POST accepts and honors Idempotency-Key |
+| 10.5.7 | Agent test suite | Automated tests simulating agent usage patterns |
+| 10.5.8 | "Kasse for AI Agents" documentation | Published at docs.kasseapp.com/agents |
+| 10.5.9 | LangChain tool definition | Kasse published as LangChain tool |
+| 10.5.10 | Google Reserve integration | "Book Now" on Google Maps for every Kasse salon |
