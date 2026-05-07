@@ -29,10 +29,44 @@ export class TenantContextError extends Error {
 }
 
 /**
+ * Extracts HTTP request context for audit logging.
+ * Safe to call with no req (returns undefined). Safe to call with a req that
+ * is missing some headers (returns whatever it can get).
+ */
+function extractRequestContext(req: NextRequest | undefined): TenantContext["request"] {
+  if (!req) return undefined;
+
+  // IP: prefer the first hop in x-forwarded-for (set by Vercel and most CDNs),
+  // fall back to x-real-ip, then cf-connecting-ip (Cloudflare).
+  const xff = req.headers.get("x-forwarded-for");
+  const ip =
+    (xff ? xff.split(",")[0]?.trim() : null) ||
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    undefined;
+
+  const userAgent = req.headers.get("user-agent") ?? undefined;
+
+  // Request ID: Vercel sets x-vercel-id in production; allow x-request-id from upstream.
+  // No fallback generation here — we'd rather have a NULL than a fake correlation id.
+  const requestId =
+    req.headers.get("x-vercel-id") ??
+    req.headers.get("x-request-id") ??
+    undefined;
+
+  const route = req.nextUrl?.pathname ?? undefined;
+
+  // Only return an object if we have at least one field; otherwise return undefined.
+  if (!ip && !userAgent && !requestId && !route) return undefined;
+
+  return { ip, userAgent, requestId, route };
+}
+
+/**
  * Returns the tenant context for the current request, or null if unauthenticated.
  * Does NOT throw. Use this when an unauthenticated state is acceptable.
  */
-export async function getTenantContext(_req?: NextRequest): Promise<TenantContext | null> {
+export async function getTenantContext(req?: NextRequest): Promise<TenantContext | null> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return null;
 
@@ -41,6 +75,7 @@ export async function getTenantContext(_req?: NextRequest): Promise<TenantContex
 
   if (!session.user.organizationId && !isSuperadmin) return null;
 
+  const request = extractRequestContext(req);
   return {
     userId: session.user.id,
     email: session.user.email ?? "",
@@ -49,6 +84,7 @@ export async function getTenantContext(_req?: NextRequest): Promise<TenantContex
     organizationId: session.user.organizationId ?? "",
     locationId: session.user.locationId ?? null,
     isSuperadmin,
+    ...(request ? { request } : {}),
   };
 }
 
