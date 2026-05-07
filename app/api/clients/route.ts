@@ -1,19 +1,41 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  assertLocationInTenant,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const params = request.nextUrl.searchParams;
   const q = params.get("q")?.trim() ?? "";
   const locationId = params.get("locationId");
 
-  const where: Record<string, unknown> = {};
+  // If a locationId is supplied, prove it belongs to this tenant.
+  // This kills any chance of locationId being used as a cross-tenant probe.
+  if (locationId) {
+    try {
+      await assertLocationInTenant(locationId, ctx);
+    } catch (e) {
+      const r = tenantErrorResponse(e);
+      if (r) return r;
+      throw e;
+    }
+  }
+
+  // Application-layer tenant scope. RLS will enforce this again at the DB layer in 0.5.3b.
+  const where: Record<string, unknown> = { organizationId: ctx.organizationId };
   if (locationId) where.locationId = locationId;
   if (q) {
     where.OR = [
@@ -23,20 +45,22 @@ export async function GET(request: NextRequest) {
     ];
   }
 
-  const clients = await prisma.client.findMany({
-    where,
-    orderBy: { name: "asc" },
-    include: {
-      _count: { select: { appointments: true } },
-      appointments: {
-        orderBy: { startTime: "desc" },
-        take: 1,
-        select: { startTime: true },
+  const clients = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.client.findMany({
+      where,
+      orderBy: { name: "asc" },
+      include: {
+        _count: { select: { appointments: true } },
+        appointments: {
+          orderBy: { startTime: "desc" },
+          take: 1,
+          select: { startTime: true },
+        },
       },
-    },
+    });
   });
 
-  const shaped = clients.map((c) => ({
+  const shaped = clients.map((c: any) => ({
     id: c.id,
     name: c.name,
     email: c.email,
@@ -59,9 +83,13 @@ type CreateBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   let body: CreateBody;
@@ -78,19 +106,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Get organizationId from location
-  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
-  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+  // Verify the location belongs to this tenant before creating anything under it.
+  let location: { id: string; organizationId: string };
+  try {
+    location = await assertLocationInTenant(body.locationId, ctx);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
 
-  const client = await prisma.client.create({
-    data: {
-      name: body.name.trim(),
-      email: body.email?.trim() || null,
-      phone: body.phone?.trim() || null,
-      notes: body.notes?.trim() || null,
-      locationId: body.locationId,
-      organizationId: location.organizationId,
-    },
+  const client = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.client.create({
+      data: {
+        name: body.name.trim(),
+        email: body.email?.trim() || null,
+        phone: body.phone?.trim() || null,
+        notes: body.notes?.trim() || null,
+        locationId: body.locationId,
+        organizationId: location.organizationId,
+      },
+    });
   });
 
   return NextResponse.json({ client }, { status: 201 });
