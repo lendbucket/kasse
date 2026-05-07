@@ -27,7 +27,8 @@
       "Bash(ai-receptionist\")",
       "Bash(npx tsc:*)",
       "Bash(npx next:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx dotenv:*)"
     ]
   }
 }
