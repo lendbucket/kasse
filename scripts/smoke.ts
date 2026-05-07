@@ -134,6 +134,19 @@ function classify(route: Route, status: number, ms: number): Result {
   }
 
   // api
+  // Some auth-related routes legitimately redirect (email verification, OAuth callbacks).
+  // Treat 3xx on these specific paths as expected.
+  const REDIRECT_ALLOWLIST = [
+    "/api/auth/verify-email",
+    "/api/auth/callback",
+    "/api/auth/signout",
+    "/api/auth/signin",
+  ];
+  const isAllowedRedirect =
+    status >= 300 && status < 400 &&
+    REDIRECT_ALLOWLIST.some((p) => route.url === p || route.url.startsWith(p + "/"));
+
+  if (isAllowedRedirect) return { route, status, ok: true, reason: "api-redirect-ok", ms };
   if (status >= 200 && status < 300) return { route, status, ok: true, reason: "api-ok", ms };
   if (status === 401 || status === 403) return { route, status, ok: true, reason: "api-gated", ms };
   if (status === 405) return { route, status, ok: true, reason: "api-method-ok", ms };
