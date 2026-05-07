@@ -13,6 +13,12 @@ export interface TenantContext {
   organizationId: string;
   locationId: string | null;
   isSuperadmin: boolean;
+  request?: {
+    ip?: string;
+    userAgent?: string;
+    requestId?: string;
+    route?: string;
+  };
 }
 
 export class TenantContextError extends Error {

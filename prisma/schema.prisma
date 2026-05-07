@@ -776,6 +776,14 @@ model AuditLog {
   ipAddress      String?
   userAgent      String?
   createdAt      DateTime @default(now())
+  route          String?
+  requestId      String?
+  changedFields  String[]
+  metadata       Json?
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 // ═══════════════════════════════════════════

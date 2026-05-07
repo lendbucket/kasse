@@ -36,12 +36,20 @@ export async function withTenantScope<T>(
       ctx.organizationId,
       ctx.isSuperadmin,
     );
+    await tx.$executeRawUnsafe(
+      `SELECT app_set_actor($1, $2, $3, $4, $5, $6)`,
+      ctx.userId,
+      ctx.email,
+      ctx.request?.ip ?? "",
+      ctx.request?.userAgent ?? "",
+      ctx.request?.requestId ?? "",
+      ctx.request?.route ?? "",
+    );
     try {
       return await fn(tx);
     } finally {
-      // Best-effort clear. If the transaction is being rolled back the session
-      // var is already discarded, so this is mostly cosmetic.
       try {
+        await tx.$executeRawUnsafe(`SELECT app_clear_actor()`);
         await tx.$executeRawUnsafe(`SELECT app_clear_tenant()`);
       } catch {
         // ignore — transaction may already be closed
