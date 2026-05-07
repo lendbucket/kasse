@@ -1,9 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
-type PatchBody = {
+type UpdateBody = {
   name?: string;
   price?: number;
   duration?: number;
@@ -16,65 +20,81 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const { id } = await params;
 
-  let body: PatchBody;
+  let body: UpdateBody;
   try {
-    body = (await request.json()) as PatchBody;
+    body = (await request.json()) as UpdateBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
   const data: Record<string, unknown> = {};
-  if (typeof body.name === "string") {
-    const v = body.name.trim();
-    if (!v) {
-      return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
-    }
-    data.name = v;
-  }
-  if (typeof body.price === "number") {
-    if (body.price < 0) {
-      return NextResponse.json({ error: "Invalid price" }, { status: 400 });
-    }
-    data.price = body.price;
-  }
-  if (typeof body.duration === "number") {
-    if (body.duration <= 0) {
-      return NextResponse.json({ error: "Invalid duration" }, { status: 400 });
-    }
-    data.duration = Math.round(body.duration);
-  }
-  if (body.category !== undefined) {
-    data.category = body.category?.toString().trim() || null;
-  }
-  if (typeof body.locationId === "string" && body.locationId) {
-    data.locationId = body.locationId;
-  }
+  if (typeof body.name === "string") data.name = body.name.trim();
+  if (typeof body.price === "number" && body.price >= 0) data.price = body.price;
+  if (typeof body.duration === "number" && body.duration > 0) data.duration = Math.round(body.duration);
+  if (body.category !== undefined) data.category = body.category?.trim() || null;
+  if (typeof body.locationId === "string" && body.locationId) data.locationId = body.locationId;
   if (typeof body.active === "boolean") data.isActive = body.active;
 
-  const service = await prisma.service.update({ where: { id }, data });
-  return NextResponse.json({ service });
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  // Tenant-scoped update: where clause includes organizationId so we can never modify another tenant's row.
+  // updateMany returns count; if 0, the resource doesn't exist OR doesn't belong to us — same response.
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    const updated = await tx.service.updateMany({
+      where: { id, organizationId: ctx.organizationId },
+      data,
+    });
+    if (updated.count === 0) return null;
+    return tx.service.findUnique({ where: { id } });
+  });
+
+  if (!result) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ service: result });
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const { id } = await params;
-  const service = await prisma.service.update({
-    where: { id },
-    data: { isActive: false },
+
+  // Soft delete via isActive=false, scoped by tenant.
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    const deleted = await tx.service.updateMany({
+      where: { id, organizationId: ctx.organizationId },
+      data: { isActive: false },
+    });
+    return deleted.count;
   });
-  return NextResponse.json({ service });
+
+  if (result === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

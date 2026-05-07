@@ -1,16 +1,27 @@
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  const locations = await prisma.location.findMany({
-    orderBy: { name: "asc" },
+  const locations = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.location.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { name: "asc" },
+    });
   });
 
   return NextResponse.json({ locations });

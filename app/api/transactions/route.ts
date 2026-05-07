@@ -1,7 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  assertLocationInTenant,
+  assertStaffInTenant,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
 type TransactionBody = {
   locationId: string;
@@ -15,9 +21,13 @@ type TransactionBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   let body: TransactionBody;
@@ -31,23 +41,40 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // Get organizationId from location
-  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
-  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+  let location: { id: string; organizationId: string };
+  try {
+    location = await assertLocationInTenant(body.locationId, ctx);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
 
-  const transaction = await prisma.transaction.create({
-    data: {
-      locationId: body.locationId,
-      organizationId: location.organizationId,
-      staffId: body.staffId ?? null,
-      clientName: body.clientName ?? null,
-      subtotal: body.amount,
-      tip: body.tip ?? 0,
-      tax: body.tax ?? 0,
-      total: body.total,
-      paymentMethod: body.paymentMethod ?? null,
-      status: "completed",
-    },
+  if (body.staffId) {
+    try {
+      await assertStaffInTenant(body.staffId, ctx);
+    } catch (e) {
+      const r = tenantErrorResponse(e);
+      if (r) return r;
+      throw e;
+    }
+  }
+
+  const transaction = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.transaction.create({
+      data: {
+        locationId: body.locationId,
+        organizationId: location.organizationId,
+        staffId: body.staffId ?? null,
+        clientName: body.clientName ?? null,
+        subtotal: body.amount,
+        tip: body.tip ?? 0,
+        tax: body.tax ?? 0,
+        total: body.total,
+        paymentMethod: body.paymentMethod ?? null,
+        status: "completed",
+      },
+    });
   });
 
   return NextResponse.json({ transaction }, { status: 201 });

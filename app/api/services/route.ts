@@ -1,27 +1,48 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  assertLocationInTenant,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const params = request.nextUrl.searchParams;
   const locationId = params.get("locationId");
-  const activeParam = params.get("active"); // "all" | "false" | default true
+  const activeParam = params.get("active");
 
-  const where: Record<string, unknown> = {};
+  if (locationId) {
+    try {
+      await assertLocationInTenant(locationId, ctx);
+    } catch (e) {
+      const r = tenantErrorResponse(e);
+      if (r) return r;
+      throw e;
+    }
+  }
+
+  const where: Record<string, unknown> = { organizationId: ctx.organizationId };
   if (locationId) where.locationId = locationId;
   if (activeParam !== "all") {
     where.isActive = activeParam === "false" ? false : true;
   }
 
-  const services = await prisma.service.findMany({
-    where,
-    orderBy: [{ category: "asc" }, { name: "asc" }],
+  const services = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.service.findMany({
+      where,
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    });
   });
 
   return NextResponse.json({ services });
@@ -37,9 +58,13 @@ type CreateBody = {
 };
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   let body: CreateBody;
@@ -63,20 +88,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Get organizationId from location
-  const location = await prisma.location.findUnique({ where: { id: body.locationId }, select: { organizationId: true } });
-  if (!location) return NextResponse.json({ error: "Location not found" }, { status: 400 });
+  let location: { id: string; organizationId: string };
+  try {
+    location = await assertLocationInTenant(body.locationId, ctx);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
 
-  const service = await prisma.service.create({
-    data: {
-      name: body.name.trim(),
-      price: body.price,
-      duration: Math.round(body.duration),
-      category: body.category?.trim() || null,
-      locationId: body.locationId,
-      organizationId: location.organizationId,
-      isActive: body.active ?? true,
-    },
+  const service = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.service.create({
+      data: {
+        name: body.name.trim(),
+        price: body.price,
+        duration: Math.round(body.duration),
+        category: body.category?.trim() || null,
+        locationId: body.locationId,
+        organizationId: location.organizationId,
+        isActive: body.active ?? true,
+      },
+    });
   });
 
   return NextResponse.json({ service }, { status: 201 });

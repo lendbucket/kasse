@@ -133,6 +133,34 @@ export async function assertLocationInTenant(
 }
 
 /**
+ * Verifies that a given staffId belongs to the current tenant.
+ * Same shape as assertLocationInTenant — superadmin bypasses, all others must match organizationId.
+ * Returns minimal staff record. Throws TenantContextError on mismatch or missing.
+ */
+export async function assertStaffInTenant(
+  staffId: string,
+  ctx: TenantContext,
+): Promise<{ id: string; organizationId: string; locationId: string | null }> {
+  if (ctx.isSuperadmin) {
+    const staff = await prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { id: true, organizationId: true, locationId: true },
+    });
+    if (!staff) throw new TenantContextError("NO_TENANT", "Staff not found");
+    return staff;
+  }
+
+  const staff = await prisma.staff.findFirst({
+    where: { id: staffId, organizationId: ctx.organizationId },
+    select: { id: true, organizationId: true, locationId: true },
+  });
+  if (!staff) {
+    throw new TenantContextError("NO_TENANT", "Staff not found");
+  }
+  return staff;
+}
+
+/**
  * Standard HTTP response builder for TenantContextError.
  * Returns null if the error is not a TenantContextError.
  *
