@@ -40,6 +40,7 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           role: user.role,
           organizationId: user.organizationId,
+          locationId: user.locationId,
         }
       },
     }),
@@ -50,6 +51,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id
         token.role = (user as any).role
         token.organizationId = (user as any).organizationId
+        token.locationId = (user as any).locationId
       }
       return token
     },
@@ -58,6 +60,7 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string
         session.user.role = token.role as string
         session.user.organizationId = token.organizationId as string
+        session.user.locationId = token.locationId as string | null
       }
       return session
     },
@@ -77,6 +80,7 @@ declare module "next-auth" {
       image?: string | null
       role: string
       organizationId?: string | null
+      locationId?: string | null
     }
   }
 }

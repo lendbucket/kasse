@@ -28,7 +28,9 @@
       "Bash(npx tsc:*)",
       "Bash(npx next:*)",
       "Bash(git commit:*)",
-      "Bash(npx dotenv:*)"
+      "Bash(npx dotenv:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git check-ignore:*)"
     ]
   }
 }
