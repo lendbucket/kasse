@@ -24,7 +24,10 @@
       "Bash(reputation)",
       "Bash(messages)",
       "Bash(waitlist)",
-      "Bash(ai-receptionist\")"
+      "Bash(ai-receptionist\")",
+      "Bash(npx tsc:*)",
+      "Bash(npx next:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
