@@ -1,45 +1,97 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
+import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function GET(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  const [org, settings] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: session.user.organizationId }, include: { locations: true } }),
-    prisma.businessSettings.findUnique({ where: { organizationId: session.user.organizationId } }),
-  ])
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    const [org, settings] = await Promise.all([
+      tx.organization.findUnique({
+        where: { id: ctx.organizationId },
+        include: { locations: true },
+      }),
+      tx.businessSettings.findUnique({
+        where: { organizationId: ctx.organizationId },
+      }),
+    ]);
+    return { org, settings };
+  });
 
-  return NextResponse.json({ organization: org, settings })
+  return NextResponse.json({
+    organization: result.org,
+    settings: result.settings,
+  });
 }
 
-export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+type PatchBody = {
+  organizationUpdates?: Record<string, unknown>;
+  settingsUpdates?: Record<string, unknown>;
+};
+
+export async function PATCH(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  const data = await req.json()
-  const { organizationUpdates, settingsUpdates } = data
-
-  if (organizationUpdates) {
-    await prisma.organization.update({
-      where: { id: session.user.organizationId },
-      data: organizationUpdates,
-    })
+  let body: PatchBody;
+  try {
+    body = (await request.json()) as PatchBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (settingsUpdates) {
-    await prisma.businessSettings.upsert({
-      where: { organizationId: session.user.organizationId },
-      update: settingsUpdates,
-      create: { organizationId: session.user.organizationId, ...settingsUpdates },
-    })
+  if (!body.organizationUpdates && !body.settingsUpdates) {
+    return NextResponse.json({ error: "No updates provided" }, { status: 400 });
   }
 
-  return NextResponse.json({ success: true })
+  // TODO(0.5.8): Mass-assignment hazard. organizationUpdates and settingsUpdates
+  // are passed directly to Prisma. Organization has 28 sensitive fields that an
+  // org owner must NEVER be able to overwrite via this endpoint:
+  //   plan, planStatus, trialEndsAt, stripeCustomerId, stripeSubId, salonTransactId,
+  //   isFranchise, franchiseFeeType, franchiseFeeValue, techFeeType, techFeeValue,
+  //   marketingFeeType, marketingFeeValue, parentOrgId, applicationStatus,
+  //   applicationSubmittedAt, onboardingStep, onboardingCompleted,
+  //   ein, ownerSsnLast4, bankRoutingNumber, bankAccountNumber, bankAccountHolder,
+  //   bankAccountType, sourceSystem, slug, createdAt, updatedAt
+  // 0.5.8 will introduce field allowlists for both Organization and BusinessSettings.
+  // Until then this endpoint trusts the caller, which is acceptable while ceo@36west.org
+  // is the only logged-in user. DO NOT advertise this endpoint to additional accounts
+  // until 0.5.8 ships.
+
+  // Both writes run in a single transaction. If either fails, neither is persisted.
+  await withTenantScope(prisma, ctx, async (tx) => {
+    if (body.organizationUpdates) {
+      await tx.organization.update({
+        where: { id: ctx.organizationId },
+        data: body.organizationUpdates,
+      });
+    }
+    if (body.settingsUpdates) {
+      await tx.businessSettings.upsert({
+        where: { organizationId: ctx.organizationId },
+        update: body.settingsUpdates,
+        create: { organizationId: ctx.organizationId, ...body.settingsUpdates },
+      });
+    }
+  });
+
+  return NextResponse.json({ success: true });
 }
