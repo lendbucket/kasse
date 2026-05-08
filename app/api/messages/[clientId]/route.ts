@@ -1,26 +1,48 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
+import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ clientId: string }> }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ clientId: string }> },
+) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  const { clientId } = await params
+  const { clientId } = await params;
 
-  const messages = await prisma.message.findMany({
-    where: { organizationId: session.user.organizationId, clientId },
-    orderBy: { sentAt: "asc" },
-  })
+  // Read messages and mark inbound ones as read in a single transaction.
+  // The withTenantScope wrapper ensures both queries run under the same tenant session vars,
+  // so audit triggers fire with full context for the updateMany.
+  const messages = await withTenantScope(prisma, ctx, async (tx) => {
+    const list = await tx.message.findMany({
+      where: { organizationId: ctx.organizationId, clientId },
+      orderBy: { sentAt: "asc" },
+    });
 
-  // Mark unread messages as read
-  await prisma.message.updateMany({
-    where: { organizationId: session.user.organizationId, clientId, isRead: false, direction: "inbound" },
-    data: { isRead: true, readAt: new Date() },
-  })
+    await tx.message.updateMany({
+      where: {
+        organizationId: ctx.organizationId,
+        clientId,
+        isRead: false,
+        direction: "inbound",
+      },
+      data: { isRead: true, readAt: new Date() },
+    });
 
-  return NextResponse.json({ messages })
+    return list;
+  });
+
+  return NextResponse.json({ messages });
 }

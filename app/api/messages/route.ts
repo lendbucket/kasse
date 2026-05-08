@@ -1,26 +1,35 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
+import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function GET(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  // Get unique conversations (latest message per client)
-  const messages = await prisma.message.findMany({
-    where: { organizationId: session.user.organizationId },
-    orderBy: { sentAt: "desc" },
-    include: { client: { select: { id: true, name: true, phone: true, email: true } } },
-  })
+  const messages = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.message.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { sentAt: "desc" },
+      include: { client: { select: { id: true, name: true, phone: true, email: true } } },
+    });
+  });
 
-  // Group by client
-  const conversationMap = new Map<string, typeof messages[0]>()
+  // Group by clientId, keep latest message per client.
+  const conversationMap = new Map<string, typeof messages[0]>();
   for (const msg of messages) {
     if (!conversationMap.has(msg.clientId)) {
-      conversationMap.set(msg.clientId, msg)
+      conversationMap.set(msg.clientId, msg);
     }
   }
 
@@ -32,33 +41,68 @@ export async function GET() {
     lastMessageAt: msg.sentAt,
     direction: msg.direction,
     isRead: msg.isRead,
-  }))
+  }));
 
-  return NextResponse.json({ conversations })
+  return NextResponse.json({ conversations });
 }
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+type SendMessageBody = {
+  clientId: string;
+  content: string;
+  channel?: string;
+};
+
+export async function POST(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
-  const { clientId, content, channel } = await req.json()
-  if (!clientId || !content) {
-    return NextResponse.json({ error: "Client and content required" }, { status: 400 })
+  let body: SendMessageBody;
+  try {
+    body = (await request.json()) as SendMessageBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const message = await prisma.message.create({
-    data: {
-      organizationId: session.user.organizationId,
-      clientId,
-      direction: "outbound",
-      channel: channel || "sms",
-      content,
-      status: "sent",
-      staffId: session.user.id,
-    },
-  })
+  if (!body.clientId || !body.content) {
+    return NextResponse.json({ error: "Client and content required" }, { status: 400 });
+  }
 
-  return NextResponse.json({ message })
+  // Verify the client belongs to this tenant before writing a message under it.
+  // This is a manual scope check; we don't have an assertClientInTenant helper yet
+  // and adding one is out of scope for this commit.
+  const clientCheck = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.client.findFirst({
+      where: { id: body.clientId, organizationId: ctx.organizationId },
+      select: { id: true },
+    });
+  });
+  if (!clientCheck) {
+    return NextResponse.json({ error: "Client not found" }, { status: 404 });
+  }
+
+  const message = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.message.create({
+      data: {
+        organizationId: ctx.organizationId,
+        clientId: body.clientId,
+        direction: "outbound",
+        channel: body.channel || "sms",
+        content: body.content,
+        status: "sent",
+        // TODO(0.5.9): Message.staffId currently has no @relation to Staff. The original
+        // code wrote session.user.id (a User ID) into a Staff column with no FK enforcement.
+        // 0.5.9 will add the FK constraint and look up the Staff record by Staff.userId.
+        // For now we set null rather than perpetuate the wrong-id-type bug.
+        staffId: null,
+      },
+    });
+  });
+
+  return NextResponse.json({ message }, { status: 201 });
 }
