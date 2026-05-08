@@ -12,7 +12,8 @@
     "db:migrate:dev": "prisma migrate dev",
     "db:status": "prisma migrate status",
     "smoke": "tsx scripts/smoke.ts",
-    "smoke:prod": "cross-env SMOKE_BASE_URL=https://portal.kasseapp.com tsx scripts/smoke.ts"
+    "smoke:prod": "cross-env SMOKE_BASE_URL=https://portal.kasseapp.com tsx scripts/smoke.ts",
+    "audit:verify": "dotenv -e .env.local -- tsx scripts/audit-verify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
