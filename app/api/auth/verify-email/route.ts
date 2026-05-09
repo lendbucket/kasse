@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from "next/server"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 
 export async function GET(req: NextRequest) {
+  const baseUrl = process.env.NEXTAUTH_URL;
+  if (!baseUrl) {
+    // Fail loud rather than silently using a request-derived base, which can
+    // be host-header-spoofed behind a misconfigured proxy.
+    return NextResponse.json(
+      { error: "Server configuration error: NEXTAUTH_URL not set" },
+      { status: 500 },
+    );
+  }
+
   const token = req.nextUrl.searchParams.get("token")
-  if (!token) return NextResponse.redirect(new URL("/login?error=invalid_token", req.url))
+  if (!token) return NextResponse.redirect(new URL("/login?error=invalid_token", baseUrl))
 
   const user = await prismaAdmin.user.findFirst({
     where: {
@@ -12,7 +22,7 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  if (!user) return NextResponse.redirect(new URL("/login?error=expired_token", req.url))
+  if (!user) return NextResponse.redirect(new URL("/login?error=expired_token", baseUrl))
 
   await prismaAdmin.user.update({
     where: { id: user.id },
@@ -23,5 +33,5 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  return NextResponse.redirect(new URL("/onboarding?verified=true", req.url))
+  return NextResponse.redirect(new URL("/onboarding?verified=true", baseUrl))
 }

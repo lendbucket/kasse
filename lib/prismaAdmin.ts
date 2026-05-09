@@ -13,14 +13,20 @@ import { PrismaPg } from "@prisma/adapter-pg";
  * See docs/RLS_AUDIT.md for the canonical classification of which routes use
  * this client.
  *
- * SECURITY: Every query through this client sets `app.is_superadmin = true` in
- * the database session. When RLS policies are enabled (Phase 0.5.3b-3), they
- * MUST check this var and bypass tenant scoping when it's true. The session var
- * is set in a transaction wrapper so it persists for the duration of the query.
+ * SECURITY: Every query through this client runs inside an explicit
+ * transaction that issues `SET LOCAL app.is_superadmin = 'true'`. The
+ * `LOCAL` qualifier scopes the variable to the transaction; when the
+ * transaction commits, the var clears, and the connection returning to the
+ * pool carries no superadmin flag for the next request.
  *
- * Until RLS policies are applied, setting this var is a no-op — the var
- * exists but nothing reads it. This means prismaAdmin is safe to deploy
- * BEFORE RLS goes live.
+ * Using SET without LOCAL was rejected during review because it persists
+ * for the connection's lifetime, leaking is_superadmin=true to subsequent
+ * tenant-scoped requests that reuse the same pooled connection.
+ *
+ * When RLS policies are enabled (Phase 0.5.3b-3), they MUST check this
+ * session var and bypass tenant scoping when it's true. Until policies are
+ * applied, setting the var is a no-op — the var exists but nothing reads
+ * it. prismaAdmin is therefore safe to deploy BEFORE RLS goes live.
  *
  * NEVER import this client from a route under app/api/* unless the route is
  * explicitly classified in docs/RLS_AUDIT.md as PRE_SESSION, SUPERADMIN, or
@@ -38,27 +44,28 @@ const adapter = new PrismaPg({ connectionString });
 
 const _prismaAdmin = new PrismaClient({ adapter });
 
-// Extend the client so every query runs inside a transaction that first sets
-// app.is_superadmin = true. This is how the bypass actually flows to the
-// database — RLS policies will read this session var.
+// Every prismaAdmin operation runs inside an explicit transaction so we can
+// use SET LOCAL — which is scoped to the transaction. When the transaction
+// commits or aborts, the connection returns to the pool with the
+// app.is_superadmin var cleared.
 //
-// We use $extends with a query-level wrapper. Every model.method call passes
-// through this; nothing escapes the bypass. Raw $queryRaw / $executeRaw also
-// need the var, but they're rare and we accept that they'd need an explicit
-// transaction wrapper.
+// Using SET (without LOCAL) was wrong: it persists for the entire session
+// (i.e. the lifetime of the pooled connection). A subsequent tenant-scoped
+// request reusing that connection would inherit is_superadmin=true and,
+// under RLS, bypass tenant scoping — a cross-tenant data exposure vector.
+//
+// Caveat: $queryRaw / $executeRaw / $executeRawUnsafe called directly on
+// prismaAdmin do NOT pass through this $extends wrapper. If we ever add a
+// raw SQL call in an auth/admin/onboarding route, it MUST be wrapped in an
+// explicit prismaAdmin.$transaction(...) with its own SET LOCAL prelude.
+// See docs/RLS_AUDIT.md "Known limitations" for the standing record.
 export const prismaAdmin = _prismaAdmin.$extends({
   query: {
     $allOperations: async ({ args, query }) => {
-      // We can't easily wrap individual queries in a transaction without
-      // changing the call shape. Instead, set the var at the connection level
-      // each time. Postgres SET LOCAL only persists inside an explicit
-      // transaction; SET (without LOCAL) persists for the whole session, which
-      // is fine here because the connection is reused.
-      //
-      // The PrismaPg adapter uses connection pooling, so we set the var at
-      // the start of every query. This is cheap (one round-trip) and safe.
-      await _prismaAdmin.$executeRawUnsafe(`SET app.is_superadmin = 'true'`);
-      return query(args);
+      return await _prismaAdmin.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+        return query(args);
+      });
     },
   },
 });
