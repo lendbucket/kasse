@@ -53,11 +53,11 @@ table is a foundation regression and should be flagged in code review.
 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
-| `/api/auth/[...nextauth]` | GET, POST | NextAuth catch-all handler for sign-in, sign-out, session, callbacks (PRE_SESSION) |
-| `/api/auth/register` | POST | Creates new user + org + business settings; hashes password; sends verification email (PRE_SESSION) |
-| `/api/auth/forgot-password` | POST | Sets password reset token and sends reset email; always returns success to prevent enumeration (PRE_SESSION) |
-| `/api/auth/reset-password` | POST | Validates reset token, hashes new password, clears token fields (PRE_SESSION) |
-| `/api/auth/verify-email` | GET | Validates email verification token, stamps emailVerified, redirects to onboarding (PRE_SESSION) |
+| `/api/auth/[...nextauth]` | GET, POST | PRE_SESSION (delegates entirely to lib/auth.ts which uses prismaAdmin; no direct DB calls in the route file) |
+| `/api/auth/register` | POST | Creates user + org + business settings via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/forgot-password` | POST | Sets password reset token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/reset-password` | POST | Validates reset token, hashes new password via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/verify-email` | GET | Validates email verification token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
 
 ### BYPASS_NEEDED — SUPERADMIN (cross-tenant operations)
 
@@ -133,9 +133,40 @@ These routes were migrated to `requireTenantContext` + `withTenantScope` in
 0.5.3b-1b. All queries now scope by `organizationId`. The cross-tenant
 read/write gap is closed.
 
+## Known limitations
+
+### Raw SQL via $queryRaw / $executeRaw bypasses the prismaAdmin extension
+
+The prismaAdmin client uses Prisma's $extends API to wrap every model
+operation in a transaction with `SET LOCAL app.is_superadmin = 'true'`.
+This covers the typed query surface (`prismaAdmin.user.findUnique(...)`,
+`prismaAdmin.organization.create(...)`, etc.).
+
+It does NOT cover:
+- `prismaAdmin.$queryRaw\`...\``
+- `prismaAdmin.$executeRaw\`...\``
+- `prismaAdmin.$executeRawUnsafe(...)`
+
+These bypass the $extends wrapper. If an auth, admin, or onboarding route
+ever needs to issue a raw SQL query, it MUST wrap that query in an explicit
+transaction with the SET LOCAL prelude:
+
+```ts
+await prismaAdmin.$transaction(async (tx) => {
+  await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+  return tx.$queryRaw`SELECT ...`;
+});
+```
+
+Today, no route in app/api/auth, app/api/admin, or app/api/onboarding uses
+raw SQL. If a PR introduces one without the wrapper above, the reviewer
+should flag it as SEVERE.
+
 ## Changelog
 
 | Phase | Change |
 |-------|--------|
 | 0.5.3b-1 | Initial classification: 15 TENANT_SCOPED, 2 TENANT_SCOPED_PENDING, 14 BYPASS_NEEDED, 0 UNDECIDED |
 | 0.5.3b-1b | Migrated clients/[id] and staff/[id] to tenant context; both moved to TENANT_SCOPED. Final: 17 TENANT_SCOPED, 14 BYPASS_NEEDED. |
+| 0.5.3b-2a | Built lib/prismaAdmin.ts. Migrated lib/auth.ts (NextAuth credentials + adapter) and 5 PRE_SESSION auth routes (register, forgot-password, reset-password, verify-email, [...nextauth] via lib/auth.ts) to prismaAdmin. Foundation now distinguishes tenant-scoped from bypass clients deliberately. |
+| 0.5.3b-2a-fix | Reviewer-driven correction of prismaAdmin: switched from connection-level SET to transaction-scoped SET LOCAL to prevent is_superadmin leaking across pooled connections. Hardened verify-email redirect against host-header spoofing. Documented $queryRaw/$executeRaw caveat. |

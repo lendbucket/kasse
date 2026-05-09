@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { prismaAdmin } from "@/lib/prismaAdmin"
 import bcrypt from "bcryptjs"
 
 export async function POST(req: NextRequest) {
@@ -8,14 +8,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 })
   }
 
-  const user = await prisma.user.findFirst({
+  const user = await prismaAdmin.user.findFirst({
     where: { passwordResetToken: token, passwordResetExp: { gt: new Date() } },
   })
 
   if (!user) return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 })
 
   const hashed = await bcrypt.hash(password, 12)
-  await prisma.user.update({
+  await prismaAdmin.user.update({
     where: { id: user.id },
     data: { password: hashed, passwordResetToken: null, passwordResetExp: null },
   })

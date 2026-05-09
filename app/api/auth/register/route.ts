@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
-import { prisma } from "@/lib/prisma"
+import { prismaAdmin } from "@/lib/prismaAdmin"
 import { Resend } from "resend"
 import crypto from "crypto"
 import { getVerificationEmailHtml } from "@/lib/emails/verification"
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 })
     }
 
-    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+    const existing = await prismaAdmin.user.findUnique({ where: { email: email.toLowerCase() } })
     if (existing) {
       return NextResponse.json({ error: "Email already registered" }, { status: 400 })
     }
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     const slug = businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
 
-    const org = await prisma.organization.create({
+    const org = await prismaAdmin.organization.create({
       data: {
         name: businessName,
         slug,
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.user.create({
+    await prismaAdmin.user.create({
       data: {
         name,
         email: email.toLowerCase(),
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    await prisma.businessSettings.create({
+    await prismaAdmin.businessSettings.create({
       data: { organizationId: org.id },
     })
 

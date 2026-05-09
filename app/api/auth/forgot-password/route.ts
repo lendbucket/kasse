@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { prismaAdmin } from "@/lib/prismaAdmin"
 import { Resend } from "resend"
 import crypto from "crypto"
 import { getPasswordResetEmailHtml } from "@/lib/emails/password-reset"
@@ -8,7 +8,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: NextRequest) {
   const { email } = await req.json()
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+  const user = await prismaAdmin.user.findUnique({ where: { email: email.toLowerCase() } })
 
   // Always return success to prevent email enumeration
   if (!user) return NextResponse.json({ success: true })
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const resetToken = crypto.randomBytes(32).toString("hex")
   const resetExp = new Date(Date.now() + 60 * 60 * 1000)
 
-  await prisma.user.update({
+  await prismaAdmin.user.update({
     where: { id: user.id },
     data: { passwordResetToken: resetToken, passwordResetExp: resetExp },
   })
