@@ -46,13 +46,8 @@ table is a foundation regression and should be flagged in code review.
 | `/api/ai-receptionist/config` | GET, PATCH | Reads/upserts AI receptionist config with field allowlist on PATCH |
 | `/api/settings` | GET, PATCH | Reads org + business settings; applies allowlist-filtered updates transactionally |
 | `/api/settings/import` | GET, POST | CSV bulk import with ImportJob audit trail (tenant-scoped); row inserts use raw prisma intentionally (see architectural note in file) |
-
-### TENANT_SCOPED_PENDING — Old `getServerSession` pattern, needs migration
-
-| Route | Method(s) | Reason |
-|-------|-----------|--------|
-| `/api/clients/[id]` | GET, PATCH | Fetches/patches a client by raw ID with NO organizationId scope check — cross-tenant read/write risk |
-| `/api/staff/[id]` | PATCH, DELETE | Updates/soft-deletes staff by raw ID with NO organizationId scope check — cross-tenant mutation risk |
+| `/api/clients/[id]` | GET, PATCH | Reads client + appointments + totalSpent; patches profile fields — all scoped by organizationId (migrated 0.5.3b-1b) |
+| `/api/staff/[id]` | PATCH, DELETE | Updates staff fields (with locationId validation) or soft-deletes — all scoped by organizationId (migrated 0.5.3b-1b) |
 
 ### BYPASS_NEEDED — PRE_SESSION (public, no session required)
 
@@ -85,10 +80,7 @@ table is a foundation regression and should be flagged in code review.
 
 ## Summary
 
-- TENANT_SCOPED: **15**
-- TENANT_SCOPED_PENDING (needs migration): **2**
-  - `/api/clients/[id]` — cross-tenant read/write risk
-  - `/api/staff/[id]` — cross-tenant mutation risk
+- TENANT_SCOPED: **17**
 - BYPASS_NEEDED: **14**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **5** (admin portal operations)
@@ -99,10 +91,7 @@ table is a foundation regression and should be flagged in code review.
 
 ## What happens next
 
-- **0.5.3b-1.1 (immediate):** Migrate the 2 TENANT_SCOPED_PENDING routes
-  (`/api/clients/[id]` and `/api/staff/[id]`) to `requireTenantContext` +
-  `withTenantScope`. These are cross-tenant vulnerabilities that must be
-  closed before RLS is relevant.
+- **0.5.3b-1b (done):** Migrated clients/[id] and staff/[id] to tenant context.
 - **0.5.3b-2:** Build `lib/prismaAdmin.ts` — a Prisma client that explicitly
   sets `app.is_superadmin = true` on every connection so it bypasses RLS
   policies. Migrate every BYPASS_NEEDED route to use it.
@@ -138,9 +127,15 @@ This route serves static CSV template content with no auth check. This is
 intentional — the templates contain column headers only, no user data. No
 RLS impact because it performs no database queries.
 
-### `/api/clients/[id]` and `/api/staff/[id]` — SECURITY GAP
+### `/api/clients/[id]` and `/api/staff/[id]` — RESOLVED
 
-These routes accept an ID parameter and fetch/mutate the record without
-checking `organizationId`. Any authenticated user can read or modify any
-client or staff record across all tenants by guessing/enumerating IDs.
-Migration to `requireTenantContext` is the highest-priority follow-up.
+These routes were migrated to `requireTenantContext` + `withTenantScope` in
+0.5.3b-1b. All queries now scope by `organizationId`. The cross-tenant
+read/write gap is closed.
+
+## Changelog
+
+| Phase | Change |
+|-------|--------|
+| 0.5.3b-1 | Initial classification: 15 TENANT_SCOPED, 2 TENANT_SCOPED_PENDING, 14 BYPASS_NEEDED, 0 UNDECIDED |
+| 0.5.3b-1b | Migrated clients/[id] and staff/[id] to tenant context; both moved to TENANT_SCOPED. Final: 17 TENANT_SCOPED, 14 BYPASS_NEEDED. |
