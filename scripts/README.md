@@ -77,3 +77,26 @@ real authenticated writes. Requires a session cookie from a logged-in browser.
 Some HTTP context fields like `requestId` (sourced from `x-vercel-id`) won't
 populate on a local dev server. The script accepts this and reports it. On
 Vercel production, all fields populate.
+
+### Prerequisite: audit test fixture
+
+Before running `audit:verify`, you need a user that belongs to an org with a
+location. The superadmin account (`ceo@36west.org`) has `organizationId: null`
+and will not work.
+
+Run the audit test seed once to create the fixture:
+
+    npm run audit:seed
+
+This creates:
+- **Organization:** Audit Test Salon (`audit-test-org`)
+- **Location:** Audit Test Location (`audit-test-location`)
+- **User:** `audit-test@localhost` / `AuditTest2026!` (role: owner)
+
+Then log in as `audit-test@localhost` in your browser, grab the session cookie,
+and run `audit:verify` with that cookie.
+
+### Production safety
+
+The seed refuses to run if `NODE_ENV=production` unless `--force` is passed.
+Don't pass `--force` in production. The fixture is a local-dev-only contract.
