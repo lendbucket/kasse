@@ -6,6 +6,11 @@ import {
   type TenantContext,
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
+import {
+  ORGANIZATION_ALLOWED_FIELDS,
+  BUSINESS_SETTINGS_ALLOWED_FIELDS,
+  pickAllowed,
+} from "@/lib/tenant/allowlists";
 
 export async function GET(request: NextRequest) {
   let ctx: TenantContext;
@@ -62,33 +67,34 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "No updates provided" }, { status: 400 });
   }
 
-  // TODO(0.5.8): Mass-assignment hazard. organizationUpdates and settingsUpdates
-  // are passed directly to Prisma. Organization has 28 sensitive fields that an
-  // org owner must NEVER be able to overwrite via this endpoint:
-  //   plan, planStatus, trialEndsAt, stripeCustomerId, stripeSubId, salonTransactId,
-  //   isFranchise, franchiseFeeType, franchiseFeeValue, techFeeType, techFeeValue,
-  //   marketingFeeType, marketingFeeValue, parentOrgId, applicationStatus,
-  //   applicationSubmittedAt, onboardingStep, onboardingCompleted,
-  //   ein, ownerSsnLast4, bankRoutingNumber, bankAccountNumber, bankAccountHolder,
-  //   bankAccountType, sourceSystem, slug, createdAt, updatedAt
-  // 0.5.8 will introduce field allowlists for both Organization and BusinessSettings.
-  // Until then this endpoint trusts the caller, which is acceptable while ceo@36west.org
-  // is the only logged-in user. DO NOT advertise this endpoint to additional accounts
-  // until 0.5.8 ships.
+  // Apply field allowlists to defend against mass-assignment.
+  // See lib/tenant/allowlists.ts for the deliberate set of writable fields.
+  const safeOrgUpdates      = pickAllowed(body.organizationUpdates, ORGANIZATION_ALLOWED_FIELDS);
+  const safeSettingsUpdates = pickAllowed(body.settingsUpdates,    BUSINESS_SETTINGS_ALLOWED_FIELDS);
+
+  const orgHasUpdates      = Object.keys(safeOrgUpdates).length > 0;
+  const settingsHasUpdates = Object.keys(safeSettingsUpdates).length > 0;
+
+  if (!orgHasUpdates && !settingsHasUpdates) {
+    return NextResponse.json(
+      { error: "No allowed fields to update" },
+      { status: 400 },
+    );
+  }
 
   // Both writes run in a single transaction. If either fails, neither is persisted.
   await withTenantScope(prisma, ctx, async (tx) => {
-    if (body.organizationUpdates) {
+    if (orgHasUpdates) {
       await tx.organization.update({
         where: { id: ctx.organizationId },
-        data: body.organizationUpdates,
+        data: safeOrgUpdates,
       });
     }
-    if (body.settingsUpdates) {
+    if (settingsHasUpdates) {
       await tx.businessSettings.upsert({
         where: { organizationId: ctx.organizationId },
-        update: body.settingsUpdates,
-        create: { organizationId: ctx.organizationId, ...body.settingsUpdates },
+        update: safeSettingsUpdates,
+        create: { organizationId: ctx.organizationId, ...safeSettingsUpdates },
       });
     }
   });

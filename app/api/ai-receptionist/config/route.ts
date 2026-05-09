@@ -6,6 +6,7 @@ import {
   type TenantContext,
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
+import { AI_RECEPTIONIST_ALLOWED_FIELDS, pickAllowed } from "@/lib/tenant/allowlists";
 
 export async function GET(request: NextRequest) {
   let ctx: TenantContext;
@@ -36,20 +37,26 @@ export async function PATCH(request: NextRequest) {
     throw e;
   }
 
-  // TODO(0.5.8): Mass-assignment hazard. This handler currently writes any field
-  // the caller supplies directly into AiReceptionistConfig. Fields like callsHandled
-  // and callsTransferred are system counters that an org owner should not be able
-  // to overwrite. 0.5.8 will introduce a field allowlist:
-  //   ALLOWED = { isEnabled, voiceId, greeting, businessHours, handoffNumber,
-  //               handoffEmail, capabilities }
-  // For now, the auth migration is the priority; the allowlist is a focused follow-up.
-  const data = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const safeUpdates = pickAllowed(body, AI_RECEPTIONIST_ALLOWED_FIELDS);
+  if (Object.keys(safeUpdates).length === 0) {
+    return NextResponse.json(
+      { error: "No allowed fields to update" },
+      { status: 400 },
+    );
+  }
 
   const config = await withTenantScope(prisma, ctx, async (tx) => {
     return tx.aiReceptionistConfig.upsert({
       where: { organizationId: ctx.organizationId },
-      update: data,
-      create: { organizationId: ctx.organizationId, ...data },
+      update: safeUpdates,
+      create: { organizationId: ctx.organizationId, ...safeUpdates },
     });
   });
 
