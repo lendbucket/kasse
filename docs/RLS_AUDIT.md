@@ -53,11 +53,11 @@ table is a foundation regression and should be flagged in code review.
 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
-| `/api/auth/[...nextauth]` | GET, POST | NextAuth catch-all handler for sign-in, sign-out, session, callbacks (PRE_SESSION) |
-| `/api/auth/register` | POST | Creates new user + org + business settings; hashes password; sends verification email (PRE_SESSION) |
-| `/api/auth/forgot-password` | POST | Sets password reset token and sends reset email; always returns success to prevent enumeration (PRE_SESSION) |
-| `/api/auth/reset-password` | POST | Validates reset token, hashes new password, clears token fields (PRE_SESSION) |
-| `/api/auth/verify-email` | GET | Validates email verification token, stamps emailVerified, redirects to onboarding (PRE_SESSION) |
+| `/api/auth/[...nextauth]` | GET, POST | NextAuth catch-all; delegates to lib/auth.ts which uses prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/register` | POST | Creates user + org + business settings via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/forgot-password` | POST | Sets password reset token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/reset-password` | POST | Validates reset token, hashes new password via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/auth/verify-email` | GET | Validates email verification token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
 
 ### BYPASS_NEEDED — SUPERADMIN (cross-tenant operations)
 
@@ -139,3 +139,4 @@ read/write gap is closed.
 |-------|--------|
 | 0.5.3b-1 | Initial classification: 15 TENANT_SCOPED, 2 TENANT_SCOPED_PENDING, 14 BYPASS_NEEDED, 0 UNDECIDED |
 | 0.5.3b-1b | Migrated clients/[id] and staff/[id] to tenant context; both moved to TENANT_SCOPED. Final: 17 TENANT_SCOPED, 14 BYPASS_NEEDED. |
+| 0.5.3b-2a | Built lib/prismaAdmin.ts. Migrated lib/auth.ts (NextAuth credentials + adapter) and 5 PRE_SESSION auth routes (register, forgot-password, reset-password, verify-email, [...nextauth] via lib/auth.ts) to prismaAdmin. Foundation now distinguishes tenant-scoped from bypass clients deliberately. |
