@@ -6,6 +6,7 @@ import {
   type TenantContext,
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
+import Papa from "papaparse";
 
 /**
  * Bulk import handler.
@@ -23,15 +24,14 @@ import { withTenantScope } from "@/lib/tenant/db-scope";
  *         for seconds, risking Vercel's serverless timeout on larger files.
  *      b) N audit log rows for one import is noise, not signal. The ImportJob row
  *         IS the audit record.
- *      c) Each row insert is independently scoped by organizationId in the data block,
- *         so there's no cross-tenant risk even without the connection-level scope set.
+ *      c) Each row insert is independently scoped by organizationId, so there's no
+ *         cross-tenant risk even without the connection-level scope set.
  *
- * TODO(0.5.10): Replace the hand-rolled CSV parser with papaparse. The current
- * splitter breaks on commas inside quoted fields, BOM bytes, and CRLF endings.
- *
- * TODO(0.5.10): Validate locationId is non-null before Client/Service inserts.
- * The original code uses location?.id which can produce undefined and may violate
- * NOT NULL constraints depending on schema.
+ * 0.5.10 hardening:
+ *   - CSV parsing now uses papaparse (correctly handles quoted commas, BOMs,
+ *     CRLF, escaped quotes, multi-line cells).
+ *   - Location validation moved to a single early check; the row-by-row loop
+ *     is no longer responsible for catching the no-locations case.
  */
 
 export async function POST(request: NextRequest) {
@@ -56,24 +56,39 @@ export async function POST(request: NextRequest) {
   }
 
   const text = await file.text();
-  const lines = text.split("\n").filter((l) => l.trim());
-  if (lines.length < 2) {
+
+  // Parse CSV with papaparse — handles quoted commas, BOMs, CRLF, escaped quotes,
+  // and multi-line cells correctly. The hand-rolled splitter we used previously
+  // broke on all of those.
+  const parseResult = Papa.parse<Record<string, string>>(text, {
+    header: true,
+    skipEmptyLines: "greedy",
+    transformHeader: (h: string) =>
+      h.trim().toLowerCase().replace(/\s+/g, "_").replace(/^["']|["']$/g, ""),
+  });
+
+  if (parseResult.errors.length > 0) {
+    // Treat any parse error as fatal. We want loud failures, not silent corruption.
+    return NextResponse.json(
+      {
+        error: "CSV parse failed",
+        details: parseResult.errors.slice(0, 5).map((e) => ({
+          row: e.row,
+          code: e.code,
+          message: e.message,
+        })),
+      },
+      { status: 400 },
+    );
+  }
+
+  const rows = parseResult.data;
+  if (rows.length === 0) {
     return NextResponse.json(
       { error: "File must have headers and at least one data row" },
       { status: 400 },
     );
   }
-
-  const headers = lines[0]
-    .split(",")
-    .map((h) => h.trim().toLowerCase().replace(/\s+/g, "_").replace(/"/g, ""));
-  const rows = lines.slice(1).map((line) => {
-    const values = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
-    return headers.reduce<Record<string, string>>(
-      (obj, header, i) => ({ ...obj, [header]: values[i] || "" }),
-      {},
-    );
-  });
 
   // Phase 1: create the ImportJob inside the tenant scope. This row IS the audit trail.
   const job = await withTenantScope(prisma, ctx, async (tx) => {
@@ -90,11 +105,24 @@ export async function POST(request: NextRequest) {
   });
 
   // Locate a default location for this tenant (auto-pick first). Required for
-  // Client/Staff/Service inserts that need locationId.
+  // Client/Staff/Service inserts that need locationId. If none exists, fail
+  // the import early with a clear message — the row-by-row loop below would
+  // produce silent NOT NULL constraint errors otherwise.
   const location = await prisma.location.findFirst({
     where: { organizationId: ctx.organizationId },
     select: { id: true },
   });
+
+  const requiresLocation = type === "clients" || type === "staff" || type === "services";
+  if (requiresLocation && !location) {
+    return NextResponse.json(
+      {
+        error: "No location configured for this organization",
+        hint: "Add at least one location in Settings → Locations before importing.",
+      },
+      { status: 400 },
+    );
+  }
 
   // Phase 2: bulk inserts using the plain prisma client. Each row is scoped by
   // organizationId in the data block. Failures are recorded per-row and do not
@@ -118,7 +146,7 @@ export async function POST(request: NextRequest) {
         await prisma.client.create({
           data: {
             organizationId: ctx.organizationId,
-            locationId: location?.id,
+            locationId: location!.id,
             name,
             firstName: row.first_name || null,
             lastName: row.last_name || null,
@@ -170,7 +198,7 @@ export async function POST(request: NextRequest) {
         await prisma.service.create({
           data: {
             organizationId: ctx.organizationId,
-            locationId: location?.id,
+            locationId: location!.id,
             name: row.name,
             category: row.category || null,
             price: parseFloat(row.price) || 0,
