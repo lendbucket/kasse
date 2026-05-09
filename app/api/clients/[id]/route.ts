@@ -1,48 +1,70 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const { id } = await params;
 
-  const client = await prisma.client.findUnique({
-    where: { id },
-    include: {
-      appointments: {
-        orderBy: { startTime: "desc" },
-        take: 10,
-        include: { staff: { select: { name: true } } },
+  // Multi-query read all inside a single tenant scope. Both queries scope by
+  // organizationId so a client ID from another tenant returns 404, never data.
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    const client = await tx.client.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      include: {
+        appointments: {
+          orderBy: { startTime: "desc" },
+          take: 10,
+          include: {
+            staff: { select: { id: true, name: true } },
+          },
+        },
       },
-    },
+    });
+
+    if (!client) return null;
+
+    const aggregate = await tx.appointment.aggregate({
+      where: {
+        clientId: id,
+        organizationId: ctx.organizationId,
+        status: "completed",
+      },
+      _sum: { price: true },
+      _count: true,
+    });
+
+    return { client, aggregate };
   });
 
-  if (!client) {
+  if (!result) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const totals = await prisma.appointment.aggregate({
-    where: { clientId: id, status: "completed" },
-    _sum: { price: true },
-  });
-
   return NextResponse.json({
-    client: {
-      ...client,
-      totalSpent: totals._sum.price ?? 0,
-    },
+    client: result.client,
+    totalSpent: result.aggregate._sum.price ?? 0,
+    completedVisits: result.aggregate._count,
   });
 }
 
-type PatchBody = {
+type UpdateBody = {
   name?: string;
   email?: string | null;
   phone?: string | null;
@@ -53,32 +75,49 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   const { id } = await params;
 
-  let body: PatchBody;
+  let body: UpdateBody;
   try {
-    body = (await request.json()) as PatchBody;
+    body = (await request.json()) as UpdateBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const data: Record<string, string | null> = {};
-  if (typeof body.name === "string") {
-    const v = body.name.trim();
-    if (!v) {
-      return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
-    }
-    data.name = v;
-  }
-  if (body.email !== undefined) data.email = body.email?.toString().trim() || null;
-  if (body.phone !== undefined) data.phone = body.phone?.toString().trim() || null;
-  if (body.notes !== undefined) data.notes = body.notes?.toString() ?? null;
+  const data: Record<string, unknown> = {};
+  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if (body.email !== undefined) data.email = body.email?.trim() || null;
+  if (body.phone !== undefined) data.phone = body.phone?.trim() || null;
+  if (body.notes !== undefined) data.notes = body.notes?.trim() || null;
 
-  const client = await prisma.client.update({ where: { id }, data });
-  return NextResponse.json({ client });
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+  }
+
+  // Tenant-scoped update via updateMany — returns count, never the row.
+  // If count === 0 the client either doesn't exist or belongs to another tenant
+  // (same response either way to prevent ID enumeration).
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    const updated = await tx.client.updateMany({
+      where: { id, organizationId: ctx.organizationId },
+      data,
+    });
+    if (updated.count === 0) return null;
+    return tx.client.findUnique({ where: { id } });
+  });
+
+  if (!result) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ client: result });
 }
