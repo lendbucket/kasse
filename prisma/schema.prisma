@@ -91,6 +91,9 @@ model Organization {
   apiKeys           ApiKey[]
   webhooks          Webhook[]
   devices           Device[]
+  businessSettings     BusinessSettings?
+  aiReceptionistConfig AiReceptionistConfig?
+  messages             Message[]
 }
 
 // ═══════════════════════════════════════════
@@ -110,7 +113,6 @@ model User {
   organizationId   String?
   organization     Organization? @relation(fields: [organizationId], references: [id])
   locationId       String?
-  staffId          String?
   isActive         Boolean   @default(true)
   lastLoginAt      DateTime?
   passwordResetToken String?
@@ -123,6 +125,7 @@ model User {
   sessions         Session[]
   auditLogs        AuditLog[]
   notifications    Notification[]
+  staff            Staff?    @relation("UserStaff")
 }
 
 model Account {
@@ -202,7 +205,8 @@ model Staff {
   organization     Organization @relation(fields: [organizationId], references: [id])
   locationId       String
   location         Location @relation(fields: [locationId], references: [id])
-  userId           String?
+  userId           String?  @unique
+  user             User?    @relation("UserStaff", fields: [userId], references: [id], onDelete: SetNull)
   name             String
   email            String?
   phone            String?
@@ -223,6 +227,7 @@ model Staff {
   appointments     Appointment[]
   clockEvents      ClockEvent[]
   performanceStats PerformanceStat[]
+  messages         Message[]
 }
 
 model ClockEvent {
@@ -672,6 +677,7 @@ model PermissionSet {
 model BusinessSettings {
   id             String   @id @default(cuid())
   organizationId String   @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   onlineBookingEnabled Boolean @default(true)
   bookingLeadTime      Int     @default(60)
   bookingMaxAdvance    Int     @default(60)
@@ -822,6 +828,7 @@ model Webhook {
 model AiReceptionistConfig {
   id             String   @id @default(cuid())
   organizationId String   @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   isEnabled      Boolean  @default(false)
   voiceId        String?
   greeting       String?
@@ -856,6 +863,7 @@ model AiReceptionistCall {
 model Message {
   id             String   @id @default(cuid())
   organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
   clientId       String
   client         Client   @relation(fields: [clientId], references: [id])
   direction      String
@@ -863,6 +871,7 @@ model Message {
   content        String
   status         String   @default("sent")
   staffId        String?
+  staff          Staff?   @relation(fields: [staffId], references: [id], onDelete: SetNull)
   isRead         Boolean  @default(false)
   sentAt         DateTime @default(now())
   readAt         DateTime?

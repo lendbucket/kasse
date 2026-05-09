@@ -86,6 +86,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Client not found" }, { status: 404 });
   }
 
+  // Resolve the calling user's Staff record (if they have one). Owners who are
+  // also stylists will have a Staff row keyed by userId; admin-only owners
+  // will not. Either way, the message gets the correct staffId or null.
+  const staff = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.staff.findFirst({
+      where: { userId: ctx.userId, organizationId: ctx.organizationId },
+      select: { id: true },
+    });
+  });
+
   const message = await withTenantScope(prisma, ctx, async (tx) => {
     return tx.message.create({
       data: {
@@ -95,11 +105,7 @@ export async function POST(request: NextRequest) {
         channel: body.channel || "sms",
         content: body.content,
         status: "sent",
-        // TODO(0.5.9): Message.staffId currently has no @relation to Staff. The original
-        // code wrote session.user.id (a User ID) into a Staff column with no FK enforcement.
-        // 0.5.9 will add the FK constraint and look up the Staff record by Staff.userId.
-        // For now we set null rather than perpetuate the wrong-id-type bug.
-        staffId: null,
+        staffId: staff?.id ?? null,
       },
     });
   });

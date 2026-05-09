@@ -23,6 +23,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 const COOKIE = process.env.SMOKE_SESSION_COOKIE ?? "";
@@ -37,7 +38,13 @@ if (!COOKIE) {
   process.exit(1);
 }
 
-const prisma = new PrismaClient();
+const url = process.env.DATABASE_URL;
+if (!url) {
+  console.error("FAIL: DATABASE_URL is not set. Run via: npm run audit:verify");
+  process.exit(1);
+}
+const adapter = new PrismaPg({ connectionString: url });
+const prisma = new PrismaClient({ adapter });
 
 interface CheckResult {
   name: string;
