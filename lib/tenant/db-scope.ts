@@ -2,23 +2,45 @@ import { Prisma } from "@prisma/client";
 import type { TenantContext, SuperadminContext } from "./context";
 
 /**
- * AsyncLocalStorage-style holder for the current tenant context within a request.
- * Set by withTenantScope() before a tenant-scoped database call.
+ * Type alias for a Prisma interactive transaction client. This is the `tx`
+ * parameter that Prisma passes to the callback inside `$transaction(async (tx) => ...)`.
  *
- * For Vercel serverless we use a request-scoped variable rather than node:async_hooks
- * to keep the surface minimal. Each request handler explicitly opts in.
+ * Using a named type instead of `any` gives callsites IntelliSense and
+ * prevents silent misuse (e.g., calling $transaction on the tx itself).
  */
+type PrismaTx = Prisma.TransactionClient;
+
+/**
+ * Structural type for any Prisma-like client that supports interactive
+ * transactions. Accepts both `prisma` (plain) and `prismaAdmin` ($extends
+ * wrapper) without requiring the exact PrismaClient type.
+ *
+ * We use a simplified $transaction signature here. Prisma's actual signature
+ * has two overloads (batch and callback), and the $extends wrapper produces
+ * a DynamicClientExtensionThis type that TypeScript struggles to unify with
+ * a structural match. Using `(...args: any[]) => any` for the client type
+ * while keeping the callback `fn` parameter strongly typed (PrismaTx) gives
+ * us the best tradeoff: callsites get full IntelliSense inside the callback,
+ * while the client parameter accepts both prisma and prismaAdmin.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PrismaClientLike = { $transaction: (...args: any[]) => any };
+
 type ScopedRunner = <T>(fn: () => Promise<T>) => Promise<T>;
 
 /**
  * Runs `fn` inside a Prisma interactive transaction with app.current_org_id and
- * app.is_superadmin set for the duration of the transaction.
+ * app.is_superadmin set for the duration of the transaction via SET LOCAL.
  *
- * Once 0.5.3b enables RLS policies, every Prisma query inside `fn` will be
+ * Once RLS policies are enabled, every Prisma query inside `fn` will be
  * automatically scoped to the tenant by the database itself.
  *
- * Until 0.5.3b is applied, this is a no-op safety net: it sets the session vars
- * but no policy enforces them yet, so existing queries keep working unchanged.
+ * Until RLS is applied, this is a safety net: it sets the session vars but no
+ * policy enforces them yet, so existing queries keep working unchanged.
+ *
+ * No explicit clear is needed: app_set_tenant and app_set_actor use SET LOCAL,
+ * which Postgres automatically scopes to the transaction. On commit or rollback,
+ * the vars clear and the connection returns to the pool clean.
  *
  * Usage:
  *   const result = await withTenantScope(prisma, ctx, async (tx) => {
@@ -26,35 +48,25 @@ type ScopedRunner = <T>(fn: () => Promise<T>) => Promise<T>;
  *   });
  */
 export async function withTenantScope<T>(
-  prisma: { $transaction: <R>(fn: (tx: any) => Promise<R>) => Promise<R> },
+  prisma: PrismaClientLike,
   ctx: TenantContext,
-  fn: (tx: any) => Promise<T>,
+  fn: (tx: PrismaTx) => Promise<T>,
 ): Promise<T> {
-  return prisma.$transaction(async (tx: any) => {
-    await tx.$executeRawUnsafe(
-      `SELECT app_set_tenant($1, $2)`,
-      ctx.organizationId,
-      ctx.isSuperadmin,
-    );
-    await tx.$executeRawUnsafe(
-      `SELECT app_set_actor($1, $2, $3, $4, $5, $6)`,
-      ctx.userId,
-      ctx.email,
-      ctx.request?.ip ?? "",
-      ctx.request?.userAgent ?? "",
-      ctx.request?.requestId ?? "",
-      ctx.request?.route ?? "",
-    );
-    try {
-      return await fn(tx);
-    } finally {
-      try {
-        await tx.$executeRawUnsafe(`SELECT app_clear_actor()`);
-        await tx.$executeRawUnsafe(`SELECT app_clear_tenant()`);
-      } catch {
-        // ignore — transaction may already be closed
-      }
-    }
+  return prisma.$transaction(async (tx: PrismaTx) => {
+    await tx.$executeRaw`
+      SELECT app_set_tenant(${ctx.organizationId}::text, ${ctx.isSuperadmin}::boolean)
+    `;
+    await tx.$executeRaw`
+      SELECT app_set_actor(
+        ${ctx.userId}::text,
+        ${ctx.email}::text,
+        ${ctx.request?.ip ?? ""}::text,
+        ${ctx.request?.userAgent ?? ""}::text,
+        ${ctx.request?.requestId ?? ""}::text,
+        ${ctx.request?.route ?? ""}::text
+      )
+    `;
+    return await fn(tx);
   });
 }
 
@@ -73,46 +85,47 @@ export async function readCurrentScope(prisma: {
 }
 
 /**
- * Runs a function inside an admin-scope transaction.
+ * Runs `fn` inside an admin-scope transaction.
  *
- * Sets the actor session vars (so audit triggers capture WHO did the operation),
- * but deliberately does NOT set the tenant scope vars. Admin routes operate
- * across all tenants, so binding to one organization would be incorrect.
+ * What this function does:
+ *   - Begins a database transaction
+ *   - Calls app_set_actor with the SuperadminContext to record WHO performs
+ *     each query (for audit log triggers)
+ *   - Executes the callback with the transaction client
  *
- * The bypass of RLS is handled by prismaAdmin's $extends wrapper, which sets
- * SET LOCAL app.is_superadmin = 'true' on every operation. withAdminScope adds
- * the actor identity on top so audit rows record the superadmin user.
+ * What this function does NOT do:
+ *   - Set app.is_superadmin or any RLS-bypass flag. That is the job of
+ *     prismaAdmin's $extends wrapper (see lib/prismaAdmin.ts), which runs
+ *     SET LOCAL app.is_superadmin = 'true' on every model operation.
+ *   - Set tenant scope. Admin routes operate cross-tenant by design.
  *
- * IMPORTANT: pass `prismaAdmin` as the first argument, not `prisma`. Calling
- * with `prisma` would leave is_superadmin unset and the queries would be
- * subject to RLS policies (returning zero rows for cross-tenant reads under
- * RLS).
+ * No explicit clear is needed: app_set_actor uses SET LOCAL, which Postgres
+ * automatically scopes to the transaction. On commit or rollback, the var
+ * clears and the connection returns to the pool clean.
+ *
+ * IMPORTANT: pass `prismaAdmin` (not `prisma`) as the first argument.
+ * Calling with `prisma` would leave is_superadmin unset, and queries
+ * would be subject to RLS policies once those are enabled — returning
+ * zero rows for cross-tenant reads.
  */
 export async function withAdminScope<T>(
-  client: { $transaction: <R>(fn: (tx: any) => Promise<R>) => Promise<R> },
+  client: PrismaClientLike,
   admin: SuperadminContext,
-  fn: (tx: any) => Promise<T>,
+  fn: (tx: PrismaTx) => Promise<T>,
 ): Promise<T> {
-  return client.$transaction(async (tx: any) => {
-    await tx.$executeRawUnsafe(
-      `SELECT app_set_actor($1, $2, $3, $4, $5, $6)`,
-      admin.userId,
-      admin.email,
-      admin.request?.ip ?? "",
-      admin.request?.userAgent ?? "",
-      admin.request?.requestId ?? "",
-      admin.request?.route ?? "",
-    );
-    try {
-      return await fn(tx);
-    } finally {
-      try {
-        await tx.$executeRawUnsafe(`SELECT app_clear_actor()`);
-      } catch {
-        // ignore — transaction may already be closed
-      }
-    }
+  return client.$transaction(async (tx: PrismaTx) => {
+    await tx.$executeRaw`
+      SELECT app_set_actor(
+        ${admin.userId}::text,
+        ${admin.email}::text,
+        ${admin.request?.ip ?? ""}::text,
+        ${admin.request?.userAgent ?? ""}::text,
+        ${admin.request?.requestId ?? ""}::text,
+        ${admin.request?.route ?? ""}::text
+      )
+    `;
+    return await fn(tx);
   });
 }
 
-export type { ScopedRunner };
+export type { ScopedRunner, PrismaTx, PrismaClientLike };
