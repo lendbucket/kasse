@@ -102,7 +102,7 @@ async function main() {
   // 4. Create a Client row owned by Tenant 2 (used as cross-tenant test target)
   const client = await prisma.client.upsert({
     where: { id: "rls-test-client-2" },
-    update: { name: "RLS Isolation Target", organizationId: org.id },
+    update: { name: "RLS Isolation Target" },
     create: {
       id: "rls-test-client-2",
       name: "RLS Isolation Target",

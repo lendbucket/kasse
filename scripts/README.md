@@ -129,6 +129,16 @@ partial migration apply (or a corrupted state). Test reports FAIL immediately.
 4. Cross-tenant UPDATE org-change — attempt to move a row to another tenant blocked.
 5. Superadmin cross-tenant read — bypass works; superadmin sees all tenants.
 6. Unset-setting safe-deny — no session vars set returns zero rows, never errors.
+   **NOTE:** This test exercises the empty-string case
+   (`app_set_tenant('', false)`), not the genuinely-unset case (variable was
+   never set in this session). The two are equivalent under our current policy
+   which uses `current_setting(name, true)` with the `missing_ok` flag — both
+   produce empty string. If the policy is ever changed to use
+   `current_setting(name)` without the flag, genuinely-unset would throw an
+   error while empty-string would not, and this test would not catch the
+   difference. A full genuinely-unset test would require forcing a fresh
+   connection, which is operationally complex in a pooled client. This
+   limitation is documented in the harness code comment as well.
 7. Organization-IDOR (app-layer) — admin routes refuse unauthenticated orgId access.
 
 ### Test fixtures

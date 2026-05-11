@@ -435,6 +435,15 @@ async function main() {
   // queries via $queryRaw. PrismaPg may pool connections across these two
   // transactions, but each transaction establishes its own scope via SET LOCAL,
   // so pool reuse is safe — there's no scope leakage between calls.
+  //
+  // Verified 2026-05-11: app_set_tenant() function definition uses
+  // set_config('app.current_org_id', org_id, true) and
+  // set_config('app.is_superadmin', ..., true). The third arg true is
+  // is_local — semantically equivalent to SET LOCAL — so values roll back
+  // at transaction commit and never leak across pooled connections. If
+  // app_set_tenant is ever refactored to use SET (without LOCAL), this
+  // harness's pool-safety reasoning breaks. The migration that defines this
+  // function: 20260507204234_rls_session_helpers.
   const [orgExists, clientExists] = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
     const orgRows = await tx.$queryRaw<Array<{ id: string }>>`
