@@ -167,6 +167,56 @@ Today, no route in app/api/auth, app/api/admin, or app/api/onboarding uses
 raw SQL. If a PR introduces one without the wrapper above, the reviewer
 should flag it as SEVERE.
 
+## RLS Migration Status
+
+**Migration:** `prisma/migrations/20260511121142_rls_policies/migration.sql`
+**Status:** AUTHORED, NOT APPLIED (as of Phase 0.5.3b-3a-fix)
+
+This migration enables Row-Level Security on 24 tables — 23 standard
+tenant-scoped tables and AuditLog (SELECT-only for tenants).
+
+### Tables covered (24)
+
+**Standard tenant policy (23 tables, 4 policies each):**
+
+Location, Staff, Client, Service, Appointment, Transaction, GiftCard,
+LoyaltyProgram, Membership, WaitlistEntry, Campaign, ReviewRequest,
+FormTemplate, PermissionSet, BusinessSettings, ImportJob, Device, ApiKey,
+Webhook, AiReceptionistConfig, AiReceptionistCall, Message, SavedResponse
+
+**Special policy (1 table, 1 policy):**
+
+AuditLog — SELECT only. Writes go through app_audit_trigger (SECURITY DEFINER).
+
+### Tables NOT covered (intentional)
+
+Organization — protected by app logic; users only know their own orgId from session
+User, Account, Session, VerificationToken — auth tables, accessed via prismaAdmin
+Child tables without organizationId (e.g. AppointmentAddon, TransactionItem,
+GiftCardRedemption, LoyaltyEvent, ClientMembership, CampaignRecipient,
+FormSubmission, ClockEvent, PerformanceStat, Notification) — protected
+transitively through their parent's tenant-scoped row
+
+### Postgres role analysis (queried 2026-05-11)
+
+Application connects as `postgres`, which has rolbypassrls=TRUE and owns
+every table. To make RLS actually fire, the migration uses
+`FORCE ROW LEVEL SECURITY` on every table — this makes RLS apply even to
+the table owner.
+
+Without FORCE, the policies would compile and exist in pg_policies but
+no query would ever be subject to them. This was identified by PR #23
+reviewer Concern #1.
+
+### Rollout sequence
+
+| PR | Sub-commit | What | Status |
+|----|----|----|----|
+| #23 | 0.5.3b-3a | Author migration SQL (not applied) | In progress (this PR) |
+| TBD | 0.5.3b-3b | Build rls-verify.ts harness | Pending |
+| TBD | 0.5.3b-3c | Apply on Supabase database branch, run smoke + audit-verify + rls-verify | Pending |
+| TBD | 0.5.3b-3d | Apply to production (off-hours, rollback prepared) | Pending |
+
 ## Changelog
 
 | Phase | Change |
@@ -177,3 +227,5 @@ should flag it as SEVERE.
 | 0.5.3b-2a-fix | Reviewer-driven correction of prismaAdmin: switched from connection-level SET to transaction-scoped SET LOCAL to prevent is_superadmin leaking across pooled connections. Hardened verify-email redirect against host-header spoofing. Documented $queryRaw/$executeRaw caveat. |
 | 0.5.3b-2b | Migrated 5 SUPERADMIN admin routes (stats, merchants, merchants/[orgId], users, users/[userId]) to prismaAdmin. Built requireSuperadminContext + withAdminScope helpers. Audit triggers now correctly capture the actor (superadmin user) without binding to a tenant scope. |
 | 0.5.3b-2c | Reclassified onboarding routes. Three are TENANT_SCOPED (users have orgId from registration); migrated to requireTenantContext + withTenantScope + ORGANIZATION_ONBOARDING_ALLOWED_FIELDS for KYC/banking writes. Multi-write steps now atomic. One route (template) reclassified to new PUBLIC_STATIC bucket. The ONBOARDING bypass bucket is now empty by design. |
+| 0.5.3b-3a | Authored RLS migration SQL for 24 tables. Not applied. |
+| 0.5.3b-3a-fix | Reviewer fix: added FORCE ROW LEVEL SECURITY to every table (required because app connects as `postgres` which has rolbypassrls=TRUE). Added role analysis comment. Strengthened AuditLog operational hazard comment. Updated rollback instructions. Added RLS Migration Status section. |
