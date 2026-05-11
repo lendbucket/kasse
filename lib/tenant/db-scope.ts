@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { TenantContext, SuperadminContext } from "./context";
 
 /**
