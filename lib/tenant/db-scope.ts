@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import type { TenantContext } from "./context";
+import type { TenantContext, SuperadminContext } from "./context";
 
 /**
  * AsyncLocalStorage-style holder for the current tenant context within a request.
@@ -70,6 +70,49 @@ export async function readCurrentScope(prisma: {
   );
   const row = rows[0] ?? { org_id: "", is_super: false };
   return { orgId: row.org_id, isSuperadmin: row.is_super };
+}
+
+/**
+ * Runs a function inside an admin-scope transaction.
+ *
+ * Sets the actor session vars (so audit triggers capture WHO did the operation),
+ * but deliberately does NOT set the tenant scope vars. Admin routes operate
+ * across all tenants, so binding to one organization would be incorrect.
+ *
+ * The bypass of RLS is handled by prismaAdmin's $extends wrapper, which sets
+ * SET LOCAL app.is_superadmin = 'true' on every operation. withAdminScope adds
+ * the actor identity on top so audit rows record the superadmin user.
+ *
+ * IMPORTANT: pass `prismaAdmin` as the first argument, not `prisma`. Calling
+ * with `prisma` would leave is_superadmin unset and the queries would be
+ * subject to RLS policies (returning zero rows for cross-tenant reads under
+ * RLS).
+ */
+export async function withAdminScope<T>(
+  client: { $transaction: <R>(fn: (tx: any) => Promise<R>) => Promise<R> },
+  admin: SuperadminContext,
+  fn: (tx: any) => Promise<T>,
+): Promise<T> {
+  return client.$transaction(async (tx: any) => {
+    await tx.$executeRawUnsafe(
+      `SELECT app_set_actor($1, $2, $3, $4, $5, $6)`,
+      admin.userId,
+      admin.email,
+      admin.request?.ip ?? "",
+      admin.request?.userAgent ?? "",
+      admin.request?.requestId ?? "",
+      admin.request?.route ?? "",
+    );
+    try {
+      return await fn(tx);
+    } finally {
+      try {
+        await tx.$executeRawUnsafe(`SELECT app_clear_actor()`);
+      } catch {
+        // ignore — transaction may already be closed
+      }
+    }
+  });
 }
 
 export type { ScopedRunner };

@@ -63,11 +63,11 @@ table is a foundation regression and should be flagged in code review.
 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
-| `/api/admin/stats` | GET | Platform-wide aggregate stats (merchant count, trials, locations, recent signups) (SUPERADMIN) |
-| `/api/admin/merchants` | GET, POST | Lists all orgs with owner/counts; creates new orgs — superadmin gated (SUPERADMIN) |
-| `/api/admin/merchants/[orgId]` | GET, PATCH, DELETE | Fetches/updates/hard-deletes a specific org by ID — superadmin gated (SUPERADMIN) |
-| `/api/admin/users` | GET | Lists all users across all orgs — superadmin gated (SUPERADMIN) |
-| `/api/admin/users/[userId]` | PATCH | Toggles user isActive or force-resets password — superadmin gated (SUPERADMIN) |
+| `/api/admin/stats` | GET | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
+| `/api/admin/merchants` | GET, POST | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
+| `/api/admin/merchants/[orgId]` | GET, PATCH, DELETE | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
+| `/api/admin/users` | GET | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
+| `/api/admin/users/[userId]` | PATCH | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
 
 ### BYPASS_NEEDED — ONBOARDING (session exists, org setup in progress)
 
@@ -170,3 +170,4 @@ should flag it as SEVERE.
 | 0.5.3b-1b | Migrated clients/[id] and staff/[id] to tenant context; both moved to TENANT_SCOPED. Final: 17 TENANT_SCOPED, 14 BYPASS_NEEDED. |
 | 0.5.3b-2a | Built lib/prismaAdmin.ts. Migrated lib/auth.ts (NextAuth credentials + adapter) and 5 PRE_SESSION auth routes (register, forgot-password, reset-password, verify-email, [...nextauth] via lib/auth.ts) to prismaAdmin. Foundation now distinguishes tenant-scoped from bypass clients deliberately. |
 | 0.5.3b-2a-fix | Reviewer-driven correction of prismaAdmin: switched from connection-level SET to transaction-scoped SET LOCAL to prevent is_superadmin leaking across pooled connections. Hardened verify-email redirect against host-header spoofing. Documented $queryRaw/$executeRaw caveat. |
+| 0.5.3b-2b | Migrated 5 SUPERADMIN admin routes (stats, merchants, merchants/[orgId], users, users/[userId]) to prismaAdmin. Built requireSuperadminContext + withAdminScope helpers. Audit triggers now correctly capture the actor (superadmin user) without binding to a tenant scope. |

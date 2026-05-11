@@ -22,7 +22,7 @@ export interface TenantContext {
 }
 
 export class TenantContextError extends Error {
-  constructor(public readonly code: "UNAUTHENTICATED" | "NO_TENANT" | "INACTIVE", message: string) {
+  constructor(public readonly code: "UNAUTHENTICATED" | "NO_TENANT" | "INACTIVE" | "FORBIDDEN", message: string) {
     super(message);
     this.name = "TenantContextError";
   }
@@ -173,9 +173,55 @@ export async function assertStaffInTenant(
  */
 export function tenantErrorResponse(e: unknown): Response | null {
   if (!(e instanceof TenantContextError)) return null;
-  const status = e.code === "UNAUTHENTICATED" ? 401 : e.code === "INACTIVE" ? 403 : 403;
+  const status = e.code === "UNAUTHENTICATED" ? 401 : 403;
   return new Response(JSON.stringify({ error: e.message, code: e.code }), {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Context for SUPERADMIN routes (Command Center under /api/admin/*).
+ *
+ * Returns the actor's identity for audit logging, but does NOT carry a tenant
+ * scope. Admin routes operate across all tenants by design.
+ */
+export interface SuperadminContext {
+  userId: string;
+  email: string;
+  name: string | null;
+  request?: {
+    ip?: string;
+    userAgent?: string;
+    requestId?: string;
+    route?: string;
+  };
+}
+
+/**
+ * Verifies the caller is an authenticated superadmin. Throws TenantContextError
+ * with UNAUTHENTICATED if no session, or with FORBIDDEN if the session
+ * exists but the user is not a superadmin.
+ *
+ * Used by every /api/admin/* route as the first line of every handler.
+ */
+export async function requireSuperadminContext(
+  req?: NextRequest,
+): Promise<SuperadminContext> {
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    throw new TenantContextError("UNAUTHENTICATED", "No active session");
+  }
+
+  if (session.user.role !== "superadmin") {
+    throw new TenantContextError("FORBIDDEN", "Superadmin role required");
+  }
+
+  return {
+    userId: session.user.id,
+    email: session.user.email ?? "",
+    name: session.user.name ?? null,
+    request: req ? extractRequestContext(req) : undefined,
+  };
 }
