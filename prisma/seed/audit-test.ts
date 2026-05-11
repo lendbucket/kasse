@@ -93,7 +93,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log(`User: ${user.email} (${user.id}) — password: ${AUDIT_USER_PASSWORD}`);
+  console.log(`User: ${user.email} (${user.id}) — password: [fixture, see prisma/seed/audit-test.ts]`);
 }
 
 main()

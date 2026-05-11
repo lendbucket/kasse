@@ -5,18 +5,23 @@
  * Two-mode design: detects whether RLS policies are applied by querying
  * pg_policies. Behavior depends on the detected mode:
  *
- *   RLS_NOT_APPLIED — No policies exist. All DB-level tests SKIP.
+ *   RLS_NOT_APPLIED — No policies exist. DB-level tests SKIP.
  *   RLS_APPLIED     — All 24 tables have policies. Tests run in full.
  *   PARTIAL         — Some tables have policies, others don't. FAIL immediately.
  *
- * Test scenarios (RLS_APPLIED mode):
- *   1. Policy count verification (93 policies across 24 tables)
- *   2. Cross-tenant read isolation
- *   3. Cross-tenant write isolation (INSERT WITH CHECK)
- *   4. Cross-tenant UPDATE org-change blocked
- *   5. Superadmin cross-tenant read bypass
- *   6. Unset-setting safe-deny (zero rows, no error)
- *   7. Organization-IDOR application-layer test
+ * Test scenarios:
+ *   1. Mode detection (always runs)
+ *   2. Policy count verification (RLS_APPLIED only)
+ *   3. Cross-tenant read isolation (RLS_APPLIED only)
+ *   4. Cross-tenant write isolation — INSERT WITH CHECK (RLS_APPLIED only)
+ *   5. Cross-tenant UPDATE org-change blocked (RLS_APPLIED only)
+ *   6. Superadmin cross-tenant read bypass (RLS_APPLIED only)
+ *   7. Unset-setting safe-deny (RLS_APPLIED only)
+ *   8. Organization-IDOR application-layer test (BOTH modes)
+ *
+ * Expected summary:
+ *   RLS_NOT_APPLIED: 2 PASS, 0 FAIL, 6 SKIP (mode detection + IDOR pass)
+ *   RLS_APPLIED:     8 PASS, 0 FAIL, 0 SKIP
  *
  * Fixtures required:
  *   - Tenant 1: audit-test-org (npm run audit:seed)
@@ -85,6 +90,9 @@ interface PolicyRow {
 type Mode = "RLS_NOT_APPLIED" | "RLS_APPLIED" | "PARTIAL";
 
 async function detectMode(): Promise<{ mode: Mode; policies: PolicyRow[] }> {
+  // Double cast required: Prisma's $queryRaw tagged template expects mutable
+  // string[] but ALL_RLS_TABLES is a `readonly` tuple from `as const`. The
+  // cast is type-system housekeeping; the values are identical at runtime.
   const policies = await prisma.$queryRaw<PolicyRow[]>`
     SELECT tablename, policyname
     FROM pg_policies
@@ -144,12 +152,6 @@ function testPolicyCount(policies: PolicyRow[]) {
 // ── Test: Cross-tenant read isolation ───────────────────────────────────
 
 async function testCrossTenantRead() {
-  // Set session to Tenant 1, try to read Tenant 2's client
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM "Client"
-    WHERE id = ${TENANT_2_CLIENT_ID}
-  `;
-
   // Inside a transaction with Tenant 1 scope, Tenant 2's row should be invisible
   const count = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
@@ -210,48 +212,74 @@ async function testCrossTenantWrite() {
 // ── Test: Cross-tenant UPDATE org-change blocked ────────────────────────
 
 async function testCrossTenantUpdateOrgChange() {
-  // Create a temp client owned by Tenant 1, then try to UPDATE its orgId to Tenant 2
-  let blocked = false;
-  const tempId = "rls-test-update-org";
+  let testClientId: string | null = null;
 
+  // PHASE 1 — Setup: create a Client owned by Tenant 1 (using superadmin to
+  // bypass the cross-tenant write block since this is our own setup, not
+  // the test). If setup fails, the test cannot run; report SKIP, not PASS.
   try {
-    // Create the temp row as superadmin
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
       await tx.$executeRaw`
         INSERT INTO "Client" (id, "organizationId", name, "createdAt", "updatedAt")
-        VALUES (${tempId}, ${TENANT_1_ORG_ID}, 'Update Org Test', now(), now())
+        VALUES ('rls-test-update-org', ${TENANT_1_ORG_ID}, 'Update Org Test', now(), now())
       `;
+      testClientId = "rls-test-update-org";
     });
+  } catch (e) {
+    record(
+      "cross-tenant UPDATE org-change",
+      "SKIP",
+      `Setup failed — could not seed test client: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 
-    // Now try to change the orgId while scoped to Tenant 1
-    await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
-      await tx.$executeRaw`
-        UPDATE "Client"
-        SET "organizationId" = ${TENANT_2_ORG_ID}
-        WHERE id = ${tempId}
-      `;
-    });
-  } catch (e: any) {
-    blocked = true;
+  // PHASE 2 — Actual test: connect as Tenant 1, attempt to move the row to Tenant 2
+  if (testClientId) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL app.current_org_id = ${TENANT_1_ORG_ID}`;
+        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
+
+        await tx.$executeRaw`
+          UPDATE "Client"
+          SET "organizationId" = ${TENANT_2_ORG_ID}
+          WHERE id = ${testClientId!}
+        `;
+      });
+      // If we reach here, UPDATE succeeded — that's a FAIL
+      record(
+        "cross-tenant UPDATE org-change",
+        "FAIL",
+        "UPDATE to a different organizationId succeeded — RLS WITH CHECK on UPDATE is not firing",
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("row violates") || msg.includes("RLS") || msg.toLowerCase().includes("policy")) {
+        record(
+          "cross-tenant UPDATE org-change",
+          "PASS",
+          "UPDATE attempting to move row to another org correctly blocked",
+        );
+      } else {
+        record(
+          "cross-tenant UPDATE org-change",
+          "FAIL",
+          `UPDATE failed but for unexpected reason: ${msg.slice(0, 100)}`,
+        );
+      }
+    }
   }
 
   // Cleanup
-  try {
-    await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
-      await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${tempId}`;
-    });
-  } catch { /* best effort */ }
-
-  record(
-    "cross-tenant UPDATE org-change",
-    blocked ? "PASS" : "FAIL",
-    blocked
-      ? "UPDATE to change organizationId blocked by WITH CHECK"
-      : "LEAK: UPDATE changed organizationId to another tenant",
-  );
+  if (testClientId) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+        await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${testClientId!}`;
+      });
+    } catch { /* best effort */ }
+  }
 }
 
 // ── Test: Superadmin cross-tenant read ──────────────────────────────────
@@ -283,8 +311,11 @@ async function testUnsetSettingSafeDeny() {
 
   try {
     const rows = await prisma.$transaction(async (tx) => {
-      // Explicitly clear any inherited vars
-      await tx.$executeRaw`RESET ALL`;
+      // Explicitly reset only the RLS session vars. Avoid RESET ALL because it
+      // also resets search_path, which could cause the subsequent SELECT to
+      // fail with relation-not-found and produce a misleading test failure.
+      await tx.$executeRaw`RESET app.current_org_id`;
+      await tx.$executeRaw`RESET app.is_superadmin`;
       return tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "Client" LIMIT 10
       `;
@@ -306,17 +337,26 @@ async function testUnsetSettingSafeDeny() {
 // ── Test: Organization-IDOR application-layer ───────────────────────────
 
 async function testOrganizationIdor() {
-  // Unauthenticated request to admin merchants endpoint with a fabricated orgId
-  // Should get 401 (no auth), proving the app doesn't leak org data
-  const res = await fetch(`${BASE_URL}/api/admin/merchants`, {
-    headers: { "content-type": "application/json" },
-  });
+  // Unauthenticated request to admin merchants endpoint.
+  // Should get 401 (no auth), proving the app doesn't leak org data.
+  // This test runs in BOTH modes — the auth check exists independent of RLS.
+  try {
+    const res = await fetch(`${BASE_URL}/api/admin/merchants`, {
+      headers: { "content-type": "application/json" },
+    });
 
-  record(
-    "Organization-IDOR (unauth admin)",
-    res.status === 401 ? "PASS" : "FAIL",
-    `GET /api/admin/merchants returned ${res.status} (expected 401)`,
-  );
+    record(
+      "Organization-IDOR (unauth admin)",
+      res.status === 401 ? "PASS" : "FAIL",
+      `GET /api/admin/merchants returned ${res.status} (expected 401)`,
+    );
+  } catch (e) {
+    record(
+      "Organization-IDOR (unauth admin)",
+      "SKIP",
+      `Could not reach ${BASE_URL} — is npm run dev running?`,
+    );
+  }
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
@@ -379,8 +419,12 @@ async function main() {
     record("superadmin cross-tenant read", "SKIP", "RLS not yet applied");
     record("unset-setting safe-deny", "SKIP", "RLS not yet applied");
 
-    console.log("\nSection 3: Application-layer tests (SKIPPED — RLS not applied)\n");
-    record("Organization-IDOR (unauth admin)", "SKIP", "RLS not yet applied");
+    // IDOR app-layer test runs in BOTH modes. The auth check on /api/admin/*
+    // exists independent of RLS — the route uses requireSuperadminContext which
+    // validates the session before any DB call. Running this test only in
+    // RLS_APPLIED mode would hide real signal about the auth layer today.
+    console.log("\nSection 3: Application-layer tests\n");
+    await testOrganizationIdor();
 
     printSummary();
     process.exit(0);

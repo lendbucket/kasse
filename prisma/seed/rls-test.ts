@@ -94,7 +94,7 @@ async function main() {
       isActive: true,
     },
   });
-  console.log(`User: ${user.email} (${user.id}) — password: ${RLS_USER_PASSWORD}`);
+  console.log(`User: ${user.email} (${user.id}) — password: [fixture, see prisma/seed/rls-test.ts]`);
 
   // 4. Create a Client row owned by Tenant 2 (used as cross-tenant test target)
   const client = await prisma.client.upsert({

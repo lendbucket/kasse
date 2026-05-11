@@ -152,12 +152,17 @@ partial migration apply (or a corrupted state). Test reports FAIL immediately.
 3. Today (before RLS migration is applied), expect:
 
        Mode: RLS_NOT_APPLIED
-       Summary: 1 PASS, 0 FAIL, 7 SKIP
+       Summary: 2 PASS, 0 FAIL, 6 SKIP
+
+   Note: The Organization-IDOR application-layer test runs in BOTH modes —
+   it validates that admin routes reject unauthenticated orgId access, which
+   is independent of RLS state. Skipping this in RLS_NOT_APPLIED mode would
+   hide real signal about the auth layer.
 
 4. After RLS migration is applied (PR #27), expect:
 
        Mode: RLS_APPLIED
-       Summary: 8+ PASS, 0 FAIL, 0 SKIP
+       Summary: 8 PASS, 0 FAIL, 0 SKIP
 
 ### TODO
 
