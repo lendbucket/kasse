@@ -40,18 +40,19 @@ You flag:
 - **PII in logs**: console.log or logger calls that include card numbers, CVV, full email lists, customer phone numbers, or other regulated data.
 - **Open redirects**: redirect URLs constructed from user input without allowlist validation.
 
-### Database client selection — three legitimate patterns
+### Database client selection — four legitimate patterns
 
 The Kasse codebase uses **two** Prisma clients with different security profiles. Every route MUST use exactly one of them, deliberately.
 
-1. **`prisma` from `@/lib/prisma`** — used INSIDE `withTenantScope(prisma, ctx, async (tx) => { ... })`. The wrapper sets Postgres session variables that scope every query to the calling tenant's organization. RLS policies (when enabled) enforce this at the database level. This is the default for any route that operates on tenant-owned data.
+1. **`prisma` from `@/lib/prisma`** — used INSIDE `withTenantScope(prisma, ctx, async (tx) => { ... })`. The wrapper sets Postgres session variables that scope every query to the calling tenant's organization. RLS policies (when enabled) enforce this at the database level. This is the default for any route that operates on tenant-owned data. **Onboarding routes also use this pattern** — the user has an organizationId from registration, so they are tenant-scoped.
 
-2. **`prismaAdmin` from `@/lib/prismaAdmin`** — bypasses RLS by setting `app.is_superadmin = true` on the connection. **Legitimately used in exactly three contexts:**
+2. **`prismaAdmin` from `@/lib/prismaAdmin`** — bypasses RLS by setting `app.is_superadmin = true` on the connection. **Legitimately used in exactly two contexts:**
    - **PRE_SESSION**: routes under `app/api/auth/*` (signup, login, password reset, email verification). These run before the user has a session, so there is no tenant context to scope by.
    - **SUPERADMIN**: routes under `app/api/admin/*` (the Command Center). Robert needs to see across all tenants from the master portal.
-   - **ONBOARDING**: routes under `app/api/onboarding/*`. The user has a session but no organization yet — they're creating one. Tenant scope cannot be applied because the org doesn't exist.
 
 3. **Raw `prisma` outside `withTenantScope` and not `prismaAdmin`** — **THIS IS A BUG.** Any route that imports `prisma` from `@/lib/prisma` and queries directly without `withTenantScope` is a tenant-scoping violation. Flag as SEVERE.
+
+4. **No database access at all (PUBLIC_STATIC / NO_DB_NEEDED)** — routes that return static content with no auth requirement (e.g., template download endpoints). These routes don't use any Prisma client. They should be rare; review `docs/RLS_AUDIT.md` for the canonical classification.
 
 The canonical list of which routes belong to which bucket is at `docs/RLS_AUDIT.md`. Any new route added to the codebase must be classified there. A PR that adds a new route to `app/api/*` without updating `docs/RLS_AUDIT.md` is a foundation regression — flag as a Concern.
 
@@ -62,11 +63,12 @@ When reviewing a route file:
 2. Check the request handler logic: is the prisma call inside `withTenantScope(prisma, ctx, ...)`?
 3. Cross-reference the route path against the buckets above.
 
-| Route uses | Path is `/api/*` non-auth, non-admin, non-onboarding | Path is `/api/auth/*` | Path is `/api/admin/*` | Path is `/api/onboarding/*` |
+| Route uses | Path is `/api/*` non-auth, non-admin | Path is `/api/auth/*` | Path is `/api/admin/*` | Path is `/api/onboarding/*` |
 |---|---|---|---|---|
-| `prisma` inside `withTenantScope` | ✅ Correct | ⚠️ Concern — auth routes don't have tenant context | ⚠️ Concern — admin spans tenants | ⚠️ Concern — no org exists yet |
-| `prismaAdmin` | 🔴 SEVERE — tenant data accessed without scope | ✅ Correct | ✅ Correct | ✅ Correct |
-| `prisma` outside `withTenantScope` | 🔴 SEVERE — tenant scope bypass | 🔴 SEVERE — should use `prismaAdmin` | 🔴 SEVERE — should use `prismaAdmin` | 🔴 SEVERE — should use `prismaAdmin` |
+| `prisma` inside `withTenantScope` | ✅ Correct | ⚠️ Concern — auth routes don't have tenant context | ⚠️ Concern — admin spans tenants | ✅ Correct (user has org from registration) |
+| `prismaAdmin` | 🔴 SEVERE — tenant data accessed without scope | ✅ Correct | ✅ Correct | 🔴 SEVERE — onboarding is tenant-scoped |
+| `prisma` outside `withTenantScope` | 🔴 SEVERE — tenant scope bypass | 🔴 SEVERE — should use `prismaAdmin` | 🔴 SEVERE — should use `prismaAdmin` | 🔴 SEVERE — should use `withTenantScope` |
+| No DB usage | ✅ Correct if classified PUBLIC_STATIC in RLS_AUDIT | ✅ Correct | ✅ Correct | ⚠️ Concern — onboarding usually does writes |
 
 A route can legitimately import both `prisma` and `prismaAdmin` if it does both kinds of work, but every individual query must be deliberately one or the other.
 

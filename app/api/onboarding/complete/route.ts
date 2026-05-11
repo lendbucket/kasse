@@ -1,26 +1,58 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
-import { Resend } from "resend"
-import crypto from "crypto"
+import { NextResponse, type NextRequest } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { withTenantScope } from "@/lib/tenant/db-scope";
+import {
+  ORGANIZATION_ONBOARDING_ALLOWED_FIELDS,
+  pickAllowed,
+} from "@/lib/tenant/allowlists";
+import { Resend } from "resend";
+import crypto from "crypto";
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.organizationId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function POST(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
   }
 
   try {
-    const data = await req.json()
-    const orgId = session.user.organizationId
+    const data = await request.json();
 
-    // Update organization with all merchant application data
-    await prisma.organization.update({
-      where: { id: orgId },
-      data: {
+    // Refuse to re-run completion on an already-completed org. Without this guard,
+    // an authenticated owner could re-POST to swap their bank account number,
+    // KYC fields, or other application data at any time after onboarding finished.
+    // This is a financial controls boundary.
+    const existing = await withTenantScope(prisma, ctx, async (tx) => {
+      return tx.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { onboardingCompleted: true, applicationStatus: true },
+      });
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+    if (existing.onboardingCompleted || existing.applicationStatus === "submitted") {
+      return NextResponse.json(
+        { error: "Onboarding already complete. Banking and KYC fields cannot be modified through this endpoint. Contact support to update banking information." },
+        { status: 409 },
+      );
+    }
+
+    // Apply the onboarding allowlist to the org update — this is the route that
+    // writes KYC/banking data. The allowlist is the only thing preventing a
+    // caller from overwriting billing, plan, or franchise fields.
+    const orgUpdate = pickAllowed(
+      {
         name: data.legalName,
         legalName: data.legalName,
         dbaName: data.dbaName || null,
@@ -54,34 +86,44 @@ export async function POST(req: NextRequest) {
         onboardingStep: 7,
         onboardingCompleted: true,
       },
-    })
+      ORGANIZATION_ONBOARDING_ALLOWED_FIELDS,
+    );
 
-    // Create default location if none exists
-    const existingLocation = await prisma.location.findFirst({ where: { organizationId: orgId } })
-    if (!existingLocation) {
-      await prisma.location.create({
-        data: {
-          organizationId: orgId,
-          name: data.dbaName || data.legalName,
-          address: data.address,
-          city: data.city,
-          state: data.state,
-          zip: data.zip,
-          phone: data.phone,
-        },
-      })
-    }
+    // All three writes in a single transaction — atomic.
+    await withTenantScope(prisma, ctx, async (tx) => {
+      await tx.organization.update({
+        where: { id: ctx.organizationId },
+        data: orgUpdate,
+      });
 
-    // Create default business settings if none exist
-    await prisma.businessSettings.upsert({
-      where: { organizationId: orgId },
-      create: { organizationId: orgId },
-      update: {},
-    })
+      const existingLocation = await tx.location.findFirst({
+        where: { organizationId: ctx.organizationId },
+      });
+      if (!existingLocation) {
+        await tx.location.create({
+          data: {
+            organizationId: ctx.organizationId,
+            name: data.dbaName || data.legalName,
+            address: data.address,
+            city: data.city,
+            state: data.state,
+            zip: data.zip,
+            phone: data.phone,
+          },
+        });
+      }
 
-    // Send notification email to admin
-    const bizType = data.businessType?.replace(/_/g, " ") || "Unknown"
-    const paymentMethodLabels = (data.paymentMethods || []).join(", ")
+      await tx.businessSettings.upsert({
+        where: { organizationId: ctx.organizationId },
+        create: { organizationId: ctx.organizationId },
+        update: {},
+      });
+    });
+
+    // Email notification OUTSIDE the transaction — if email fails, DB changes
+    // still persist (correct; we can retry email, can't easily un-commit).
+    const bizType = data.businessType?.replace(/_/g, " ") || "Unknown";
+    const paymentMethodLabels = (data.paymentMethods || []).join(", ");
 
     await resend.emails.send({
       from: "Kasse System <onboarding@kasseapp.com>",
@@ -110,7 +152,7 @@ export async function POST(req: NextRequest) {
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Name</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.ownerFirst} ${data.ownerLast}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Title</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.ownerTitle}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Ownership</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.ownershipPct}%</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Email</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${session.user.email}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Email</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${ctx.email}</td></tr>
       </table>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Location</h3>
       <p style="color:white;font-size:14px;margin:0 0 24px">${data.address}, ${data.city}, ${data.state} ${data.zip}</p>
@@ -130,11 +172,11 @@ export async function POST(req: NextRequest) {
     </div>
   </div>
 </body></html>`,
-    })
+    });
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Onboarding complete error:", error)
-    return NextResponse.json({ error: "Failed to submit application" }, { status: 500 })
+    console.error("Onboarding complete error:", error instanceof Error ? error.message : String(error));
+    return NextResponse.json({ error: "Failed to submit application" }, { status: 500 });
   }
 }

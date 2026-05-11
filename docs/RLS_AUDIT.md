@@ -69,22 +69,27 @@ table is a foundation regression and should be flagged in code review.
 | `/api/admin/users` | GET | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
 | `/api/admin/users/[userId]` | PATCH | SUPERADMIN (uses prismaAdmin + requireSuperadminContext + withAdminScope; migrated 0.5.3b-2b) |
 
-### BYPASS_NEEDED — ONBOARDING (session exists, org setup in progress)
+### TENANT_SCOPED — ONBOARDING (user has org from registration; configures it via wizard)
 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
-| `/api/onboarding` | POST | Saves onboarding progress for steps 2–9; writes org/location/service/settings data (ONBOARDING) |
-| `/api/onboarding/complete` | POST | Persists full merchant payment application (banking, PII, business details); sends notification email (ONBOARDING) |
-| `/api/onboarding/send-application` | POST | Sends SalonTransact application confirmation + admin notification emails; no DB writes (ONBOARDING) |
-| `/api/onboarding/template` | GET | Returns hardcoded CSV template for requested import type; fully public, no auth, no DB (ONBOARDING) |
+| `/api/onboarding` | POST | Configures existing org via wizard steps 2–9; uses requireTenantContext + withTenantScope + ORGANIZATION_ONBOARDING_ALLOWED_FIELDS. Multi-write steps atomic. (migrated 0.5.3b-2c) |
+| `/api/onboarding/complete` | POST | Writes KYC/banking via ORGANIZATION_ONBOARDING_ALLOWED_FIELDS; atomic 3-write transaction. Email outside tx. (migrated 0.5.3b-2c) |
+| `/api/onboarding/send-application` | POST | TENANT_SCOPED — auth-required but no DB writes (uses requireTenantContext for actor identity only; no withTenantScope wrapper needed since the only side effect is a Resend email. This is TENANT_SCOPED in the audit-bucket sense but does not exercise the tenant scope at runtime.) (migrated 0.5.3b-2c) |
+
+### PUBLIC_STATIC — No auth, no database
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/onboarding/template` | GET | Serves hardcoded CSV templates; no auth, no DB. Code unchanged. |
 
 ## Summary
 
-- TENANT_SCOPED: **17**
-- BYPASS_NEEDED: **14**
+- TENANT_SCOPED: **20**
+- BYPASS_NEEDED: **10**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **5** (admin portal operations)
-  - ONBOARDING: **4** (org setup flow + CSV template)
+- PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
 **Total routes: 31**
@@ -171,3 +176,4 @@ should flag it as SEVERE.
 | 0.5.3b-2a | Built lib/prismaAdmin.ts. Migrated lib/auth.ts (NextAuth credentials + adapter) and 5 PRE_SESSION auth routes (register, forgot-password, reset-password, verify-email, [...nextauth] via lib/auth.ts) to prismaAdmin. Foundation now distinguishes tenant-scoped from bypass clients deliberately. |
 | 0.5.3b-2a-fix | Reviewer-driven correction of prismaAdmin: switched from connection-level SET to transaction-scoped SET LOCAL to prevent is_superadmin leaking across pooled connections. Hardened verify-email redirect against host-header spoofing. Documented $queryRaw/$executeRaw caveat. |
 | 0.5.3b-2b | Migrated 5 SUPERADMIN admin routes (stats, merchants, merchants/[orgId], users, users/[userId]) to prismaAdmin. Built requireSuperadminContext + withAdminScope helpers. Audit triggers now correctly capture the actor (superadmin user) without binding to a tenant scope. |
+| 0.5.3b-2c | Reclassified onboarding routes. Three are TENANT_SCOPED (users have orgId from registration); migrated to requireTenantContext + withTenantScope + ORGANIZATION_ONBOARDING_ALLOWED_FIELDS for KYC/banking writes. Multi-write steps now atomic. One route (template) reclassified to new PUBLIC_STATIC bucket. The ONBOARDING bypass bucket is now empty by design. |
