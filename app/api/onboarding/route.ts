@@ -228,11 +228,12 @@ export async function POST(request: NextRequest) {
               { name: "Front Desk", permissions: { dashboard: true, reports: false, staff: false, clients: true, services: false, appointments: true, pos: true, settings: false, billing: false }, isDefault: true },
               { name: "Read Only", permissions: { dashboard: true, reports: true, staff: false, clients: false, services: false, appointments: false, pos: false, settings: false, billing: false }, isDefault: true },
             ];
-            for (const perm of defaults) {
-              await tx.permissionSet.create({
-                data: { organizationId: ctx.organizationId, ...perm },
-              });
-            }
+            await tx.permissionSet.createMany({
+              data: defaults.map((perm) => ({
+                organizationId: ctx.organizationId,
+                ...perm,
+              })),
+            });
           }
           await tx.organization.update({
             where: { id: ctx.organizationId },

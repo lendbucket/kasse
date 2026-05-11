@@ -41,33 +41,47 @@ export async function POST(request: NextRequest) {
   const businessName = body.businessName ?? "";
   const ein = body.ein ?? "";
 
-  // Send application email to the authenticated user's verified email — never
-  // trust a client-supplied email address for the destination.
-  await resend.emails.send({
-    from: "SalonTransact <onboarding@kasseapp.com>",
-    to: ctx.email,
-    subject: "Your SalonTransact Merchant Application",
-    headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
-    html: getMerchantApplicationEmailHtml({ ownerFirstName, ownerLastName, businessName, monthlyVolume, avgTicket }),
-  });
+  // Send merchant-facing email
+  try {
+    await resend.emails.send({
+      from: "SalonTransact <onboarding@kasseapp.com>",
+      to: ctx.email,
+      subject: "Your SalonTransact Merchant Application",
+      headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
+      html: getMerchantApplicationEmailHtml({ ownerFirstName, ownerLastName, businessName, monthlyVolume, avgTicket }),
+    });
+  } catch (e) {
+    console.error("Merchant email send failed:", e instanceof Error ? e.message : String(e));
+    return NextResponse.json(
+      { error: "Failed to send application email", retryable: true },
+      { status: 502 },
+    );
+  }
 
-  await resend.emails.send({
-    from: "Kasse System <onboarding@kasseapp.com>",
-    to: "ceo@36west.org",
-    subject: `New SalonTransact Application — ${businessName}`,
-    headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
-    html: `
-      <div style="font-family:sans-serif;max-width:560px;margin:40px auto">
-        <h2>New Merchant Application</h2>
-        <p><strong>Business:</strong> ${businessName}</p>
-        <p><strong>Owner:</strong> ${ownerFirstName} ${ownerLastName}</p>
-        <p><strong>Email:</strong> ${ctx.email}</p>
-        <p><strong>EIN:</strong> ${ein || "Not provided"}</p>
-        <p><strong>Monthly Volume:</strong> ${monthlyVolume}</p>
-        <p><strong>Avg Ticket:</strong> ${avgTicket}</p>
-      </div>
-    `,
-  });
+  // Send admin notification email
+  try {
+    await resend.emails.send({
+      from: "Kasse System <onboarding@kasseapp.com>",
+      to: "ceo@36west.org",
+      subject: `New SalonTransact Application — ${businessName}`,
+      headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:40px auto">
+          <h2>New Merchant Application</h2>
+          <p><strong>Business:</strong> ${businessName}</p>
+          <p><strong>Owner:</strong> ${ownerFirstName} ${ownerLastName}</p>
+          <p><strong>Email:</strong> ${ctx.email}</p>
+          <p><strong>EIN:</strong> ${ein || "Not provided"}</p>
+          <p><strong>Monthly Volume:</strong> ${monthlyVolume}</p>
+          <p><strong>Avg Ticket:</strong> ${avgTicket}</p>
+        </div>
+      `,
+    });
+  } catch (e) {
+    // Admin notification failure should not block the user response — the
+    // merchant email already went out. Log loudly so we can manually retry.
+    console.error("Admin notification send failed (merchant email did succeed):", e instanceof Error ? e.message : String(e));
+  }
 
   return NextResponse.json({ success: true });
 }
