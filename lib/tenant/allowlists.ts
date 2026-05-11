@@ -71,6 +71,14 @@ export const ORGANIZATION_ALLOWED_FIELDS = new Set<string>([
  *
  * Both allowlists are silent (extra fields are dropped, not rejected) to keep
  * the API forgiving on client mismatches.
+ *
+ * IMPORTANT TRADEOFF: silent-drop means that if a UI sends a field that's
+ * missing from the allowlist, the write fails silently — no error to the
+ * client, no log entry. A future regression (a field added to schema and UI
+ * but forgotten here) would be invisible until someone notices data isn't
+ * persisting. When adding new Organization fields to schema.prisma, audit
+ * both allowlists at the same time and consider adding a test that asserts
+ * every schema field is mentioned in at least one allowlist.
  */
 export const ORGANIZATION_ONBOARDING_ALLOWED_FIELDS = new Set<string>([
   // Application progress tracking
@@ -85,6 +93,7 @@ export const ORGANIZATION_ONBOARDING_ALLOWED_FIELDS = new Set<string>([
   "dbaName",
   "businessStructure",
   "businessType",
+  "stateOfFormation",
   "yearEstablished",
   "ein",
   "description",

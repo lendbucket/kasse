@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
             legalName: data.legalName,
             businessStructure: data.structure,
             ein: data.ein || null,
+            stateOfFormation: data.stateOfFormation || null,
             yearEstablished: data.yearEstablished ? parseInt(data.yearEstablished) : null,
             onboardingStep: 3,
           },
@@ -156,19 +157,17 @@ export async function POST(request: NextRequest) {
             const location = await tx.location.findFirst({
               where: { organizationId: ctx.organizationId },
             });
-            for (const svc of data.services) {
-              await tx.service.create({
-                data: {
-                  organizationId: ctx.organizationId,
-                  locationId: location?.id,
-                  name: svc.name,
-                  category: svc.category,
-                  price: parseFloat(svc.price) || 0,
-                  duration: parseInt(svc.duration) || 60,
-                  isActive: true,
-                },
-              });
-            }
+            await tx.service.createMany({
+              data: data.services.map((svc: { name: string; category?: string; price?: string; duration?: string }) => ({
+                organizationId: ctx.organizationId,
+                locationId: location?.id,
+                name: svc.name,
+                category: svc.category || null,
+                price: parseFloat(svc.price ?? "0") || 0,
+                duration: parseInt(svc.duration ?? "60") || 60,
+                isActive: true,
+              })),
+            });
           }
           await tx.organization.update({
             where: { id: ctx.organizationId },
@@ -246,7 +245,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Onboarding save error:", error);
+    console.error("Onboarding save error:", error instanceof Error ? error.message : String(error));
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
   }
 }

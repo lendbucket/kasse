@@ -75,7 +75,7 @@ table is a foundation regression and should be flagged in code review.
 |-------|-----------|--------|
 | `/api/onboarding` | POST | Configures existing org via wizard steps 2–9; uses requireTenantContext + withTenantScope + ORGANIZATION_ONBOARDING_ALLOWED_FIELDS. Multi-write steps atomic. (migrated 0.5.3b-2c) |
 | `/api/onboarding/complete` | POST | Writes KYC/banking via ORGANIZATION_ONBOARDING_ALLOWED_FIELDS; atomic 3-write transaction. Email outside tx. (migrated 0.5.3b-2c) |
-| `/api/onboarding/send-application` | POST | Requires authenticated user with org for email send; no DB writes so no scope wrapper. (migrated 0.5.3b-2c) |
+| `/api/onboarding/send-application` | POST | TENANT_SCOPED — auth-required but no DB writes (uses requireTenantContext for actor identity only; no withTenantScope wrapper needed since the only side effect is a Resend email. This is TENANT_SCOPED in the audit-bucket sense but does not exercise the tenant scope at runtime.) (migrated 0.5.3b-2c) |
 
 ### PUBLIC_STATIC — No auth, no database
 
