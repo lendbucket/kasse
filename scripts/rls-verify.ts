@@ -79,6 +79,17 @@ function record(name: string, status: Status, detail: string): CheckResult {
   return r;
 }
 
+function isRlsBlock(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const code = (e as { code?: string }).code;
+  return (
+    code === "42501" ||
+    msg.includes("row violates row-level security") ||
+    msg.includes("new row violates row-level security") ||
+    msg.toLowerCase().includes("policy violation")
+  );
+}
+
 // ── Mode detection ──────────────────────────────────────────────────────
 
 interface PolicyRow {
@@ -92,6 +103,12 @@ async function detectMode(): Promise<{ mode: Mode; policies: PolicyRow[] }> {
   // Double cast required: Prisma's $queryRaw tagged template expects mutable
   // string[] but ALL_RLS_TABLES is a `readonly` tuple from `as const`. The
   // cast is type-system housekeeping; the values are identical at runtime.
+  //
+  // PrismaPg correctly serializes JavaScript arrays as Postgres text[] when
+  // bound through the tagged template — verified by the harness's own
+  // successful policy-count test in RLS_NOT_APPLIED mode (npm run rls:verify
+  // returns mode detection PASS, which means this query executed successfully
+  // against pg_policies and returned zero rows for tables with no policies).
   const policies = await prisma.$queryRaw<PolicyRow[]>`
     SELECT tablename, policyname
     FROM pg_policies
@@ -188,27 +205,13 @@ async function testCrossTenantWrite() {
       `;
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const code = (e as any).code;
-
-    // Only RLS-shaped errors count as PASS. Any other error class — network,
-    // schema mismatch, missing column, type cast failure — indicates the test
-    // never reached the RLS enforcement path. Reporting PASS in those cases
-    // would be a false-positive: we'd ship believing RLS blocked the write
-    // when actually it errored out for an unrelated reason.
-    const isRlsBlock =
-      code === "42501" ||                              // Postgres permission_denied SQLSTATE for RLS
-      msg.includes("row violates row-level security") ||
-      msg.includes("new row violates row-level security") ||
-      msg.toLowerCase().includes("policy violation");
-
-    if (isRlsBlock) {
+    if (isRlsBlock(e)) {
       blocked = true;
     } else {
       // Don't claim PASS for unexpected errors. Report the actual failure mode
       // so we can fix the harness or the underlying issue.
       blocked = false;
-      unexpectedError = msg;
+      unexpectedError = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -295,14 +298,14 @@ async function testCrossTenantUpdateOrgChange() {
           "UPDATE to a different organizationId succeeded — RLS WITH CHECK on UPDATE is not firing",
         );
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        if (msg.includes("row violates") || msg.includes("RLS") || msg.toLowerCase().includes("policy")) {
+        if (isRlsBlock(e)) {
           record(
             "cross-tenant UPDATE org-change",
             "PASS",
             "UPDATE attempting to move row to another org correctly blocked",
           );
         } else {
+          const msg = e instanceof Error ? e.message : String(e);
           record(
             "cross-tenant UPDATE org-change",
             "FAIL",
@@ -427,6 +430,11 @@ async function main() {
   // ── Fixture pre-check ───────────────────────────────────────────────
   console.log("Pre-check: verifying test fixtures exist...\n");
 
+  // Pre-check: verify Tenant 1 and Tenant 2 fixtures exist. Each $transaction
+  // independently sets superadmin scope via app_set_tenant(NULL, true) and
+  // queries via $queryRaw. PrismaPg may pool connections across these two
+  // transactions, but each transaction establishes its own scope via SET LOCAL,
+  // so pool reuse is safe — there's no scope leakage between calls.
   const [orgExists, clientExists] = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
     const orgRows = await tx.$queryRaw<Array<{ id: string }>>`
