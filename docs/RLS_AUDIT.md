@@ -243,7 +243,7 @@ updated to document the new bypass exception.
 | PR | Sub-commit | What | Status |
 |----|----|----|----|
 | #23 | 0.5.3b-3a | Author migration SQL (not applied) | In progress (this PR) |
-| TBD | 0.5.3b-3b | Build rls-verify.ts harness | Pending |
+| #24 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
 | TBD | 0.5.3b-3c | Apply on Supabase database branch, run smoke + audit-verify + rls-verify | Pending |
 | TBD | 0.5.3b-3d | Apply to production (off-hours, rollback prepared) | Pending |
 
@@ -260,3 +260,5 @@ updated to document the new bypass exception.
 | 0.5.3b-3a | Authored RLS migration SQL for 24 tables. Not applied. |
 | 0.5.3b-3a-fix | Reviewer fix: added FORCE ROW LEVEL SECURITY to every table (required because app connects as `postgres` which has rolbypassrls=TRUE). Added role analysis comment. Strengthened AuditLog operational hazard comment. Updated rollback instructions. Added RLS Migration Status section. |
 | 0.5.3b-3a-fix2 | Reviewer documentation hardening: explicitly documented service_role bypass gap (Kasse doesn't use service_role today; standing rule that future use requires doc update + SEVERE flag in code review). Expanded Organization "no RLS" rationale to make clear it's load-bearing app logic. Added FamilyMember to child-table list. No migration SQL changes — SQL is correct as-is. |
+| 0.5.3b-3b | Built rls-verify.ts (two-mode harness) + rls-test-2 fixture. Eight named test scenarios total: mode detection, policy count verification, cross-tenant read, cross-tenant write, cross-tenant UPDATE org-change, superadmin cross-tenant read, unset-setting safe-deny (six DB-level), plus app-layer Organization-IDOR. App-layer test runs in both RLS_NOT_APPLIED and RLS_APPLIED modes; DB-level tests run only in RLS_APPLIED. |
+| 0.5.3b-3b-fix | Reviewer corrections: replaced RESET ALL with targeted RESET to avoid search_path side effects; removed dead unscoped query before cross-tenant read test; split cross-tenant UPDATE test into separate setup/test try/catches so setup failures SKIP rather than false-PASS; moved Organization-IDOR test out of RLS-gated path (runs in both modes); scrubbed plaintext passwords from seed stdout (audit-test + rls-test); added explanatory comment on as-unknown-as cast; corrected README summary counts. |

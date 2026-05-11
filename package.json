@@ -14,7 +14,9 @@
     "smoke": "tsx scripts/smoke.ts",
     "smoke:prod": "cross-env SMOKE_BASE_URL=https://portal.kasseapp.com tsx scripts/smoke.ts",
     "audit:verify": "dotenv -e .env.local -- tsx scripts/audit-verify.ts",
-    "audit:seed": "dotenv -e .env.local -- tsx prisma/seed/audit-test.ts"
+    "audit:seed": "dotenv -e .env.local -- tsx prisma/seed/audit-test.ts",
+    "rls:seed": "dotenv -e .env.local -- tsx prisma/seed/rls-test.ts",
+    "rls:verify": "dotenv -e .env.local -- tsx scripts/rls-verify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
