@@ -28,6 +28,26 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
 
+    // Refuse to re-run completion on an already-completed org. Without this guard,
+    // an authenticated owner could re-POST to swap their bank account number,
+    // KYC fields, or other application data at any time after onboarding finished.
+    // This is a financial controls boundary.
+    const existing = await withTenantScope(prisma, ctx, async (tx) => {
+      return tx.organization.findUnique({
+        where: { id: ctx.organizationId },
+        select: { onboardingCompleted: true, applicationStatus: true },
+      });
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+    if (existing.onboardingCompleted || existing.applicationStatus === "submitted") {
+      return NextResponse.json(
+        { error: "Onboarding already complete. Banking and KYC fields cannot be modified through this endpoint. Contact support to update banking information." },
+        { status: 409 },
+      );
+    }
+
     // Apply the onboarding allowlist to the org update — this is the route that
     // writes KYC/banking data. The allowlist is the only thing preventing a
     // caller from overwriting billing, plan, or franchise fields.

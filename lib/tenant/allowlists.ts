@@ -1,18 +1,24 @@
 /**
  * Field allowlists for tenant-owner-writable PATCH endpoints.
  *
- * These define EXACTLY which fields a logged-in org owner can write through
- * the merchant portal. Fields NOT in an allowlist are silently dropped from
- * the update payload. This prevents mass-assignment attacks where a caller
- * tries to overwrite billing, onboarding state, KYC, or banking fields by
- * including extra keys in the request JSON.
+ * Each allowlist defines exactly which fields a logged-in owner can write
+ * through a given operation context. The pickAllowed helper drops any field
+ * NOT in the allowlist silently — there is no error to the client.
  *
- * Source of truth: prisma/schema.prisma. Whenever a field is added to one of
- * the three models below, decide deliberately whether the owner can set it
- * via the merchant portal — and update the corresponding allowlist here.
+ * SILENT-DROP TRADEOFF: a UI that sends a field missing from the allowlist
+ * appears to succeed but the data isn't persisted. This is deliberate (forgiving
+ * client-side mismatches) but creates a maintenance hazard: a new schema field
+ * added to UI + DB but forgotten in the allowlist silently fails to save.
  *
- * Fields managed elsewhere (admin portal, onboarding flow, system counters,
- * webhook handlers) MUST NOT be added to these allowlists.
+ * Mitigation: when adding fields to schema.prisma, audit every allowlist in
+ * this file in the same PR. Consider adding a test that asserts every
+ * Organization (and BusinessSettings, etc.) field appears in at least one
+ * allowlist OR is documented as system-only.
+ *
+ * Source of truth: prisma/schema.prisma. Fields managed elsewhere (admin portal,
+ * system counters, webhook handlers) MUST NOT be added to these allowlists.
+ *
+ * See docs/RLS_AUDIT.md for the canonical route-to-allowlist mapping.
  */
 
 /**
@@ -122,7 +128,11 @@ export const ORGANIZATION_ONBOARDING_ALLOWED_FIELDS = new Set<string>([
   "ownerDob",
   "ownershipPercentage",
 
-  // Banking
+  // TEMPORARY DESIGN: bank* and ownerSsnLast4 / ownerDob are pending the
+  // banking PII tokenization architecture (see issue tracker for the
+  // SECURITY-CRITICAL banking-credentials issue). Plaintext storage is
+  // acceptable ONLY in the pre-launch state. Before first merchant onboards,
+  // these fields must be replaced by Payroc tokens or column-level encrypted.
   "bankAccountHolder",
   "bankRoutingNumber",
   "bankAccountNumber",

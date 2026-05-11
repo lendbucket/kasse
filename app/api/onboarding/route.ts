@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
 
   const { step, data } = body;
 
+  if (typeof step !== "number" || step < 2 || step > 9 || !Number.isInteger(step)) {
+    return NextResponse.json(
+      { error: "Invalid step value. Must be an integer 2 through 9." },
+      { status: 400 },
+    );
+  }
+
   try {
     switch (step) {
       case 2: {
