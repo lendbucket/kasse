@@ -190,12 +190,13 @@ AuditLog — SELECT only. Writes go through app_audit_trigger (SECURITY DEFINER)
 
 ### Tables NOT covered (intentional)
 
-Organization — protected by app logic; users only know their own orgId from session
+- **Organization** — protected by app logic, not by RLS. Every tenant-scoped route in `app/api/*` derives `organizationId` from `requireTenantContext(req)` which reads from the validated session JWT — never from client-supplied parameters. This means a request like `GET /api/some-route?orgId=other-tenant-id` cannot succeed because the route ignores the query param and uses session.organizationId. **This is load-bearing app logic.** If any future route ever accepts an `organizationId` from a request body or query string without validating it equals `ctx.organizationId`, the database provides zero backstop for Organization-row access. The rls-verify.ts harness in 0.5.3b-3b MUST include an explicit test that confirms no Kasse route reads Organization with a client-supplied orgId without session validation.
+
 User, Account, Session, VerificationToken — auth tables, accessed via prismaAdmin
 Child tables without organizationId (e.g. AppointmentAddon, TransactionItem,
 GiftCardRedemption, LoyaltyEvent, ClientMembership, CampaignRecipient,
-FormSubmission, ClockEvent, PerformanceStat, Notification) — protected
-transitively through their parent's tenant-scoped row
+FormSubmission, ClockEvent, PerformanceStat, Notification, FamilyMember)
+— protected transitively through their parent's tenant-scoped row
 
 ### Postgres role analysis (queried 2026-05-11)
 
@@ -207,6 +208,35 @@ the table owner.
 Without FORCE, the policies would compile and exist in pg_policies but
 no query would ever be subject to them. This was identified by PR #23
 reviewer Concern #1.
+
+### Other rolbypassrls=TRUE roles — service_role gap
+
+Two roles in this Supabase instance have rolbypassrls=TRUE:
+- `postgres` — addressed by FORCE ROW LEVEL SECURITY (the app connects as this)
+- `service_role` — NOT addressed by FORCE
+
+FORCE only affects the table owner. It does NOT strip rolbypassrls from
+roles that have it. If anywhere in the codebase initializes a Supabase JS
+client with SUPABASE_SERVICE_ROLE_KEY and queries these tables directly,
+those queries bypass RLS entirely regardless of FORCE.
+
+**Current state (verified):** Kasse does NOT use the Supabase JS client.
+All database access goes through Prisma via DATABASE_URL, which connects
+as `postgres`. No SUPABASE_SERVICE_ROLE_KEY env var is referenced in the
+codebase or in `KASSE_ARCHITECTURE.md`'s canonical env list.
+
+**Standing rule:** Do not introduce a Supabase JS client initialized with
+the service role key without first updating this audit doc. If such a path
+becomes necessary (e.g., for a Supabase Storage trigger or Edge Function
+that needs DB access), the integration must be documented as a deliberate
+RLS bypass exception, classified in the route table just like prismaAdmin
+routes, AND the rls-verify.ts harness must include a test confirming the
+service_role path enforces tenant isolation through application-layer
+checks instead.
+
+**For future reviewers:** if you see `SUPABASE_SERVICE_ROLE_KEY` introduced
+in a PR, flag it as a SEVERE concern unless this audit doc has been
+updated to document the new bypass exception.
 
 ### Rollout sequence
 
@@ -229,3 +259,4 @@ reviewer Concern #1.
 | 0.5.3b-2c | Reclassified onboarding routes. Three are TENANT_SCOPED (users have orgId from registration); migrated to requireTenantContext + withTenantScope + ORGANIZATION_ONBOARDING_ALLOWED_FIELDS for KYC/banking writes. Multi-write steps now atomic. One route (template) reclassified to new PUBLIC_STATIC bucket. The ONBOARDING bypass bucket is now empty by design. |
 | 0.5.3b-3a | Authored RLS migration SQL for 24 tables. Not applied. |
 | 0.5.3b-3a-fix | Reviewer fix: added FORCE ROW LEVEL SECURITY to every table (required because app connects as `postgres` which has rolbypassrls=TRUE). Added role analysis comment. Strengthened AuditLog operational hazard comment. Updated rollback instructions. Added RLS Migration Status section. |
+| 0.5.3b-3a-fix2 | Reviewer documentation hardening: explicitly documented service_role bypass gap (Kasse doesn't use service_role today; standing rule that future use requires doc update + SEVERE flag in code review). Expanded Organization "no RLS" rationale to make clear it's load-bearing app logic. Added FamilyMember to child-table list. No migration SQL changes — SQL is correct as-is. |
