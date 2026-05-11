@@ -67,7 +67,7 @@ async function main() {
   // 2. Location
   const location = await prisma.location.upsert({
     where: { id: RLS_LOCATION_ID },
-    update: { name: "RLS Test Location 2", organizationId: org.id },
+    update: { name: "RLS Test Location 2" },
     create: {
       id: RLS_LOCATION_ID,
       name: "RLS Test Location 2",

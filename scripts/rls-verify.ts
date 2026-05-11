@@ -350,6 +350,7 @@ async function testUnsetSettingSafeDeny() {
   // Query without meaningful session vars — should return zero rows, not error
   let errored = false;
   let rowCount = -1;
+  let settingValue = "(not read)";
 
   try {
     const rows = await prisma.$transaction(async (tx) => {
@@ -359,24 +360,28 @@ async function testUnsetSettingSafeDeny() {
       // is guaranteed to roll back when the transaction commits. RESET has
       // subtler semantics around connection pool state.
       await tx.$executeRaw`SELECT app_set_tenant(''::text, false::boolean)`;
-      return tx.$queryRaw<Array<{ id: string }>>`
+      const clientRows = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "Client" LIMIT 10
       `;
+
+      // Sanity check: inspect pg_settings to document the variable's session
+      // state INSIDE the transaction, while the SET LOCAL is still live.
+      // Genuinely-unset and explicitly-empty both produce empty string under
+      // current_setting(name, true), so they are functionally equivalent for
+      // our policy — but this sub-case documents the actual session state for
+      // operator visibility. A true "genuinely unset" test would require a
+      // fresh connection.
+      const settingsRows = await tx.$queryRaw<Array<{ setting: string }>>`
+        SELECT setting FROM pg_settings WHERE name = 'app.current_org_id'
+      `;
+      settingValue = settingsRows[0]?.setting ?? "(not found)";
+
+      return clientRows;
     });
     rowCount = rows.length;
   } catch {
     errored = true;
   }
-
-  // Sanity check: inspect pg_settings to document the variable's session state.
-  // Genuinely-unset and explicitly-empty both produce empty string under
-  // current_setting(name, true), so they are functionally equivalent for our
-  // policy — but this sub-case documents the actual session state for operator
-  // visibility. A true "genuinely unset" test would require a fresh connection.
-  const settingsRows = await prisma.$queryRaw<Array<{ setting: string }>>`
-    SELECT setting FROM pg_settings WHERE name = 'app.current_org_id'
-  `;
-  const settingValue = settingsRows[0]?.setting ?? "(not found)";
 
   record(
     "unset-setting safe-deny",
@@ -424,15 +429,22 @@ async function main() {
 
   const [orgExists, clientExists] = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
-    const o = await tx.organization.findUnique({ where: { id: TENANT_2_ORG_ID } });
-    const c = await tx.client.findUnique({ where: { id: TENANT_2_CLIENT_ID } });
-    return [o !== null, c !== null];
+    const orgRows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Organization" WHERE id = ${TENANT_2_ORG_ID}
+    `;
+    const clientRows = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Client" WHERE id = ${TENANT_2_CLIENT_ID}
+    `;
+    return [orgRows.length > 0, clientRows.length > 0];
   });
 
-  const tenant1 = await prisma.$transaction(async (tx) => {
+  const tenant1Rows = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
-    return tx.organization.findUnique({ where: { id: TENANT_1_ORG_ID } });
+    return tx.$queryRaw<Array<{ id: string; name: string }>>`
+      SELECT id, name FROM "Organization" WHERE id = ${TENANT_1_ORG_ID}
+    `;
   });
+  const tenant1 = tenant1Rows[0] ?? null;
 
   if (!tenant1) {
     console.error("FAIL: Tenant 1 (audit-test-org) not found. Run: npm run audit:seed");
