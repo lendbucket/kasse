@@ -100,3 +100,66 @@ and run `audit:verify` with that cookie.
 
 The seed refuses to run if `NODE_ENV=production` unless `--force` is passed.
 Don't pass `--force` in production. The fixture is a local-dev-only contract.
+
+## rls-verify.ts
+
+Two-mode RLS verification harness. Detects whether RLS policies are applied
+by querying `pg_policies`, then either runs full isolation tests (RLS_APPLIED)
+or reports all tests as SKIPPED (RLS_NOT_APPLIED).
+
+### Two modes
+
+The harness detects mode automatically by querying `pg_policies`:
+
+**RLS_NOT_APPLIED** — no policies exist on tenant-scoped tables. Tests that
+require RLS to be enforced are marked SKIPPED with a clear reason. This is the
+expected state before PR #27.
+
+**RLS_APPLIED** — policies exist on all 23 standard tables + AuditLog. Tests run
+in full. Every test must PASS or the rollout is blocked.
+
+**PARTIAL** — some tables have policies, others don't. This indicates a
+partial migration apply (or a corrupted state). Test reports FAIL immediately.
+
+### What gets tested in RLS_APPLIED mode
+
+1. Policy count verification — 4 policies x 23 tables + 1 AuditLog SELECT policy.
+2. Cross-tenant read — Tenant 1 cannot see Tenant 2's data; result must be zero rows.
+3. Cross-tenant write — INSERT with wrong organizationId blocked by WITH CHECK.
+4. Cross-tenant UPDATE org-change — attempt to move a row to another tenant blocked.
+5. Superadmin cross-tenant read — bypass works; superadmin sees all tenants.
+6. Unset-setting safe-deny — no session vars set returns zero rows, never errors.
+7. Organization-IDOR (app-layer) — admin routes refuse unauthenticated orgId access.
+
+### Test fixtures
+
+- Tenant 1: `audit-test-org` / `audit-test@localhost` / `AuditTest2026!`
+  (Created by `npm run audit:seed` — PR #5 fixture, reused.)
+- Tenant 2: `rls-test-org-2` / `rls-test-2@localhost` / `RlsTest2026!`
+  (Created by `npm run rls:seed` — this PR's fixture.)
+
+### How to run
+
+1. Seed both fixtures (idempotent):
+
+       npm run audit:seed
+       npm run rls:seed
+
+2. Run the harness:
+
+       npm run rls:verify
+
+3. Today (before RLS migration is applied), expect:
+
+       Mode: RLS_NOT_APPLIED
+       Summary: 1 PASS, 0 FAIL, 7 SKIP
+
+4. After RLS migration is applied (PR #27), expect:
+
+       Mode: RLS_APPLIED
+       Summary: 8+ PASS, 0 FAIL, 0 SKIP
+
+### TODO
+
+- Pre-create scripts/rls-rollback.sql in PR #27 (sibling to migration.sql) so
+  rollback is "one psql -f" during an incident, not "find the comment, paste."

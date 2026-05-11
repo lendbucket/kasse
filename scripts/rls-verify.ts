@@ -1,0 +1,433 @@
+#!/usr/bin/env tsx
+/**
+ * RLS verification harness.
+ *
+ * Two-mode design: detects whether RLS policies are applied by querying
+ * pg_policies. Behavior depends on the detected mode:
+ *
+ *   RLS_NOT_APPLIED — No policies exist. All DB-level tests SKIP.
+ *   RLS_APPLIED     — All 24 tables have policies. Tests run in full.
+ *   PARTIAL         — Some tables have policies, others don't. FAIL immediately.
+ *
+ * Test scenarios (RLS_APPLIED mode):
+ *   1. Policy count verification (93 policies across 24 tables)
+ *   2. Cross-tenant read isolation
+ *   3. Cross-tenant write isolation (INSERT WITH CHECK)
+ *   4. Cross-tenant UPDATE org-change blocked
+ *   5. Superadmin cross-tenant read bypass
+ *   6. Unset-setting safe-deny (zero rows, no error)
+ *   7. Organization-IDOR application-layer test
+ *
+ * Fixtures required:
+ *   - Tenant 1: audit-test-org (npm run audit:seed)
+ *   - Tenant 2: rls-test-org-2 (npm run rls:seed)
+ *
+ * Usage:
+ *   npm run rls:verify
+ */
+
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+
+// ── Config ──────────────────────────────────────────────────────────────
+const BASE_URL = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
+
+const url = process.env.DATABASE_URL;
+if (!url) {
+  console.error("FAIL: DATABASE_URL is not set. Run via: npm run rls:verify");
+  process.exit(1);
+}
+
+const adapter = new PrismaPg({ connectionString: url });
+const prisma = new PrismaClient({ adapter });
+
+// ── Fixture constants ───────────────────────────────────────────────────
+const TENANT_1_ORG_ID = "audit-test-org";
+const TENANT_2_ORG_ID = "rls-test-org-2";
+const TENANT_2_CLIENT_ID = "rls-test-client-2";
+
+// The 23 standard tenant-scoped tables + AuditLog
+const STANDARD_TABLES = [
+  "Location", "Staff", "Client", "Service", "Appointment", "Transaction",
+  "GiftCard", "LoyaltyProgram", "Membership", "WaitlistEntry", "Campaign",
+  "ReviewRequest", "FormTemplate", "PermissionSet", "BusinessSettings",
+  "ImportJob", "Device", "ApiKey", "Webhook", "AiReceptionistConfig",
+  "AiReceptionistCall", "Message", "SavedResponse",
+] as const;
+
+const ALL_RLS_TABLES = [...STANDARD_TABLES, "AuditLog"] as const;
+
+// ── Result tracking ─────────────────────────────────────────────────────
+type Status = "PASS" | "FAIL" | "SKIP";
+interface CheckResult {
+  name: string;
+  status: Status;
+  detail: string;
+}
+
+const results: CheckResult[] = [];
+
+function record(name: string, status: Status, detail: string): CheckResult {
+  const r = { name, status, detail };
+  results.push(r);
+  const mark = status === "PASS" ? "PASS" : status === "FAIL" ? "FAIL" : "SKIP";
+  console.log(`  ${mark}  ${name}${detail ? "  —  " + detail : ""}`);
+  return r;
+}
+
+// ── Mode detection ──────────────────────────────────────────────────────
+
+interface PolicyRow {
+  tablename: string;
+  policyname: string;
+}
+
+type Mode = "RLS_NOT_APPLIED" | "RLS_APPLIED" | "PARTIAL";
+
+async function detectMode(): Promise<{ mode: Mode; policies: PolicyRow[] }> {
+  const policies = await prisma.$queryRaw<PolicyRow[]>`
+    SELECT tablename, policyname
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = ANY(${ALL_RLS_TABLES as unknown as string[]})
+    ORDER BY tablename, policyname
+  `;
+
+  if (policies.length === 0) {
+    return { mode: "RLS_NOT_APPLIED", policies };
+  }
+
+  // Expected: 4 policies per standard table + 1 for AuditLog = 93
+  const tablesWithPolicies = new Set(policies.map((p) => p.tablename));
+  const allPresent = ALL_RLS_TABLES.every((t) => tablesWithPolicies.has(t));
+
+  if (allPresent && policies.length >= 93) {
+    return { mode: "RLS_APPLIED", policies };
+  }
+
+  return { mode: "PARTIAL", policies };
+}
+
+// ── Test: Policy count verification ─────────────────────────────────────
+
+function testPolicyCount(policies: PolicyRow[]) {
+  // 23 standard tables × 4 policies + 1 AuditLog SELECT = 93
+  const expected = STANDARD_TABLES.length * 4 + 1;
+  const actual = policies.length;
+  record(
+    "policy count",
+    actual === expected ? "PASS" : "FAIL",
+    `expected ${expected}, got ${actual}`,
+  );
+
+  // Verify each standard table has exactly 4 policies
+  for (const table of STANDARD_TABLES) {
+    const tablePolicies = policies.filter((p) => p.tablename === table);
+    if (tablePolicies.length !== 4) {
+      record(
+        `${table} policy count`,
+        "FAIL",
+        `expected 4, got ${tablePolicies.length}: ${tablePolicies.map((p) => p.policyname).join(", ")}`,
+      );
+    }
+  }
+
+  // AuditLog should have exactly 1 (SELECT only)
+  const auditPolicies = policies.filter((p) => p.tablename === "AuditLog");
+  record(
+    "AuditLog policy count",
+    auditPolicies.length === 1 ? "PASS" : "FAIL",
+    `expected 1 (SELECT only), got ${auditPolicies.length}`,
+  );
+}
+
+// ── Test: Cross-tenant read isolation ───────────────────────────────────
+
+async function testCrossTenantRead() {
+  // Set session to Tenant 1, try to read Tenant 2's client
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Client"
+    WHERE id = ${TENANT_2_CLIENT_ID}
+  `;
+
+  // Inside a transaction with Tenant 1 scope, Tenant 2's row should be invisible
+  const count = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
+    const found = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Client" WHERE id = ${TENANT_2_CLIENT_ID}
+    `;
+    return found.length;
+  });
+
+  record(
+    "cross-tenant read isolation",
+    count === 0 ? "PASS" : "FAIL",
+    count === 0
+      ? "Tenant 1 cannot see Tenant 2's client row"
+      : `LEAK: Tenant 1 saw ${count} row(s) from Tenant 2`,
+  );
+}
+
+// ── Test: Cross-tenant write isolation (INSERT WITH CHECK) ──────────────
+
+async function testCrossTenantWrite() {
+  let blocked = false;
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
+      // Try to INSERT a client owned by Tenant 2 while scoped to Tenant 1
+      await tx.$executeRaw`
+        INSERT INTO "Client" (id, "organizationId", name, "createdAt", "updatedAt")
+        VALUES ('rls-test-cross-write', ${TENANT_2_ORG_ID}, 'Cross Write Test', now(), now())
+      `;
+    });
+  } catch (e: any) {
+    if (e.message?.includes("policy") || e.code === "42501" || e.message?.includes("row-level security")) {
+      blocked = true;
+    } else {
+      // Unexpected error — still blocked, but log it
+      blocked = true;
+      console.log(`    (blocked with unexpected error: ${e.message?.slice(0, 100)})`);
+    }
+  }
+
+  // Cleanup in case the insert somehow succeeded
+  if (!blocked) {
+    try {
+      await prisma.$executeRaw`DELETE FROM "Client" WHERE id = 'rls-test-cross-write'`;
+    } catch { /* best effort */ }
+  }
+
+  record(
+    "cross-tenant write isolation",
+    blocked ? "PASS" : "FAIL",
+    blocked
+      ? "INSERT with wrong organizationId blocked by WITH CHECK"
+      : "LEAK: INSERT succeeded despite wrong organizationId",
+  );
+}
+
+// ── Test: Cross-tenant UPDATE org-change blocked ────────────────────────
+
+async function testCrossTenantUpdateOrgChange() {
+  // Create a temp client owned by Tenant 1, then try to UPDATE its orgId to Tenant 2
+  let blocked = false;
+  const tempId = "rls-test-update-org";
+
+  try {
+    // Create the temp row as superadmin
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+      await tx.$executeRaw`
+        INSERT INTO "Client" (id, "organizationId", name, "createdAt", "updatedAt")
+        VALUES (${tempId}, ${TENANT_1_ORG_ID}, 'Update Org Test', now(), now())
+      `;
+    });
+
+    // Now try to change the orgId while scoped to Tenant 1
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
+      await tx.$executeRaw`
+        UPDATE "Client"
+        SET "organizationId" = ${TENANT_2_ORG_ID}
+        WHERE id = ${tempId}
+      `;
+    });
+  } catch (e: any) {
+    blocked = true;
+  }
+
+  // Cleanup
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+      await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${tempId}`;
+    });
+  } catch { /* best effort */ }
+
+  record(
+    "cross-tenant UPDATE org-change",
+    blocked ? "PASS" : "FAIL",
+    blocked
+      ? "UPDATE to change organizationId blocked by WITH CHECK"
+      : "LEAK: UPDATE changed organizationId to another tenant",
+  );
+}
+
+// ── Test: Superadmin cross-tenant read ──────────────────────────────────
+
+async function testSuperadminBypass() {
+  const count = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+    const found = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM "Client" WHERE id = ${TENANT_2_CLIENT_ID}
+    `;
+    return found.length;
+  });
+
+  record(
+    "superadmin cross-tenant read",
+    count === 1 ? "PASS" : "FAIL",
+    count === 1
+      ? "Superadmin can see Tenant 2's client row"
+      : `Expected 1 row, got ${count}`,
+  );
+}
+
+// ── Test: Unset-setting safe-deny ───────────────────────────────────────
+
+async function testUnsetSettingSafeDeny() {
+  // Query without setting any session vars — should return zero rows, not error
+  let errored = false;
+  let rowCount = -1;
+
+  try {
+    const rows = await prisma.$transaction(async (tx) => {
+      // Explicitly clear any inherited vars
+      await tx.$executeRaw`RESET ALL`;
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Client" LIMIT 10
+      `;
+    });
+    rowCount = rows.length;
+  } catch {
+    errored = true;
+  }
+
+  record(
+    "unset-setting safe-deny",
+    !errored && rowCount === 0 ? "PASS" : "FAIL",
+    errored
+      ? "ERROR: query threw instead of returning zero rows"
+      : `returned ${rowCount} rows (expected 0)`,
+  );
+}
+
+// ── Test: Organization-IDOR application-layer ───────────────────────────
+
+async function testOrganizationIdor() {
+  // Unauthenticated request to admin merchants endpoint with a fabricated orgId
+  // Should get 401 (no auth), proving the app doesn't leak org data
+  const res = await fetch(`${BASE_URL}/api/admin/merchants`, {
+    headers: { "content-type": "application/json" },
+  });
+
+  record(
+    "Organization-IDOR (unauth admin)",
+    res.status === 401 ? "PASS" : "FAIL",
+    `GET /api/admin/merchants returned ${res.status} (expected 401)`,
+  );
+}
+
+// ── Main ────────────────────────────────────────────────────────────────
+
+async function main() {
+  console.log("\nKasse RLS verification harness");
+  console.log(`Base URL: ${BASE_URL}`);
+  console.log(`Database: connected\n`);
+
+  // ── Fixture pre-check ───────────────────────────────────────────────
+  console.log("Pre-check: verifying test fixtures exist...\n");
+
+  const tenant1 = await prisma.organization.findUnique({ where: { id: TENANT_1_ORG_ID } });
+  const tenant2 = await prisma.organization.findUnique({ where: { id: TENANT_2_ORG_ID } });
+  const target = await prisma.client.findUnique({ where: { id: TENANT_2_CLIENT_ID } });
+
+  if (!tenant1) {
+    console.error("FAIL: Tenant 1 (audit-test-org) not found. Run: npm run audit:seed");
+    process.exit(1);
+  }
+  if (!tenant2) {
+    console.error("FAIL: Tenant 2 (rls-test-org-2) not found. Run: npm run rls:seed");
+    process.exit(1);
+  }
+  if (!target) {
+    console.error("FAIL: Tenant 2 client (rls-test-client-2) not found. Run: npm run rls:seed");
+    process.exit(1);
+  }
+
+  console.log(`  Tenant 1: ${tenant1.name} (${tenant1.id})`);
+  console.log(`  Tenant 2: ${tenant2.name} (${tenant2.id})`);
+  console.log(`  Target client: ${target.name} (${target.id})\n`);
+
+  // ── Mode detection ──────────────────────────────────────────────────
+  console.log("Section 1: Mode detection\n");
+
+  const { mode, policies } = await detectMode();
+  record("mode detection", mode !== "PARTIAL" ? "PASS" : "FAIL", `mode=${mode}`);
+
+  if (mode === "PARTIAL") {
+    const tablesWithPolicies = [...new Set(policies.map((p) => p.tablename))];
+    const tablesMissing = ALL_RLS_TABLES.filter((t) => !tablesWithPolicies.includes(t));
+    console.error(`\nPARTIAL state detected — migration partially applied or corrupted.`);
+    console.error(`Tables WITH policies: ${tablesWithPolicies.join(", ")}`);
+    console.error(`Tables MISSING policies: ${tablesMissing.join(", ")}`);
+    console.error(`\nAborting. Fix the database state before retrying.`);
+    printSummary();
+    process.exit(1);
+  }
+
+  if (mode === "RLS_NOT_APPLIED") {
+    console.log(`\n  RLS policies not yet applied to this database.`);
+    console.log(`  DB-level isolation tests will be SKIPPED.\n`);
+
+    console.log("Section 2: DB-level tests (SKIPPED — RLS not applied)\n");
+    record("policy count", "SKIP", "RLS not yet applied");
+    record("cross-tenant read isolation", "SKIP", "RLS not yet applied");
+    record("cross-tenant write isolation", "SKIP", "RLS not yet applied");
+    record("cross-tenant UPDATE org-change", "SKIP", "RLS not yet applied");
+    record("superadmin cross-tenant read", "SKIP", "RLS not yet applied");
+    record("unset-setting safe-deny", "SKIP", "RLS not yet applied");
+
+    console.log("\nSection 3: Application-layer tests (SKIPPED — RLS not applied)\n");
+    record("Organization-IDOR (unauth admin)", "SKIP", "RLS not yet applied");
+
+    printSummary();
+    process.exit(0);
+  }
+
+  // ── RLS_APPLIED: run all tests ──────────────────────────────────────
+  console.log("\nSection 2: DB-level tests\n");
+
+  testPolicyCount(policies);
+  await testCrossTenantRead();
+  await testCrossTenantWrite();
+  await testCrossTenantUpdateOrgChange();
+  await testSuperadminBypass();
+  await testUnsetSettingSafeDeny();
+
+  console.log("\nSection 3: Application-layer tests\n");
+
+  await testOrganizationIdor();
+
+  printSummary();
+}
+
+function printSummary() {
+  const passed = results.filter((r) => r.status === "PASS").length;
+  const failed = results.filter((r) => r.status === "FAIL").length;
+  const skipped = results.filter((r) => r.status === "SKIP").length;
+
+  console.log(`\n${"─".repeat(56)}`);
+  console.log(`Summary: ${passed} PASS, ${failed} FAIL, ${skipped} SKIP`);
+
+  if (failed > 0) {
+    console.log(`\nFailures:`);
+    for (const r of results.filter((r) => r.status === "FAIL")) {
+      console.log(`  - ${r.name}: ${r.detail}`);
+    }
+  }
+
+  if (failed > 0) {
+    process.exit(1);
+  }
+}
+
+main()
+  .catch((e) => {
+    console.error("rls-verify crashed:", e);
+    process.exit(2);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

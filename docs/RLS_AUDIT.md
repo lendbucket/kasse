@@ -243,7 +243,7 @@ updated to document the new bypass exception.
 | PR | Sub-commit | What | Status |
 |----|----|----|----|
 | #23 | 0.5.3b-3a | Author migration SQL (not applied) | In progress (this PR) |
-| TBD | 0.5.3b-3b | Build rls-verify.ts harness | Pending |
+| #26 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
 | TBD | 0.5.3b-3c | Apply on Supabase database branch, run smoke + audit-verify + rls-verify | Pending |
 | TBD | 0.5.3b-3d | Apply to production (off-hours, rollback prepared) | Pending |
 
@@ -260,3 +260,4 @@ updated to document the new bypass exception.
 | 0.5.3b-3a | Authored RLS migration SQL for 24 tables. Not applied. |
 | 0.5.3b-3a-fix | Reviewer fix: added FORCE ROW LEVEL SECURITY to every table (required because app connects as `postgres` which has rolbypassrls=TRUE). Added role analysis comment. Strengthened AuditLog operational hazard comment. Updated rollback instructions. Added RLS Migration Status section. |
 | 0.5.3b-3a-fix2 | Reviewer documentation hardening: explicitly documented service_role bypass gap (Kasse doesn't use service_role today; standing rule that future use requires doc update + SEVERE flag in code review). Expanded Organization "no RLS" rationale to make clear it's load-bearing app logic. Added FamilyMember to child-table list. No migration SQL changes — SQL is correct as-is. |
+| 0.5.3b-3b | Built rls-verify.ts harness (two-mode design — RLS_NOT_APPLIED / RLS_APPLIED / PARTIAL). Added rls-test-2 seed fixture. All 6 DB-level tests + 1 application-layer test from PR #23 reviewer Concerns are covered. Today the harness reports RLS_NOT_APPLIED against production, which is correct — PR #27 applies policies to the Supabase branch, then re-runs the harness to confirm RLS_APPLIED. |
