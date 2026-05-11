@@ -1,28 +1,35 @@
-import { NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { Resend } from "resend"
-import { getMerchantApplicationEmailHtml } from "@/lib/emails/merchant-application"
-import crypto from "crypto"
+import { NextResponse, type NextRequest } from "next/server";
+import {
+  requireTenantContext,
+  tenantErrorResponse,
+  type TenantContext,
+} from "@/lib/tenant/context";
+import { Resend } from "resend";
+import { getMerchantApplicationEmailHtml } from "@/lib/emails/merchant-application";
+import crypto from "crypto";
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+export async function POST(request: NextRequest) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
 
-  const { ownerFirstName, ownerLastName, monthlyVolume, avgTicket, businessName, ein, email } = await req.json()
+  const { ownerFirstName, ownerLastName, monthlyVolume, avgTicket, businessName, ein, email } = await request.json();
 
-  // Send application email to merchant
   await resend.emails.send({
     from: "SalonTransact <onboarding@kasseapp.com>",
     to: email,
     subject: "Your SalonTransact Merchant Application",
     headers: { "X-Entity-Ref-ID": crypto.randomUUID() },
     html: getMerchantApplicationEmailHtml({ ownerFirstName, ownerLastName, businessName, monthlyVolume, avgTicket }),
-  })
+  });
 
-  // Send notification to admin
   await resend.emails.send({
     from: "Kasse System <onboarding@kasseapp.com>",
     to: "ceo@36west.org",
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
         <p><strong>Avg Ticket:</strong> ${avgTicket}</p>
       </div>
     `,
-  })
+  });
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true });
 }

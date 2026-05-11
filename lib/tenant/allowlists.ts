@@ -59,6 +59,78 @@ export const ORGANIZATION_ALLOWED_FIELDS = new Set<string>([
 ]);
 
 /**
+ * Organization fields an org owner may modify ONLY through the onboarding wizard
+ * (routes under /api/onboarding/*). These are the application/KYC/banking fields
+ * that ORGANIZATION_ALLOWED_FIELDS deliberately excludes for the general
+ * /api/settings PATCH path.
+ *
+ * The two-allowlist pattern reflects that different operation contexts have
+ * different write permissions:
+ *   - /api/settings → ORGANIZATION_ALLOWED_FIELDS (profile, identity, branding)
+ *   - /api/onboarding/* → ORGANIZATION_ONBOARDING_ALLOWED_FIELDS (compliance, banking)
+ *
+ * Both allowlists are silent (extra fields are dropped, not rejected) to keep
+ * the API forgiving on client mismatches.
+ */
+export const ORGANIZATION_ONBOARDING_ALLOWED_FIELDS = new Set<string>([
+  // Application progress tracking
+  "applicationStatus",
+  "applicationSubmittedAt",
+  "onboardingStep",
+  "onboardingCompleted",
+
+  // Business identity (some overlap with settings, repeated for clarity)
+  "name",
+  "legalName",
+  "dbaName",
+  "businessStructure",
+  "businessType",
+  "yearEstablished",
+  "ein",
+  "description",
+  "website",
+  "phone",
+  "email",
+  "teamSize",
+  "primaryColor",
+  "logoUrl",
+
+  // Address
+  "address",
+  "city",
+  "state",
+  "zip",
+  "country",
+  "timezone",
+  "language",
+
+  // Owner / KYC
+  "ownerFirstName",
+  "ownerLastName",
+  "ownerTitle",
+  "ownerAddress",
+  "ownerSsnLast4",
+  "ownerDob",
+  "ownershipPercentage",
+
+  // Banking
+  "bankAccountHolder",
+  "bankRoutingNumber",
+  "bankAccountNumber",
+  "bankAccountType",
+  "fundingSpeed",
+
+  // Processing details
+  "monthlyVolume",
+  "avgTransaction",
+  "paymentMethods",
+
+  // Franchise flag (set during onboarding step 5)
+  "isFranchise",
+  "sourceSystem",
+]);
+
+/**
  * BusinessSettings fields the owner may modify.
  * BusinessSettings is intentionally a merchant-configuration table — every
  * non-system field is exposed.
