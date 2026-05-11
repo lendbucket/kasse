@@ -133,9 +133,9 @@ partial migration apply (or a corrupted state). Test reports FAIL immediately.
 
 ### Test fixtures
 
-- Tenant 1: `audit-test-org` / `audit-test@localhost` / `AuditTest2026!`
+- Tenant 1: `audit-test-org` / `audit-test@localhost` / [fixture password — see prisma/seed/audit-test.ts]
   (Created by `npm run audit:seed` — PR #5 fixture, reused.)
-- Tenant 2: `rls-test-org-2` / `rls-test-2@localhost` / `RlsTest2026!`
+- Tenant 2: `rls-test-org-2` / `rls-test-2@localhost` / [fixture password — see prisma/seed/rls-test.ts]
   (Created by `npm run rls:seed` — this PR's fixture.)
 
 ### How to run

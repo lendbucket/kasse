@@ -75,7 +75,7 @@ const results: CheckResult[] = [];
 function record(name: string, status: Status, detail: string): CheckResult {
   const r = { name, status, detail };
   results.push(r);
-  const mark = status === "PASS" ? "PASS" : status === "FAIL" ? "FAIL" : "SKIP";
+  const mark = status; // PASS | FAIL | SKIP — render as-is
   console.log(`  ${mark}  ${name}${detail ? "  —  " + detail : ""}`);
   return r;
 }
@@ -128,7 +128,10 @@ function testPolicyCount(policies: PolicyRow[]) {
     `expected ${expected}, got ${actual}`,
   );
 
-  // Verify each standard table has exactly 4 policies
+  // Per-table loop: we record FAIL per missing-policy table to surface exactly
+  // which tables are misconfigured, but DON'T record PASS per table to avoid
+  // 23 redundant "table X has 4 policies" lines in the output. The aggregate
+  // "Policy count verification" PASS at the end covers the success case.
   for (const table of STANDARD_TABLES) {
     const tablePolicies = policies.filter((p) => p.tablename === table);
     if (tablePolicies.length !== 4) {
@@ -174,6 +177,8 @@ async function testCrossTenantRead() {
 
 async function testCrossTenantWrite() {
   let blocked = false;
+  let unexpectedError: string | null = null;
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
@@ -183,30 +188,67 @@ async function testCrossTenantWrite() {
         VALUES ('rls-test-cross-write', ${TENANT_2_ORG_ID}, 'Cross Write Test', now(), now())
       `;
     });
-  } catch (e: any) {
-    if (e.message?.includes("policy") || e.code === "42501" || e.message?.includes("row-level security")) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const code = (e as any).code;
+
+    // Only RLS-shaped errors count as PASS. Any other error class — network,
+    // schema mismatch, missing column, type cast failure — indicates the test
+    // never reached the RLS enforcement path. Reporting PASS in those cases
+    // would be a false-positive: we'd ship believing RLS blocked the write
+    // when actually it errored out for an unrelated reason.
+    const isRlsBlock =
+      code === "42501" ||                              // Postgres permission_denied SQLSTATE for RLS
+      msg.includes("row violates row-level security") ||
+      msg.includes("new row violates row-level security") ||
+      msg.toLowerCase().includes("policy violation");
+
+    if (isRlsBlock) {
       blocked = true;
     } else {
-      // Unexpected error — still blocked, but log it
-      blocked = true;
-      console.log(`    (blocked with unexpected error: ${e.message?.slice(0, 100)})`);
+      // Don't claim PASS for unexpected errors. Report the actual failure mode
+      // so we can fix the harness or the underlying issue.
+      blocked = false;
+      unexpectedError = msg;
     }
   }
 
-  // Cleanup in case the insert somehow succeeded
+  // Cleanup must run with superadmin scope. Without it, the DELETE would be
+  // subject to the same RLS policy that should have blocked the INSERT —
+  // meaning in RLS_APPLIED mode the bare cleanup would silently fail to
+  // remove the row (no session var set → safe-deny). Scoped cleanup ensures
+  // we always reach the DELETE regardless of mode.
   if (!blocked) {
     try {
-      await prisma.$executeRaw`DELETE FROM "Client" WHERE id = 'rls-test-cross-write'`;
-    } catch { /* best effort */ }
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+        await tx.$executeRaw`DELETE FROM "Client" WHERE id = 'rls-test-cross-write'`;
+      });
+    } catch (e) {
+      // best-effort; don't fail the harness on cleanup
+      console.log(`    (cleanup warning: ${e instanceof Error ? e.message : String(e)})`);
+    }
   }
 
-  record(
-    "cross-tenant write isolation",
-    blocked ? "PASS" : "FAIL",
-    blocked
-      ? "INSERT with wrong organizationId blocked by WITH CHECK"
-      : "LEAK: INSERT succeeded despite wrong organizationId",
-  );
+  if (blocked) {
+    record(
+      "cross-tenant write isolation",
+      "PASS",
+      "INSERT with wrong organizationId correctly blocked by RLS",
+    );
+  } else if (unexpectedError) {
+    record(
+      "cross-tenant write isolation",
+      "FAIL",
+      `INSERT failed but for unexpected reason: ${unexpectedError.slice(0, 120)}`,
+    );
+  } else {
+    record(
+      "cross-tenant write isolation",
+      "FAIL",
+      "INSERT with wrong organizationId succeeded — RLS WITH CHECK is not firing",
+    );
+  }
 }
 
 // ── Test: Cross-tenant UPDATE org-change blocked ────────────────────────
@@ -237,48 +279,50 @@ async function testCrossTenantUpdateOrgChange() {
   // PHASE 2 — Actual test: connect as Tenant 1, attempt to move the row to Tenant 2
   if (testClientId) {
     try {
-      await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SET LOCAL app.current_org_id = ${TENANT_1_ORG_ID}`;
-        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SET LOCAL app.current_org_id = ${TENANT_1_ORG_ID}`;
+          await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
 
-        await tx.$executeRaw`
-          UPDATE "Client"
-          SET "organizationId" = ${TENANT_2_ORG_ID}
-          WHERE id = ${testClientId!}
-        `;
-      });
-      // If we reach here, UPDATE succeeded — that's a FAIL
-      record(
-        "cross-tenant UPDATE org-change",
-        "FAIL",
-        "UPDATE to a different organizationId succeeded — RLS WITH CHECK on UPDATE is not firing",
-      );
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("row violates") || msg.includes("RLS") || msg.toLowerCase().includes("policy")) {
-        record(
-          "cross-tenant UPDATE org-change",
-          "PASS",
-          "UPDATE attempting to move row to another org correctly blocked",
-        );
-      } else {
+          await tx.$executeRaw`
+            UPDATE "Client"
+            SET "organizationId" = ${TENANT_2_ORG_ID}
+            WHERE id = ${testClientId!}
+          `;
+        });
+        // If we reach here, UPDATE succeeded — that's a FAIL
         record(
           "cross-tenant UPDATE org-change",
           "FAIL",
-          `UPDATE failed but for unexpected reason: ${msg.slice(0, 100)}`,
+          "UPDATE to a different organizationId succeeded — RLS WITH CHECK on UPDATE is not firing",
         );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("row violates") || msg.includes("RLS") || msg.toLowerCase().includes("policy")) {
+          record(
+            "cross-tenant UPDATE org-change",
+            "PASS",
+            "UPDATE attempting to move row to another org correctly blocked",
+          );
+        } else {
+          record(
+            "cross-tenant UPDATE org-change",
+            "FAIL",
+            `UPDATE failed but for unexpected reason: ${msg.slice(0, 100)}`,
+          );
+        }
+      }
+    } finally {
+      // Cleanup guaranteed to run whether Phase 2 PASSED, FAILED, or threw.
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+          await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${testClientId!}`;
+        });
+      } catch {
+        // best-effort
       }
     }
-  }
-
-  // Cleanup
-  if (testClientId) {
-    try {
-      await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
-        await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${testClientId!}`;
-      });
-    } catch { /* best effort */ }
   }
 }
 
@@ -305,17 +349,19 @@ async function testSuperadminBypass() {
 // ── Test: Unset-setting safe-deny ───────────────────────────────────────
 
 async function testUnsetSettingSafeDeny() {
-  // Query without setting any session vars — should return zero rows, not error
+  // Query without meaningful session vars — should return zero rows, not error
   let errored = false;
   let rowCount = -1;
 
   try {
     const rows = await prisma.$transaction(async (tx) => {
-      // Explicitly reset only the RLS session vars. Avoid RESET ALL because it
-      // also resets search_path, which could cause the subsequent SELECT to
-      // fail with relation-not-found and produce a misleading test failure.
-      await tx.$executeRaw`RESET app.current_org_id`;
-      await tx.$executeRaw`RESET app.is_superadmin`;
+      // Use SET LOCAL '' rather than RESET. SET LOCAL is explicitly
+      // transaction-scoped — the empty string mimics an unset variable for
+      // our policy check (where 'organizationId' = '' is always false) and
+      // is guaranteed to roll back when the transaction commits. RESET has
+      // subtler semantics around connection pool state.
+      await tx.$executeRaw`SET LOCAL app.current_org_id = ''`;
+      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
       return tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "Client" LIMIT 10
       `;
