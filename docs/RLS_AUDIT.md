@@ -243,7 +243,7 @@ updated to document the new bypass exception.
 | PR | Sub-commit | What | Status |
 |----|----|----|----|
 | #23 | 0.5.3b-3a | Author migration SQL (not applied) | In progress (this PR) |
-| #26 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
+| #24 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
 | TBD | 0.5.3b-3c | Apply on Supabase database branch, run smoke + audit-verify + rls-verify | Pending |
 | TBD | 0.5.3b-3d | Apply to production (off-hours, rollback prepared) | Pending |
 

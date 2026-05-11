@@ -43,6 +43,9 @@ const AUDIT_ORG_ID = "audit-test-org";
 const AUDIT_ORG_SLUG = "audit-test-salon";
 const AUDIT_LOCATION_ID = "audit-test-location";
 const AUDIT_USER_EMAIL = "audit-test@localhost";
+// Intentionally hardcoded fixture password. Synthetic value, never reused
+// for any real account. Local dev only — the production guard blocks this
+// seed from running unless --force is passed.
 const AUDIT_USER_PASSWORD = "AuditTest2026!";
 
 async function main() {

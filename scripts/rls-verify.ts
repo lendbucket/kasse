@@ -75,8 +75,7 @@ const results: CheckResult[] = [];
 function record(name: string, status: Status, detail: string): CheckResult {
   const r = { name, status, detail };
   results.push(r);
-  const mark = status; // PASS | FAIL | SKIP — render as-is
-  console.log(`  ${mark}  ${name}${detail ? "  —  " + detail : ""}`);
+  console.log(`  ${status}  ${name}${detail ? "  —  " + detail : ""}`);
   return r;
 }
 
@@ -221,7 +220,7 @@ async function testCrossTenantWrite() {
   if (!blocked) {
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+        await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
         await tx.$executeRaw`DELETE FROM "Client" WHERE id = 'rls-test-cross-write'`;
       });
     } catch (e) {
@@ -261,7 +260,7 @@ async function testCrossTenantUpdateOrgChange() {
   // the test). If setup fails, the test cannot run; report SKIP, not PASS.
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+      await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
       await tx.$executeRaw`
         INSERT INTO "Client" (id, "organizationId", name, "createdAt", "updatedAt")
         VALUES ('rls-test-update-org', ${TENANT_1_ORG_ID}, 'Update Org Test', now(), now())
@@ -281,8 +280,7 @@ async function testCrossTenantUpdateOrgChange() {
     try {
       try {
         await prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SET LOCAL app.current_org_id = ${TENANT_1_ORG_ID}`;
-          await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
+          await tx.$executeRaw`SELECT app_set_tenant(${TENANT_1_ORG_ID}::text, false::boolean)`;
 
           await tx.$executeRaw`
             UPDATE "Client"
@@ -316,7 +314,7 @@ async function testCrossTenantUpdateOrgChange() {
       // Cleanup guaranteed to run whether Phase 2 PASSED, FAILED, or threw.
       try {
         await prisma.$transaction(async (tx) => {
-          await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+          await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
           await tx.$executeRaw`DELETE FROM "Client" WHERE id = ${testClientId!}`;
         });
       } catch {
@@ -330,7 +328,7 @@ async function testCrossTenantUpdateOrgChange() {
 
 async function testSuperadminBypass() {
   const count = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+    await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
     const found = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT id FROM "Client" WHERE id = ${TENANT_2_CLIENT_ID}
     `;
@@ -355,13 +353,12 @@ async function testUnsetSettingSafeDeny() {
 
   try {
     const rows = await prisma.$transaction(async (tx) => {
-      // Use SET LOCAL '' rather than RESET. SET LOCAL is explicitly
-      // transaction-scoped — the empty string mimics an unset variable for
-      // our policy check (where 'organizationId' = '' is always false) and
+      // Use app_set_tenant with empty string rather than RESET. The empty
+      // string mimics an unset variable for our policy check (where
+      // 'organizationId' = '' is always false) and the underlying SET LOCAL
       // is guaranteed to roll back when the transaction commits. RESET has
       // subtler semantics around connection pool state.
-      await tx.$executeRaw`SET LOCAL app.current_org_id = ''`;
-      await tx.$executeRaw`SET LOCAL app.is_superadmin = 'false'`;
+      await tx.$executeRaw`SELECT app_set_tenant(''::text, false::boolean)`;
       return tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "Client" LIMIT 10
       `;
@@ -371,12 +368,22 @@ async function testUnsetSettingSafeDeny() {
     errored = true;
   }
 
+  // Sanity check: inspect pg_settings to document the variable's session state.
+  // Genuinely-unset and explicitly-empty both produce empty string under
+  // current_setting(name, true), so they are functionally equivalent for our
+  // policy — but this sub-case documents the actual session state for operator
+  // visibility. A true "genuinely unset" test would require a fresh connection.
+  const settingsRows = await prisma.$queryRaw<Array<{ setting: string }>>`
+    SELECT setting FROM pg_settings WHERE name = 'app.current_org_id'
+  `;
+  const settingValue = settingsRows[0]?.setting ?? "(not found)";
+
   record(
     "unset-setting safe-deny",
     !errored && rowCount === 0 ? "PASS" : "FAIL",
     errored
       ? "ERROR: query threw instead of returning zero rows"
-      : `returned ${rowCount} rows (expected 0)`,
+      : `returned ${rowCount} rows (expected 0); pg_settings session value: '${settingValue}'`,
   );
 }
 
@@ -415,26 +422,34 @@ async function main() {
   // ── Fixture pre-check ───────────────────────────────────────────────
   console.log("Pre-check: verifying test fixtures exist...\n");
 
-  const tenant1 = await prisma.organization.findUnique({ where: { id: TENANT_1_ORG_ID } });
-  const tenant2 = await prisma.organization.findUnique({ where: { id: TENANT_2_ORG_ID } });
-  const target = await prisma.client.findUnique({ where: { id: TENANT_2_CLIENT_ID } });
+  const [orgExists, clientExists] = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
+    const o = await tx.organization.findUnique({ where: { id: TENANT_2_ORG_ID } });
+    const c = await tx.client.findUnique({ where: { id: TENANT_2_CLIENT_ID } });
+    return [o !== null, c !== null];
+  });
+
+  const tenant1 = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT app_set_tenant(NULL, true)`;
+    return tx.organization.findUnique({ where: { id: TENANT_1_ORG_ID } });
+  });
 
   if (!tenant1) {
     console.error("FAIL: Tenant 1 (audit-test-org) not found. Run: npm run audit:seed");
     process.exit(1);
   }
-  if (!tenant2) {
+  if (!orgExists) {
     console.error("FAIL: Tenant 2 (rls-test-org-2) not found. Run: npm run rls:seed");
     process.exit(1);
   }
-  if (!target) {
+  if (!clientExists) {
     console.error("FAIL: Tenant 2 client (rls-test-client-2) not found. Run: npm run rls:seed");
     process.exit(1);
   }
 
   console.log(`  Tenant 1: ${tenant1.name} (${tenant1.id})`);
-  console.log(`  Tenant 2: ${tenant2.name} (${tenant2.id})`);
-  console.log(`  Target client: ${target.name} (${target.id})\n`);
+  console.log(`  Tenant 2: ${TENANT_2_ORG_ID} (exists)`);
+  console.log(`  Target client: ${TENANT_2_CLIENT_ID} (exists)\n`);
 
   // ── Mode detection ──────────────────────────────────────────────────
   console.log("Section 1: Mode detection\n");

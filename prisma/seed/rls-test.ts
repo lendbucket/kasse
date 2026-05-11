@@ -44,6 +44,9 @@ const RLS_ORG_ID = "rls-test-org-2";
 const RLS_ORG_SLUG = "rls-test-salon-2";
 const RLS_LOCATION_ID = "rls-test-location-2";
 const RLS_USER_EMAIL = "rls-test-2@localhost";
+// Intentionally hardcoded fixture password. Synthetic value, never reused
+// for any real account. Local dev only — the production guard blocks this
+// seed from running unless --force is passed.
 const RLS_USER_PASSWORD = "RlsTest2026!";
 
 async function main() {
