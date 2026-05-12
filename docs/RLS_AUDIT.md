@@ -5,6 +5,30 @@
 **Status:** Living document — update when adding new API routes
 **Owner:** Foundation engineering
 
+## Phase 0.5.3b Status: COMPLETE
+
+**Phase 0.5.3b — RLS rollout — completed 2026-05-12.**
+
+This phase delivered Row-Level Security as defense-in-depth on the Kasse production database. Tenant isolation is now enforced at both the application layer (via `withTenantScope` in route handlers) and the database layer (via 93 RLS policies on 24 tables + FORCE ROW LEVEL SECURITY).
+
+**Empire architecture impact:**
+- Kasse is now production-grade multi-tenant from a security perspective
+- Same RLS architecture pattern can be applied to SalonTransact (Layer 1, payment engine) when its data model expands
+- Reseller program (Layer 3, post-Phase 9 pending legal counsel review) inherits this isolation by default
+- AI agent capabilities (Future Agent #1 DM-to-Booking, Future Agent #2 Lead Nurture) can be built on top of this RLS foundation safely
+
+**Sub-phases:**
+- 0.5.3b-1 / 0.5.3b-2 — Foundational route migration to tenant context patterns (PRs #1-22, merged 2026-05-09 through 2026-05-11)
+- 0.5.3b-3a — Authored RLS policies migration (PR #23, merged 2026-05-11)
+- 0.5.3b-3b — Built rls-verify harness (PR #24, merged 2026-05-11)
+- 0.5.3b-3c — Branch verification proved RLS architecture works (no PR — local branch test, 9 PASS / 0 FAIL)
+- 0.5.3b-3d-a — Authored kasse_app role bootstrap migration (PR #25, merged 2026-05-12)
+- 0.5.3b-3d-b — Verified lib files + preflight script (PR #26, merged 2026-05-12)
+- 0.5.3b-3d-c — Applied kasse_app role to production (PR #27, merged 2026-05-12)
+- 0.5.3b-3d-d — Applied RLS policies to production (PR #28, merged 2026-05-12)
+- 0.5.3b-3d-e — Staged Vercel env vars (PR #29, merged 2026-05-12)
+- 0.5.3b-3d-f / 0.5.3b-3d-g — Cutover + documentation finalization (this PR, 2026-05-12)
+
 ## Purpose
 
 When Row-Level Security (RLS) policies are enabled in 0.5.3b-3, every Prisma
@@ -313,8 +337,8 @@ there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
 | #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP `apply_migration` tool or direct dashboard SQL editor. | Completed (2026-05-12) |
 | #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Completed (2026-05-12) |
 | #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs `prisma migrate deploy` is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Completed (2026-05-12) |
-| #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
-| #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Pending |
+| #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Completed (2026-05-12) |
+| #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Completed (2026-05-12) |
 
 ## Production State Log
 
@@ -417,6 +441,40 @@ All three env vars are scoped to Production, Preview, and Development environmen
 **Critical operator note for CI/CD:**
 Any future automation that runs `prisma migrate deploy` MUST use MIGRATION_DATABASE_URL, not DATABASE_URL. The kasse_app role has CRUD privileges only, not DDL. Attempting a migration as kasse_app will fail with permission errors. This is enforced by the role definition (NOBYPASSRLS, no CREATEROLE, no CREATEDB).
 
+### 2026-05-12 — CUTOVER: RLS enforcement live in production (PR #30 / 0.5.3b-3d-f)
+
+Triggered Vercel redeployment of the Kasse production deployment. New deployment loaded the staged env vars, app now connects as kasse_app instead of postgres. **RLS enforcement is now active on every production query.**
+
+**Verification end-to-end:**
+- Vercel deployment completed with "Ready" status
+- Production homepage (`portal.kasseapp.com`) loaded normally
+- Superadmin login successful (`ceo@36west.org`)
+- Dashboard rendered with data — proves prismaAdmin's `app.is_superadmin=true` SET LOCAL pattern works through the kasse_app connection
+- Supabase pg_stat_activity confirmed kasse_app connections active on production
+- Zero application errors during or after redeployment
+
+**Production state after cutover:**
+- App connection role: kasse_app (rolbypassrls=false)
+- RLS policies: 93 (firing on every query)
+- FORCE ROW LEVEL SECURITY: 24 tables
+- Migration role (CI/CD): postgres via MIGRATION_DATABASE_URL
+- Tenant isolation: enforced at the database layer
+
+**What this means going forward:**
+- Application bugs that forget `where: { organizationId: ctx.organizationId }` will return zero rows (or fail INSERT) instead of leaking cross-tenant data
+- Defense-in-depth: even if a future application bug exposes cross-tenant routes, the database refuses the query
+- Compromised application credentials cannot enable cross-tenant data access without ALSO compromising the session-variable signal (set per-transaction via SET LOCAL)
+- All 6 RLS-aware test scenarios from rls-verify.ts now apply to production
+
+**Rollback procedure (if a problem surfaces post-cutover):**
+1. Vercel dashboard → Environment Variables
+2. Revert DATABASE_URL and DIRECT_URL back to postgres credentials (saved value before PR #29)
+3. Optionally remove MIGRATION_DATABASE_URL (or leave it — does no harm)
+4. Trigger Vercel redeployment with reverted env vars
+5. App reverts to postgres connection in ~60 seconds
+6. RLS policies remain on database but do not fire because postgres has rolbypassrls=true
+7. ~5 minutes total to fully revert
+
 ## Changelog
 
 | Phase | Change |
@@ -438,3 +496,5 @@ Any future automation that runs `prisma migrate deploy` MUST use MIGRATION_DATAB
 | 0.5.3b-3d-c | Applied kasse_app role bootstrap to production via Supabase MCP. Verified all role attributes correct (rolbypassrls=false), 42 tables granted, 6 functions executable. Password set out-of-band via Supabase dashboard. No app behavior change — role exists, nothing connects to it yet. Production State Log section added. |
 | 0.5.3b-3d-d | Applied RLS policies migration to production via Supabase MCP. Verified 93 policies and 24 FORCE entries on production. Production data counts unchanged (7 orgs, 7 users, 4 locations). No app behavior change — app still connects as postgres which has rolbypassrls=true and bypasses RLS. Policies will begin enforcing at PR #28f cutover when DATABASE_URL switches to kasse_app. |
 | 0.5.3b-3d-e | Staged Vercel env vars for cutover. DATABASE_URL and DIRECT_URL changed to kasse_app credentials. New MIGRATION_DATABASE_URL added pointing at postgres for future migrations. No redeployment triggered — env vars saved but not loaded into running deployment. Production app behavior unchanged until PR #28f redeploy. |
+| 0.5.3b-3d-f | CUTOVER: Triggered Vercel redeployment. App now connects as kasse_app. RLS enforcing on every production query. Verified end-to-end via superadmin login + dashboard data load + pg_stat_activity confirmation of kasse_app connections. Zero errors. |
+| 0.5.3b-3d-g | Phase 0.5.3b complete. RLS rollout finished. Documentation finalized. |
