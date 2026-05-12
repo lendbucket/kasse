@@ -72,6 +72,18 @@ When reviewing a route file:
 
 A route can legitimately import both `prisma` and `prismaAdmin` if it does both kinds of work, but every individual query must be deliberately one or the other.
 
+### Postgres connection role distinction (added 2026-05-11)
+
+In addition to the Prisma client choice (`prisma` vs `prismaAdmin`), Kasse uses **TWO** distinct Postgres connection roles in production:
+
+- **`kasse_app` role** (rolbypassrls=false): app runtime connection via `DATABASE_URL` and `DIRECT_URL`. RLS policies actually fire on queries from this role. Application code uses this transparently — no code distinction between "kasse_app-as-tenant" and "kasse_app-as-superadmin", that distinction is made by `SET LOCAL app.is_superadmin` via prismaAdmin's `$extends` wrapper.
+
+- **`postgres` role** (rolbypassrls=true): used ONLY for schema migrations via `MIGRATION_DATABASE_URL`. Has DDL privileges (CREATE TABLE, ALTER, etc.) that `kasse_app` cannot have. Migrations run as `postgres`; the app runs as `kasse_app`.
+
+**REVIEWER RULE:** A PR that introduces a new env var for database connection, OR changes how `DATABASE_URL` is read, OR adds a new role assignment, MUST be flagged as needing security review. Connection role choices have direct RLS enforcement implications.
+
+**REVIEWER RULE:** A PR that adds a new SQL file under `prisma/migrations/` AND requires `CREATE ROLE`, `ALTER ROLE`, or `GRANT`/`REVOKE` privilege statements MUST be flagged because those statements require running as `postgres` (the superuser role), not as `kasse_app`. Confirm with the author that the deployment plan accounts for this.
+
 ## Priority 4: Design system compliance
 
 Kasse uses a strict light theme:
