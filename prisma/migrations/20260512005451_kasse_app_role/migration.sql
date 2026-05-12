@@ -57,6 +57,14 @@ BEGIN
 END
 $$;
 
+-- Idempotency note for the GRANT block below:
+-- The CREATE ROLE above is wrapped in a DO/EXISTS check because Postgres does
+-- not support CREATE ROLE IF NOT EXISTS. The GRANT and ALTER DEFAULT PRIVILEGES
+-- statements below are NOT wrapped because they are naturally idempotent in
+-- Postgres — re-running a GRANT for a privilege the role already has is a
+-- no-op, not an error. Same for ALTER DEFAULT PRIVILEGES. This migration is
+-- therefore safe to re-apply end-to-end.
+
 -- Schema usage. Without this, kasse_app cannot reference any object in public.
 GRANT USAGE ON SCHEMA public TO kasse_app;
 

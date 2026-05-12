@@ -303,11 +303,11 @@ Production rollout (PR #28b through #28g) replicates this branch architecture.
 | — | 0.5.3b-3c | Apply on Supabase database branch, run rls-verify | Completed (branch test) |
 | #28a | 0.5.3b-3d-a | Author kasse_app role bootstrap migration (SQL only, not applied) | In progress (this PR) |
 | #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role | Pending |
-| #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production (Supabase MCP) | Pending |
-| #28d | 0.5.3b-3d-d | Apply RLS policies migration on production (Supabase MCP) | Pending |
-| #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL) | Pending |
+| #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP apply_migration tool or direct dashboard SQL editor. | Pending |
+| #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Pending |
+| #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs prisma migrate deploy is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Pending |
 | #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
-| #28g | 0.5.3b-3d-g | Cleanup, documentation finalization | Pending |
+| #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Pending |
 
 ## Changelog
 
