@@ -1,3 +1,35 @@
+/**
+ * Kasse prismaAdmin client (superadmin path).
+ *
+ * What this is:
+ *  - Same Postgres connection as lib/prisma.ts (kasse_app role, no BYPASSRLS).
+ *  - Inside every transaction, sets app.is_superadmin = true via SET LOCAL
+ *    so RLS policies treat queries as superadmin reads.
+ *  - This is NOT a role-level bypass. It's a session-variable signal that
+ *    the RLS policies in 20260511121142_rls_policies/migration.sql
+ *    specifically check.
+ *
+ * Connection role contract (post-cutover):
+ *  - DATABASE_URL points at kasse_app (rolbypassrls=FALSE).
+ *  - prismaAdmin uses the SAME connection — there is NO separate admin
+ *    connection role. The privilege is granted via session variable, not
+ *    via switching to a more-privileged role.
+ *  - This means RLS policies CAN audit "who is acting as superadmin" by
+ *    looking at app.actor_id (set by app_set_actor) — something that
+ *    would be lost if we used a separate role.
+ *
+ * What you must NOT do:
+ *  - Use prismaAdmin from a tenant-facing route. Routes that should be
+ *    scoped to a tenant must use lib/prisma.ts with withTenantScope.
+ *  - Bypass auth checks. prismaAdmin assumes the caller has already
+ *    established (via requireSuperadminContext) that the action is
+ *    authorized at the application layer.
+ *  - Add DDL operations. kasse_app has CRUD only.
+ *
+ * See docs/RLS_AUDIT.md "Tenant context patterns" for the route
+ * classification rules.
+ */
+
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
