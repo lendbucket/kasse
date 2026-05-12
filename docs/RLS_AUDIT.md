@@ -198,16 +198,24 @@ GiftCardRedemption, LoyaltyEvent, ClientMembership, CampaignRecipient,
 FormSubmission, ClockEvent, PerformanceStat, Notification, FamilyMember)
 — protected transitively through their parent's tenant-scoped row
 
-### Postgres role analysis (queried 2026-05-11)
+### Postgres role analysis (queried 2026-05-11, updated 2026-05-11)
 
 Application connects as `postgres`, which has rolbypassrls=TRUE and owns
-every table. To make RLS actually fire, the migration uses
-`FORCE ROW LEVEL SECURITY` on every table — this makes RLS apply even to
-the table owner.
+every table. The RLS policies migration uses `FORCE ROW LEVEL SECURITY`
+on every table — this makes RLS apply even to the table owner.
+
+However, **FORCE ROW LEVEL SECURITY does NOT override rolbypassrls**.
+This was verified empirically during Phase 0.5.3b-3c branch testing:
+with `postgres` (rolbypassrls=TRUE), all cross-tenant isolation tests
+FAILED despite FORCE being set on every table. With `kasse_app`
+(rolbypassrls=FALSE), all 9 tests PASSED. The fix is the `kasse_app`
+role bootstrap migration (20260512005451_kasse_app_role).
 
 Without FORCE, the policies would compile and exist in pg_policies but
 no query would ever be subject to them. This was identified by PR #23
-reviewer Concern #1.
+reviewer Concern #1. FORCE is still necessary (it prevents the table
+owner from bypassing RLS), but it is not sufficient on its own when the
+connecting role has rolbypassrls=TRUE.
 
 ### Other rolbypassrls=TRUE roles — service_role gap
 
@@ -238,14 +246,65 @@ checks instead.
 in a PR, flag it as a SEVERE concern unless this audit doc has been
 updated to document the new bypass exception.
 
+### Role-split architecture (decided 2026-05-11 after branch verification)
+
+Verified empirically during Phase 0.5.3b-3c branch test: `FORCE ROW LEVEL
+SECURITY` does NOT override `rolbypassrls`. A connection as the `postgres`
+role bypasses RLS even when policies exist and FORCE is set, because
+`rolbypassrls` is evaluated separately and takes precedence.
+
+The fix: create a dedicated `kasse_app` role with `NOBYPASSRLS` for the
+application's database connection. Migrations continue running as `postgres`
+(needs DDL privileges that `kasse_app` should not have).
+
+This means production has **TWO** connection roles:
+
+| Role | rolbypassrls | rolcanlogin | Used for |
+|------|-------------|-------------|----------|
+| `postgres` | TRUE | TRUE | Schema migrations (DDL); admin operations |
+| `kasse_app` | FALSE | TRUE | Application connection (DATABASE_URL) |
+
+#### Env var architecture (post-cutover)
+
+| Env var | Role used | Purpose |
+|---------|-----------|---------|
+| `DATABASE_URL` | `kasse_app` | Application runtime queries |
+| `DIRECT_URL` | `kasse_app` | Same role; bypass pooler when needed |
+| `MIGRATION_DATABASE_URL` | `postgres` | `prisma migrate deploy` (DDL access) |
+
+The `MIGRATION_DATABASE_URL` is new (introduced post-cutover). Before cutover,
+`DATABASE_URL` = `DIRECT_URL` = postgres connection. After cutover,
+`DATABASE_URL` switches to `kasse_app` while `MIGRATION_DATABASE_URL` preserves
+DDL access for future migrations.
+
+#### Verified by branch test (2026-05-11)
+
+When the application connects as `kasse_app` (rolbypassrls=false), all 9 tests
+in rls-verify pass:
+
+- Cross-tenant read isolation: **PASS**
+- Cross-tenant write isolation: **PASS** (INSERT with wrong organizationId blocked)
+- Cross-tenant UPDATE org-change attack: **PASS** (UPDATE blocked by WITH CHECK)
+- Superadmin cross-tenant read: **PASS** (bypass works correctly)
+- Unset-setting safe-deny: **PASS** (zero rows when no scope set)
+- Application-layer Organization-IDOR: **PASS**
+
+Production rollout (PR #28b through #28g) replicates this branch architecture.
+
 ### Rollout sequence
 
 | PR | Sub-commit | What | Status |
 |----|----|----|----|
-| #23 | 0.5.3b-3a | Author migration SQL (not applied) | In progress (this PR) |
+| #23 | 0.5.3b-3a | Author migration SQL (not applied) | Completed |
 | #24 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
-| TBD | 0.5.3b-3c | Apply on Supabase database branch, run smoke + audit-verify + rls-verify | Pending |
-| TBD | 0.5.3b-3d | Apply to production (off-hours, rollback prepared) | Pending |
+| — | 0.5.3b-3c | Apply on Supabase database branch, run rls-verify | Completed (branch test) |
+| #28a | 0.5.3b-3d-a | Author kasse_app role bootstrap migration (SQL only, not applied) | In progress (this PR) |
+| #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role | Pending |
+| #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production (Supabase MCP) | Pending |
+| #28d | 0.5.3b-3d-d | Apply RLS policies migration on production (Supabase MCP) | Pending |
+| #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL) | Pending |
+| #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
+| #28g | 0.5.3b-3d-g | Cleanup, documentation finalization | Pending |
 
 ## Changelog
 
@@ -262,3 +321,5 @@ updated to document the new bypass exception.
 | 0.5.3b-3a-fix2 | Reviewer documentation hardening: explicitly documented service_role bypass gap (Kasse doesn't use service_role today; standing rule that future use requires doc update + SEVERE flag in code review). Expanded Organization "no RLS" rationale to make clear it's load-bearing app logic. Added FamilyMember to child-table list. No migration SQL changes — SQL is correct as-is. |
 | 0.5.3b-3b | Built rls-verify.ts (two-mode harness) + rls-test-2 fixture. Eight named test scenarios total: mode detection, policy count verification, cross-tenant read, cross-tenant write, cross-tenant UPDATE org-change, superadmin cross-tenant read, unset-setting safe-deny (six DB-level), plus app-layer Organization-IDOR. App-layer test runs in both RLS_NOT_APPLIED and RLS_APPLIED modes; DB-level tests run only in RLS_APPLIED. |
 | 0.5.3b-3b-fix | Reviewer corrections: replaced RESET ALL with targeted RESET to avoid search_path side effects; removed dead unscoped query before cross-tenant read test; split cross-tenant UPDATE test into separate setup/test try/catches so setup failures SKIP rather than false-PASS; moved Organization-IDOR test out of RLS-gated path (runs in both modes); scrubbed plaintext passwords from seed stdout (audit-test + rls-test); added explanatory comment on as-unknown-as cast; corrected README summary counts. |
+| 0.5.3b-3c | Branch verification: applied all migrations to Supabase branch. Discovered FORCE ROW LEVEL SECURITY does not override rolbypassrls — postgres role bypasses RLS despite FORCE. Created kasse_app role (NOBYPASSRLS) on branch; re-ran rls-verify as kasse_app: 9 PASS, 0 FAIL. This proved the role-split architecture is the correct fix. |
+| 0.5.3b-3d-a | Authored kasse_app role bootstrap migration. Idempotent CREATE ROLE with NOBYPASSRLS. Grants schema/tables/sequences/functions privileges. Sets default privileges for future Prisma migrations. Documented role-split architecture, env var architecture, and the branch test that confirmed RLS enforcement works with NOBYPASSRLS connections. Not yet applied to any database — applies in PR #28c. |
