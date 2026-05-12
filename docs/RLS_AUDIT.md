@@ -311,7 +311,7 @@ there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
 | #28a | 0.5.3b-3d-a | Author kasse_app role bootstrap migration (SQL only, not applied) | Completed |
 | #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role; add preflight script; add inline docs to lib files | Completed |
 | #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP `apply_migration` tool or direct dashboard SQL editor. | Completed (2026-05-12) |
-| #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Pending |
+| #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Completed (2026-05-12) |
 | #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs prisma migrate deploy is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Pending |
 | #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
 | #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Pending |
@@ -350,6 +350,43 @@ Applied via Supabase MCP `apply_migration` against project nknuonxznhshrgfseeqc.
 
 **Rollback if needed:** `DROP ROLE IF EXISTS kasse_app;` — safe because nothing connects to it. After cutover (PR #28f), rollback requires Vercel env var revert + redeploy BEFORE dropping the role.
 
+### 2026-05-12 — RLS policies migration applied (PR #28d / 0.5.3b-3d-d)
+
+Applied via Supabase MCP `apply_migration` against project nknuonxznhshrgfseeqc.
+
+**SQL applied:** Identical to `prisma/migrations/20260511121142_rls_policies/migration.sql` (PR #23, merged to main 2026-05-11).
+
+**Pre-application state verified:**
+- RLS policies count: 0 ✓
+- FORCE tables count: 0 ✓
+- kasse_app role exists with rolbypassrls=false ✓ (from PR #27)
+- app_set_tenant function: existed ✓
+- app_audit_trigger function: existed ✓ (from 20260507213449_audit_log)
+- All 42 public tables present ✓
+
+**Post-application state verified:**
+- Total policies: 93 ✓ (baseline: 23 × 4 + 1)
+- Tables with FORCE ROW LEVEL SECURITY: 24 ✓ (23 standard + AuditLog)
+- Tables with policies: 24 ✓
+- Per-table breakdown:
+  - 23 standard tables × 4 policies each (SELECT/INSERT/UPDATE/DELETE): Location, Staff, Client, Service, Appointment, Transaction, GiftCard, LoyaltyProgram, Membership, WaitlistEntry, Campaign, ReviewRequest, FormTemplate, PermissionSet, BusinessSettings, ImportJob, Device, ApiKey, Webhook, AiReceptionistConfig, AiReceptionistCall, Message, SavedResponse
+  - 1 AuditLog table × 1 SELECT-only policy
+
+**Production data verified intact:**
+- Organization rows: 7 (unchanged)
+- User rows: 7 (unchanged)
+- Location rows: 4 (unchanged)
+
+**Production app behavior:** STILL UNCHANGED. App continues to connect as postgres, which has rolbypassrls=true. The 93 policies exist but do not fire on app queries because Postgres bypasses RLS for roles with that attribute. App functions exactly as it did before PR #27.
+
+**The cutover (PR #28f) is what activates RLS enforcement** — by switching DATABASE_URL to kasse_app (rolbypassrls=false), every app query becomes subject to these policies.
+
+**Rollback if needed (pre-cutover):**
+Run the rollback SQL from the bottom of `prisma/migrations/20260511121142_rls_policies/migration.sql` — disables RLS and drops all 93 policies. Safe before cutover because app still connects as postgres.
+
+**Rollback if needed (post-cutover):**
+Must revert Vercel DATABASE_URL/DIRECT_URL back to postgres credentials and redeploy BEFORE running rollback SQL, otherwise app loses access to its own data when RLS starts blocking unscoped queries.
+
 ## Changelog
 
 | Phase | Change |
@@ -369,3 +406,4 @@ Applied via Supabase MCP `apply_migration` against project nknuonxznhshrgfseeqc.
 | 0.5.3b-3d-a | Authored kasse_app role bootstrap migration. Idempotent CREATE ROLE with NOBYPASSRLS. Grants schema/tables/sequences/functions privileges. Sets default privileges for future Prisma migrations. Documented role-split architecture, env var architecture, and the branch test that confirmed RLS enforcement works with NOBYPASSRLS connections. Not yet applied to any database — applies in PR #28c. |
 | 0.5.3b-3d-b | Verified lib/prisma.ts and lib/prismaAdmin.ts have no hardcoded role assumptions — both read DATABASE_URL via env vars only. Added inline header comments documenting the role-split contract: lib/prisma.ts is the tenant-scoped path, lib/prismaAdmin.ts is the superadmin path (same connection, session-variable signal). Added scripts/preflight-rls-cutover.ts and `npm run preflight:cutover` — a pre-cutover sanity check that any operator can run before PR #28c through #28f to confirm the environment is in the expected state. Documentation only — no code logic changes, no migration changes. |
 | 0.5.3b-3d-c | Applied kasse_app role bootstrap to production via Supabase MCP. Verified all role attributes correct (rolbypassrls=false), 42 tables granted, 6 functions executable. Password set out-of-band via Supabase dashboard. No app behavior change — role exists, nothing connects to it yet. Production State Log section added. |
+| 0.5.3b-3d-d | Applied RLS policies migration to production via Supabase MCP. Verified 93 policies and 24 FORCE entries on production. Production data counts unchanged (7 orgs, 7 users, 4 locations). No app behavior change — app still connects as postgres which has rolbypassrls=true and bypasses RLS. Policies will begin enforcing at PR #28f cutover when DATABASE_URL switches to kasse_app. |
