@@ -309,12 +309,46 @@ there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
 | #24 | 0.5.3b-3b | Build rls-verify.ts harness + rls-test-2 fixture | Completed |
 | — | 0.5.3b-3c | Apply on Supabase database branch, run rls-verify | Completed (branch test) |
 | #28a | 0.5.3b-3d-a | Author kasse_app role bootstrap migration (SQL only, not applied) | Completed |
-| #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role; add preflight script; add inline docs to lib files | In progress (this PR) |
-| #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP apply_migration tool or direct dashboard SQL editor. | Pending |
+| #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role; add preflight script; add inline docs to lib files | Completed |
+| #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP `apply_migration` tool or direct dashboard SQL editor. | Completed (2026-05-12) |
 | #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Pending |
 | #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs prisma migrate deploy is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Pending |
 | #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
 | #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Pending |
+
+## Production State Log
+
+Records of production database state changes during the RLS rollout.
+
+### 2026-05-12 — kasse_app role created (PR #28c / 0.5.3b-3d-c)
+
+Applied via Supabase MCP `apply_migration` against project nknuonxznhshrgfseeqc.
+
+**SQL applied:** Identical to `prisma/migrations/20260512005451_kasse_app_role/migration.sql` (PR #25, merged to main 2026-05-12).
+
+**Pre-application state verified:**
+- kasse_app role: did not exist ✓
+- RLS policies count: 0 ✓
+- FORCE tables count: 0 ✓
+- app_set_tenant function: existed (from 20260507204234_rls_session_helpers) ✓
+- All 3 prerequisite migrations applied ✓
+
+**Post-application state verified:**
+- kasse_app role: exists ✓
+- rolbypassrls: false ✓ (the critical attribute — RLS will fire on this role's queries)
+- rolcanlogin: true ✓
+- rolsuper: false ✓
+- rolcreatedb: false ✓
+- rolcreaterole: false ✓
+- Tables with grants: 42 (all public schema tables) ✓
+- RLS helper functions granted: 6 (app_set_tenant, app_clear_tenant, app_set_actor, app_clear_actor, app_current_org_id, app_is_superadmin) ✓
+- Client table CRUD privileges: all 4 (SELECT, INSERT, UPDATE, DELETE) ✓
+
+**Password:** Set via Supabase dashboard SQL Editor (out-of-band, never in chat or source). Stored in password manager.
+
+**Production app behavior:** UNCHANGED. App continues to connect as postgres via DATABASE_URL. The kasse_app role exists but nothing connects to it yet. Connection role switch happens in PR #28e (Vercel env var stage) and PR #28f (Vercel redeploy).
+
+**Rollback if needed:** `DROP ROLE IF EXISTS kasse_app;` — safe because nothing connects to it. After cutover (PR #28f), rollback requires Vercel env var revert + redeploy BEFORE dropping the role.
 
 ## Changelog
 
@@ -334,3 +368,4 @@ there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
 | 0.5.3b-3c | Branch verification: applied all migrations to Supabase branch. Discovered FORCE ROW LEVEL SECURITY does not override rolbypassrls — postgres role bypasses RLS despite FORCE. Created kasse_app role (NOBYPASSRLS) on branch; re-ran rls-verify as kasse_app: 9 PASS, 0 FAIL. This proved the role-split architecture is the correct fix. |
 | 0.5.3b-3d-a | Authored kasse_app role bootstrap migration. Idempotent CREATE ROLE with NOBYPASSRLS. Grants schema/tables/sequences/functions privileges. Sets default privileges for future Prisma migrations. Documented role-split architecture, env var architecture, and the branch test that confirmed RLS enforcement works with NOBYPASSRLS connections. Not yet applied to any database — applies in PR #28c. |
 | 0.5.3b-3d-b | Verified lib/prisma.ts and lib/prismaAdmin.ts have no hardcoded role assumptions — both read DATABASE_URL via env vars only. Added inline header comments documenting the role-split contract: lib/prisma.ts is the tenant-scoped path, lib/prismaAdmin.ts is the superadmin path (same connection, session-variable signal). Added scripts/preflight-rls-cutover.ts and `npm run preflight:cutover` — a pre-cutover sanity check that any operator can run before PR #28c through #28f to confirm the environment is in the expected state. Documentation only — no code logic changes, no migration changes. |
+| 0.5.3b-3d-c | Applied kasse_app role bootstrap to production via Supabase MCP. Verified all role attributes correct (rolbypassrls=false), 42 tables granted, 6 functions executable. Password set out-of-band via Supabase dashboard. No app behavior change — role exists, nothing connects to it yet. Production State Log section added. |
