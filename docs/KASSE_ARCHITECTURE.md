@@ -122,7 +122,7 @@ FEATURE_KASSE_CAPITAL=              # true/false
 
 ## DATABASE ARCHITECTURE (SUPABASE)
 
-### Connection role architecture (post-RLS cutover, PR #28f)
+### Connection role architecture (planned post-cutover state)
 
 After the RLS rollout completes (PR #28f), Kasse uses two Postgres roles:
 

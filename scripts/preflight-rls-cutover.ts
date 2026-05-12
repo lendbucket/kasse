@@ -162,6 +162,15 @@ async function main() {
   }
 
   // Check 5: RLS policies present (informational pre-#28d, required post-#28d)
+  //
+  // Schema-state baseline (as of 0.5.3b-3d):
+  //   - 23 tenant-scoped tables × 4 policies each + 1 AuditLog SELECT-only = 93 policies
+  //   - 23 standard tables + AuditLog = 24 tables with FORCE ROW LEVEL SECURITY
+  //
+  // If new tenant-scoped tables are added to the schema BEFORE cutover (PR #28c
+  // onward) completes, these counts will grow. The checks treat counts ABOVE
+  // the baseline as PASS — but the operator should still verify the actual
+  // count matches the expected schema state before proceeding with cutover.
   try {
     const policyCount = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*) as count FROM pg_policies WHERE schemaname = 'public'
@@ -171,15 +180,19 @@ async function main() {
       record(
         "RLS policies",
         "INFO",
-        "0 policies — expected before PR #28d. After #28d, expect 93.",
+        "0 policies — expected before PR #28d. After #28d, expect 93 (or more if schema added tables since 0.5.3b-3d).",
       );
-    } else if (count === 93) {
-      record("RLS policies", "PASS", `93 policies present (23 tables x 4 + 1 AuditLog SELECT)`);
+    } else if (count >= 93) {
+      record(
+        "RLS policies",
+        "PASS",
+        `${count} policies present (baseline 93 — additional indicates schema growth since 0.5.3b-3d)`,
+      );
     } else {
       record(
         "RLS policies",
         "FAIL",
-        `${count} policies present — expected either 0 (pre-#28d) or exactly 93 (post-#28d)`,
+        `${count} policies — incomplete migration apply or unexpected schema state`,
       );
     }
   } catch (e) {
@@ -203,15 +216,19 @@ async function main() {
       record(
         "FORCE ROW LEVEL SECURITY",
         "INFO",
-        "0 tables forced — expected before PR #28d. After #28d, expect 24.",
+        "0 tables forced — expected before PR #28d. After #28d, expect 24 (or more if tenant-scoped tables added since 0.5.3b-3d).",
       );
-    } else if (count === 24) {
-      record("FORCE ROW LEVEL SECURITY", "PASS", `24 tables forced (23 standard + AuditLog)`);
+    } else if (count >= 24) {
+      record(
+        "FORCE ROW LEVEL SECURITY",
+        "PASS",
+        `${count} tables forced (baseline 24 — additional indicates new tenant-scoped tables)`,
+      );
     } else {
       record(
         "FORCE ROW LEVEL SECURITY",
         "FAIL",
-        `${count} tables forced — expected either 0 or exactly 24`,
+        `${count} tables forced — incomplete migration apply or unexpected schema state`,
       );
     }
   } catch (e) {

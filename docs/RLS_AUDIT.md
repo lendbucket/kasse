@@ -296,6 +296,13 @@ Production rollout (PR #28b through #28g) replicates this branch architecture.
 
 ### Rollout sequence
 
+Note on identifiers: The "#28a–#28g" column entries below are INTERNAL PHASE
+IDS for tracking sub-steps of the RLS rollout — they are NOT GitHub PR
+numbers. The actual GitHub PR numbers are assigned at PR creation time. For
+reference: the role bootstrap migration was merged in GitHub PR #25, the
+lib verification + preflight in #26, and subsequent phases continue from
+there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
+
 | PR | Sub-commit | What | Status |
 |----|----|----|----|
 | #23 | 0.5.3b-3a | Author migration SQL (not applied) | Completed |
