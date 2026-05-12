@@ -312,7 +312,7 @@ there. Cross-reference the Changelog entries for the merged GitHub PR numbers.
 | #28b | 0.5.3b-3d-b | Verify lib/prisma.ts and lib/prismaAdmin.ts work with new role; add preflight script; add inline docs to lib files | Completed |
 | #28c | 0.5.3b-3d-c | Apply kasse_app role bootstrap on production via Supabase MCP. MANUAL APPLICATION ONLY — not pipeline-triggered, since this migration creates the role that subsequent automation will rely on. The migration must run as postgres (superuser), which currently means via the Supabase MCP `apply_migration` tool or direct dashboard SQL editor. | Completed (2026-05-12) |
 | #28d | 0.5.3b-3d-d | Apply RLS policies migration on production via Supabase MCP. MANUAL APPLICATION ONLY — same constraint as #28c. | Completed (2026-05-12) |
-| #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs prisma migrate deploy is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Pending |
+| #28e | 0.5.3b-3d-e | Stage Vercel env vars (DATABASE_URL → kasse_app, add MIGRATION_DATABASE_URL). VERIFY any CI/CD pipeline that runs `prisma migrate deploy` is configured to use MIGRATION_DATABASE_URL (postgres role), not DATABASE_URL (kasse_app role). | Completed (2026-05-12) |
 | #28f | 0.5.3b-3d-f | Trigger Vercel redeployment — RLS enforcement begins | Pending |
 | #28g | 0.5.3b-3d-g | Cleanup, documentation finalization. INCLUDE a process-doc entry: "All future schema migrations MUST run as postgres role via MIGRATION_DATABASE_URL. If a migration is delegated to a different role (e.g., a Supabase service account), its newly-created tables will NOT inherit the kasse_app grants set by the bootstrap migration, and kasse_app will silently lose access." | Pending |
 
@@ -387,6 +387,36 @@ Run the rollback SQL from the bottom of `prisma/migrations/20260511121142_rls_po
 **Rollback if needed (post-cutover):**
 Must revert Vercel DATABASE_URL/DIRECT_URL back to postgres credentials and redeploy BEFORE running rollback SQL, otherwise app loses access to its own data when RLS starts blocking unscoped queries.
 
+### 2026-05-12 — Vercel env vars staged for cutover (PR #29 / 0.5.3b-3d-e)
+
+Vercel environment variables updated on the Kasse project. **Production deployment NOT yet redeployed** — env vars staged for activation on next deployment.
+
+**Env vars before this change:**
+- DATABASE_URL: postgres credentials, pooler port 6543
+- DIRECT_URL: postgres credentials, pooler port 6543
+- (no MIGRATION_DATABASE_URL)
+
+**Env vars after this change:**
+- DATABASE_URL: **kasse_app credentials**, pooler port 6543 (`postgresql://kasse_app.nknuonxznhshrgfseeqc:[REDACTED]@aws-1-us-east-2.pooler.supabase.com:6543/postgres`)
+- DIRECT_URL: **kasse_app credentials**, pooler port 6543 (same as DATABASE_URL value)
+- **MIGRATION_DATABASE_URL: postgres credentials**, pooler port 6543 (preserves DDL access for future migrations via CI/CD)
+
+All three env vars are scoped to Production, Preview, and Development environments in Vercel.
+
+**Production app behavior at this moment:** UNCHANGED.
+- Active production deployment still uses the env vars it was deployed with (postgres credentials)
+- New env vars exist in Vercel project config but are NOT loaded into any running deployment yet
+- RLS still not enforcing on app queries (app still connects as postgres which bypasses RLS)
+
+**The cutover (PR #28f) is the next step.** Triggering a Vercel redeployment will cause the new deployment to load the staged env vars, the app will reconnect as kasse_app, and RLS will begin enforcing on every query.
+
+**Rollback (pre-redeployment):** Revert the env var changes in Vercel dashboard. DATABASE_URL and DIRECT_URL back to postgres credentials. Optionally remove MIGRATION_DATABASE_URL. No code change needed.
+
+**Rollback (post-redeployment):** Revert env vars in Vercel dashboard → trigger another redeployment to apply the reverted vars. App will reconnect as postgres on next deployment. RLS will exist on the database but won't fire (postgres bypasses).
+
+**Critical operator note for CI/CD:**
+Any future automation that runs `prisma migrate deploy` MUST use MIGRATION_DATABASE_URL, not DATABASE_URL. The kasse_app role has CRUD privileges only, not DDL. Attempting a migration as kasse_app will fail with permission errors. This is enforced by the role definition (NOBYPASSRLS, no CREATEROLE, no CREATEDB).
+
 ## Changelog
 
 | Phase | Change |
@@ -407,3 +437,4 @@ Must revert Vercel DATABASE_URL/DIRECT_URL back to postgres credentials and rede
 | 0.5.3b-3d-b | Verified lib/prisma.ts and lib/prismaAdmin.ts have no hardcoded role assumptions — both read DATABASE_URL via env vars only. Added inline header comments documenting the role-split contract: lib/prisma.ts is the tenant-scoped path, lib/prismaAdmin.ts is the superadmin path (same connection, session-variable signal). Added scripts/preflight-rls-cutover.ts and `npm run preflight:cutover` — a pre-cutover sanity check that any operator can run before PR #28c through #28f to confirm the environment is in the expected state. Documentation only — no code logic changes, no migration changes. |
 | 0.5.3b-3d-c | Applied kasse_app role bootstrap to production via Supabase MCP. Verified all role attributes correct (rolbypassrls=false), 42 tables granted, 6 functions executable. Password set out-of-band via Supabase dashboard. No app behavior change — role exists, nothing connects to it yet. Production State Log section added. |
 | 0.5.3b-3d-d | Applied RLS policies migration to production via Supabase MCP. Verified 93 policies and 24 FORCE entries on production. Production data counts unchanged (7 orgs, 7 users, 4 locations). No app behavior change — app still connects as postgres which has rolbypassrls=true and bypasses RLS. Policies will begin enforcing at PR #28f cutover when DATABASE_URL switches to kasse_app. |
+| 0.5.3b-3d-e | Staged Vercel env vars for cutover. DATABASE_URL and DIRECT_URL changed to kasse_app credentials. New MIGRATION_DATABASE_URL added pointing at postgres for future migrations. No redeployment triggered — env vars saved but not loaded into running deployment. Production app behavior unchanged until PR #28f redeploy. |
