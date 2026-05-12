@@ -122,6 +122,44 @@ FEATURE_KASSE_CAPITAL=              # true/false
 
 ## DATABASE ARCHITECTURE (SUPABASE)
 
+### Connection role architecture (post-RLS cutover, PR #28f)
+
+After the RLS rollout completes (PR #28f), Kasse uses two Postgres roles:
+
+| Role | Used for | rolbypassrls | DDL privileges |
+|------|----------|-------------|----------------|
+| `postgres` | Migrations only (DDL) | TRUE | YES |
+| `kasse_app` | Application runtime (CRUD) | FALSE | NO |
+
+Three env vars in Vercel:
+
+- `DATABASE_URL` — points at `kasse_app` for application runtime queries.
+  RLS policies fire on this connection (the whole point).
+- `DIRECT_URL` — also points at `kasse_app` for the same reason as
+  DATABASE_URL. The application never needs DDL.
+- `MIGRATION_DATABASE_URL` — points at `postgres` for `prisma migrate deploy`.
+  This env var is consumed only by CI/CD running migrations, not by the
+  app itself.
+
+Why this matters:
+
+- If a future schema migration accidentally runs as `kasse_app` instead of
+  `postgres`, it will fail loudly (no DDL privileges).
+- If a future migration uses `prisma migrate deploy --to <migration>`
+  targeted application, ensure the target is applied AFTER any required
+  prior migrations. Specifically, the `kasse_app` role bootstrap
+  (`20260512005451_kasse_app_role`) requires functions from
+  `20260507204234_rls_session_helpers` — Prisma applies migrations in
+  timestamp order normally, but targeted/skip-friendly applies must
+  preserve this dependency.
+- Direct DDL operations from application code are forbidden (`kasse_app`
+  has no privilege). All schema changes go through Prisma migrations.
+
+Pre-cutover sanity check: `npm run preflight:cutover`
+Reports current role, applied migrations, role existence, RLS policy count,
+and FORCE state. Run before each step in the cutover sequence to confirm
+the environment matches expectation for that phase.
+
 ### Core Tables
 ```
 Organization        # Tenant (one per business)
