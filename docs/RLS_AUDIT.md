@@ -270,12 +270,15 @@ This means production has **TWO** connection roles:
 |---------|-----------|---------|
 | `DATABASE_URL` | `kasse_app` | Application runtime queries |
 | `DIRECT_URL` | `kasse_app` | Same role; bypass pooler when needed |
-| `MIGRATION_DATABASE_URL` | `postgres` | `prisma migrate deploy` (DDL access) |
+| `MIGRATION_DATABASE_URL` | `postgres` | `prisma migrate deploy` (DDL access) — NEW, added in PR #28e |
 
-The `MIGRATION_DATABASE_URL` is new (introduced post-cutover). Before cutover,
-`DATABASE_URL` = `DIRECT_URL` = postgres connection. After cutover,
-`DATABASE_URL` switches to `kasse_app` while `MIGRATION_DATABASE_URL` preserves
-DDL access for future migrations.
+The `MIGRATION_DATABASE_URL` is new and **DOES NOT YET EXIST** as of PR #28a
+(this PR). It will be added to Vercel env vars in PR #28e as part of the staged
+cutover. Before cutover, `DATABASE_URL` = `DIRECT_URL` = postgres connection
+(current production state). After PR #28e completes the Vercel env var stage
+and PR #28f triggers the redeployment, `DATABASE_URL` switches to `kasse_app`
+while `MIGRATION_DATABASE_URL` preserves DDL access for future migrations run
+via CI/CD.
 
 #### Verified by branch test (2026-05-11)
 

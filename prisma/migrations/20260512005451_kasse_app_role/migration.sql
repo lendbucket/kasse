@@ -38,10 +38,17 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'kasse_app') THEN
-    -- Password is set to a deliberately-invalid placeholder. The real password
-    -- is set out-of-band via Supabase dashboard "Reset password" after this
-    -- migration runs, before the env var swap. The placeholder ensures that
-    -- if someone tries to connect with this default, it fails immediately.
+    -- The PASSWORD value below is deliberately a human-readable instruction
+    -- string, not a randomized credential. Two reasons:
+    --   (a) Embedding a real random password in a migration file would itself
+    --       be a credential leak — anyone with git access would have the password.
+    --   (b) The instruction-string format makes it impossible to mistake for a
+    --       valid production password. If somehow this default reaches a
+    --       production connection attempt, authentication fails immediately and
+    --       loudly rather than silently working with a guessable secret.
+    -- The real password is set out-of-band via Supabase dashboard "Reset
+    -- password" immediately after this migration runs, before Vercel env vars
+    -- are updated in PR #28e.
     CREATE ROLE kasse_app
       WITH LOGIN
       PASSWORD 'PLACEHOLDER_REPLACE_VIA_SUPABASE_DASHBOARD'
@@ -59,13 +66,19 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO kasse_app
 -- Sequence privileges for cuid/serial columns.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO kasse_app;
 
--- Default privileges: ensure any FUTURE tables/sequences created by future
--- migrations automatically grant access to kasse_app. Without these, every
--- new table would be inaccessible to the app until manually granted.
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+-- ALTER DEFAULT PRIVILEGES is scoped to the EXECUTING role by default. Adding
+-- FOR ROLE postgres makes this explicit: any table or sequence created by the
+-- postgres role in the future will automatically grant access to kasse_app.
+-- If a future migration is run as a DIFFERENT role (e.g., a Supabase service
+-- account that isn't postgres), its newly-created tables would NOT inherit
+-- these grants and kasse_app would silently lose access. The deployment
+-- guarantee is "all schema migrations run as postgres" — this explicit
+-- FOR ROLE clause documents and enforces that invariant. See post-migration
+-- checklist for the verification query.
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kasse_app;
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO kasse_app;
 
 -- EXECUTE on the RLS session helper functions. These functions are
@@ -103,6 +116,18 @@ GRANT EXECUTE ON FUNCTION app_is_superadmin() TO kasse_app;
 --      but the app still connects as postgres which bypasses them. RLS
 --      will not enforce until the app is redeployed with the new
 --      DATABASE_URL pointing at kasse_app.
+--
+--   5. ROLLBACK SEQUENCING (critical if reverting):
+--      If you need to roll back AFTER the cutover (PR #28f) has happened
+--      and the app is connecting as kasse_app, you must:
+--        (a) Revert DATABASE_URL/DIRECT_URL in Vercel back to postgres
+--            credentials.
+--        (b) Trigger Vercel redeployment so app picks up the reverted env vars.
+--        (c) ONLY THEN drop the kasse_app role per the ROLLBACK section at
+--            the bottom of this file.
+--      Dropping the role BEFORE the app reverts to postgres will cause
+--      every production request to fail with "role kasse_app does not exist"
+--      or "permission denied" errors until the redeployment completes.
 -- ============================================================================
 
 -- ============================================================================
