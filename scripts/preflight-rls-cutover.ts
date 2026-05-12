@@ -40,10 +40,19 @@ function record(name: string, status: CheckResult["status"], detail: string) {
 async function main() {
   console.log("Kasse RLS cutover preflight check");
   console.log("==================================");
-  const urlSnippet = (process.env.DATABASE_URL ?? "").replace(/:\/\/[^@]+@/, "://****@").slice(0, 80);
+  // url is guaranteed non-null here — the guard at module scope calls
+  // process.exit(1) if DATABASE_URL is missing, but tsc can't narrow past it.
+  const urlSnippet = url!.replace(/:\/\/[^@]+@/, "://****@").slice(0, 80);
   console.log(`Database: ${urlSnippet}\n`);
 
   // Check 1: Current connection role
+  // is_superuser is a standard Postgres GUC that returns 'on' or 'off'.
+  // Verified working against Supabase Pro tier (2026-05-12) — query returns
+  // 'off' for the kasse_app role and 'on' (would return) for postgres. If
+  // Supabase ever restricts this GUC for non-superusers in the future, this
+  // check would return null or an error; falls under INFO so wouldn't fail
+  // the preflight, but would lose diagnostic value. The fallback identity
+  // signal is current_user, which is always readable.
   try {
     const roleInfo = await prisma.$queryRaw<Array<{ user: string; is_super: string }>>`
       SELECT current_user as user, current_setting('is_superuser') as is_super
@@ -258,6 +267,20 @@ async function main() {
 
   console.log("\nNo FAILs. Review INFOs against the phase you're about to execute.");
   await prisma.$disconnect();
+  // EXIT CODE SEMANTICS:
+  // Exit code 0 means "no FAILs detected." It does NOT mean "all checks PASSED."
+  // Specifically, a pre-cutover database in expected state will produce zero
+  // FAILs and several INFOs (kasse_app role not yet created, RLS policies = 0,
+  // FORCE state = 0). That's a code 0 exit.
+  //
+  // Do NOT wire this script into a CI gate that interprets "code 0 = ready
+  // to cutover." Code 0 means "the script ran successfully and surfaced its
+  // findings." The human operator must read the INFOs and judge whether the
+  // current state matches the expected state for the next cutover phase.
+  //
+  // For automation-friendly variants (e.g., a strict "everything must PASS"
+  // gate post-#28d), parameterize the script or write a wrapper that examines
+  // results.filter(r => r.status === "PASS").length against expected count.
   process.exit(0);
 }
 
