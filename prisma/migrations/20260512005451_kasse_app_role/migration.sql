@@ -149,9 +149,15 @@ GRANT EXECUTE ON FUNCTION app_is_superadmin() TO kasse_app;
 -- to postgres in Vercel and redeploying. Otherwise the app will lose its
 -- connection mid-traffic.
 --
---   -- Revoke default privileges first to prevent permission issues on existing tables
---   ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM kasse_app;
---   ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM kasse_app;
+--   -- Revoke default privileges first to prevent permission issues on existing tables.
+--   -- The live ALTER DEFAULT PRIVILEGES statements above use FOR ROLE postgres;
+--   -- the rollback must match that scoping. Without FOR ROLE postgres, the REVOKE
+--   -- would target the current role's default privs at rollback time — which may
+--   -- not be postgres, and the result would be a silent no-op rather than an actual
+--   -- revoke. Always run rollback as the postgres role for the same reason this
+--   -- migration was applied as postgres.
+--   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM kasse_app;
+--   ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON SEQUENCES FROM kasse_app;
 --
 --   -- Revoke all granted privileges
 --   REVOKE ALL ON ALL TABLES IN SCHEMA public FROM kasse_app;
