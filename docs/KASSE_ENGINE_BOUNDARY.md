@@ -124,7 +124,25 @@ The required pattern for this webhook handler:
 
 1. Verify the HMAC signature on the request payload against the Reyna Pay webhook signing secret (`process.env.REYNA_PAY_WEBHOOK_SECRET`). Reject with 401 if signature is invalid.
 2. Parse the payload and extract `data.organizationId` from the verified event envelope.
-3. Validate that the organizationId exists in the Kasse database via `prismaAdmin` ONLY for this existence check (read-only, no data writes through prismaAdmin).
+3. Validate that the organizationId exists in the Kasse database via `prismaAdmin`. This check MUST be limited to a single existence-check query that selects only the id field:
+
+       await prismaAdmin.organization.findUnique({
+         where: { id: orgId },
+         select: { id: true }
+       });
+
+   Do NOT expand this prismaAdmin block to read any other fields, even for convenience. Reading anything beyond `id` crosses into the SEVERE pattern of "bypassing RLS to read tenant data outside of withTenantScope." Any field needed by the webhook handler MUST be read via prisma inside withTenantScope after step 4 below.
+
+3a. Document this HMAC-verification-as-tenant-context-establishment pattern in the route file's header comment. Example header:
+
+       // app/api/webhooks/reyna-pay/route.ts
+       //
+       // Webhook handler for Reyna Pay events. Identity (the calling system is Reyna Pay)
+       // is established via HMAC signature verification on the request payload. Tenant
+       // context (organizationId) is extracted from the verified payload. All subsequent
+       // database operations use withTenantScope, NOT prismaAdmin. See
+       // docs/KASSE_ENGINE_BOUNDARY.md Category 5 for the full pattern.
+
 4. For all subsequent reads and writes triggered by the webhook, use `prisma` inside `withTenantScope({ organizationId: resolvedOrgId })`. This ensures RLS policies fire on every query as if the merchant themselves were performing the operation.
 
 Do NOT use `prismaAdmin` for the webhook's data writes (transaction creation, payout updates, dispute records). `prismaAdmin` is locked to auth and superadmin routes per the system's locked architecture. A webhook resolving a specific organizationId from a verified payload has tenant context — that context just arrived from a signed external source instead of a NextAuth session. The correct expression of "external-but-authenticated tenant context" is `withTenantScope`, not `withSuperadminScope`.
@@ -151,9 +169,13 @@ Exceptions (carefully scoped):
 
 ---
 
-## THE FEATURE-FLAG PATTERN FOR PLANNED ENDPOINTS
+## The Feature-Flag Pattern for Planned Endpoints
 
-When Kasse needs to call a Reyna Pay endpoint that doesn't exist yet (Category 2 today, Category 4 later), Kasse ships the code in a "ready but disabled" state. The pattern:
+When Kasse needs to call a Reyna Pay endpoint that doesn't exist yet (Category 2 today, Category 4 later), Kasse ships the code in a "ready but disabled" state. The pattern is split into two paths depending on whether Phase 0.6-d KMS encryption is available.
+
+### Path 1 — Standard: Tokens via Reyna Pay (target end state)
+
+This is the path Phase 0.6-c MUST follow when Reyna Pay's `/v1/bank-tokens` endpoint is live.
 
 Step 1 — Write the Kasse-side client code that calls the planned endpoint:
 
@@ -162,7 +184,7 @@ Step 1 — Write the Kasse-side client code that calls the planned endpoint:
       if (!process.env.FEATURE_REYNA_PAY_BANK_TOKENS) {
         throw new Error("Bank tokenization endpoint not yet available on Reyna Pay. Set FEATURE_REYNA_PAY_BANK_TOKENS=true once /v1/bank-tokens is live.");
       }
-      // ...call Reyna Pay /v1/bank-tokens
+      // ...call Reyna Pay POST /v1/bank-tokens
     }
 
 Step 2 — Add the feature flag to the env example file with documentation:
@@ -172,17 +194,30 @@ Step 2 — Add the feature flag to the env example file with documentation:
     FEATURE_REYNA_PAY_MERCHANT_BOARDING=false
     FEATURE_REYNA_PAY_WEBHOOK_PAYOUTS=false
 
-Step 3 — In all places Kasse would CALL vaultBankAccount, wrap with a fallback:
+Step 3 — Onboarding code calls vaultBankAccount and stores ONLY the resulting token. No plaintext fields. No fallback:
 
-IMPORTANT — the fallback path in Step 3 below stores bank routing and account numbers in the application database (encrypted via KMS envelope encryption per Phase 0.6-d). This fallback MUST NOT ship until Phase 0.6-d KMS encryption is implemented AND the corresponding schema columns exist. If Phase 0.6-c is implemented before Phase 0.6-d, the bank tokenization feature flag MUST default to `true` with a hard requirement on Reyna Pay's endpoint being live — there is no acceptable fallback to plaintext storage. Order of operations:
+    const token = await vaultBankAccount({ routing, account });
+    await db.organization.update({ data: { payrocBankTokenId: token.id } });
 
-- If Phase 0.6-d KMS encryption ships before Reyna Pay's `/v1/bank-tokens` endpoint: fallback path is acceptable
-- If Reyna Pay's endpoint ships first: Phase 0.6-c uses tokens unconditionally, no fallback
-- If neither has shipped: do NOT ship Phase 0.6-c — onboarding-complete continues to email plaintext to ceo@36west.org as documented in Phase 0.6-a (now redacted per Phase 0.6-a-fix)
+Step 4 — Operational state:
+- Reyna Pay team (Robert) flips `FEATURE_REYNA_PAY_BANK_TOKENS=true` in Vercel when `/v1/bank-tokens` is deployed
+- Kasse code immediately starts using tokens for all new organizations
+- No data migration needed if no fallback path was ever shipped (the standard outcome)
+
+### Path 2 — Conditional Fallback (DO NOT IMPLEMENT BEFORE BOTH PREREQUISITES ARE MET)
+
+**PREREQUISITES**:
+1. Phase 0.6-d KMS envelope encryption must be implemented (`lib/kms/envelope.ts` exists and is tested)
+2. The Prisma schema must have `bankRoutingNumber` and `bankAccountNumber` columns
+3. There must be a documented operational reason Kasse cannot wait for Reyna Pay's `/v1/bank-tokens` (e.g., merchant onboarding deadline before Reyna Pay can ship the endpoint)
+
+If ALL THREE prerequisites are NOT met, this Path 2 fallback IS NOT AVAILABLE. Kasse onboarding should either (a) defer the banking-PII collection step until Path 1 is viable, or (b) keep the existing redacted-email pattern from Phase 0.6-a.
+
+When Path 2 prerequisites are met, the fallback code looks like this:
 
     // import { kmsEnvelopeEncrypt } from "@/lib/kms/envelope";
-    // ^^ Phase 0.6-d will create this module. Until then, this fallback path is unavailable.
-    
+    // This module exists from Phase 0.6-d. If you do not see it in the repo, this fallback path is unavailable.
+
     const usingTokens = process.env.FEATURE_REYNA_PAY_BANK_TOKENS === "true";
     if (usingTokens) {
       const token = await vaultBankAccount({ routing, account });
@@ -198,18 +233,24 @@ IMPORTANT — the fallback path in Step 3 below stores bank routing and account 
       });
     }
 
-Step 4 — When Reyna Pay's endpoint goes live:
-- Reyna Pay team (Robert) flips `FEATURE_REYNA_PAY_BANK_TOKENS=true` in Vercel
-- Kasse code immediately starts using tokens for NEW organizations going through onboarding
-- For EXISTING organizations that have plaintext-encrypted bank fields from the fallback path, a one-time migration is required:
-  1. Read each row where `bankAccountNumber` IS NOT NULL
-  2. Decrypt the bank account number using the Phase 0.6-d KMS envelope encryption (NOT the Reyna Pay detokenize endpoint — that endpoint is for tokens originated by Payroc, not for plaintext rows we encrypted ourselves)
-  3. Call `POST /v1/bank-tokens` on Reyna Pay with the decrypted routing + account values
-  4. Store the returned token in `payrocBankTokenId` on the organization row
-  5. Set the plaintext-encrypted columns to NULL
-  6. After all rows are migrated, drop the `bankRoutingNumber` and `bankAccountNumber` columns in a subsequent schema migration
+When the fallback was used and Reyna Pay's endpoint later becomes live, a migration is required:
 
-Migration direction note: detokenization is a separate operational concern (e.g., a future legal/compliance need to recover the raw bank account for an audited operation). Detokenization endpoint exists for legitimate operational use only. The migration path described above goes the OTHER direction — it vaults previously-plaintext-encrypted-by-us rows INTO Reyna Pay's token store. The two flows must not be confused.
+1. Read each Organization row where `bankAccountNumber` IS NOT NULL
+2. Decrypt the bank account number using Phase 0.6-d's `kmsEnvelopeDecrypt` (NOT the Reyna Pay detokenize endpoint — that endpoint is for tokens originated by Payroc, not for plaintext rows Kasse encrypted itself)
+3. Call `POST /v1/bank-tokens` on Reyna Pay with the decrypted routing + account values
+4. Store the returned token in `payrocBankTokenId` on the organization row
+5. Set the plaintext-encrypted columns to NULL
+6. After all rows are migrated, drop the `bankRoutingNumber` and `bankAccountNumber` columns in a subsequent schema migration
+
+### Migration vs Detokenization
+
+Two different operational flows that must not be confused:
+
+- **Vault-direction migration** (Path 2 → Path 1): Kasse-encrypted plaintext → Reyna Pay token. Uses `kmsEnvelopeDecrypt` then `POST /v1/bank-tokens`. One-time operation per row.
+
+- **Detokenization** (operational/audit recovery): Reyna Pay token → raw bank account, for legitimate compliance/legal operations. Uses `POST /v1/bank-tokens/:id/detokenize`. Separate operational concern with audit logging required.
+
+Never call detokenize as part of the migration above — detokenize is for tokens that already exist in Reyna Pay's vault; the migration path goes the other direction.
 
 This pattern means Kasse can ship "ready for Phase 0.6-c" code TODAY without waiting on Reyna Pay's endpoint rollout. The Kasse Phase 0.6-c PR ships the lib/engine/bank-tokens.ts client, the feature flag, and the conditional onboarding logic. Reyna Pay Phase 10.5 PR ships the endpoint. The two phases can ship independently and the flag flip is the integration moment.
 
