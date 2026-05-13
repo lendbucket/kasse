@@ -2,8 +2,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { NextRequest } from "next/server";
+import { Role } from "@prisma/client";
 
-export type TenantRole = "superadmin" | "owner" | "manager" | "staff";
+export type TenantRole = Role;
 
 export interface TenantContext {
   userId: string;
@@ -70,8 +71,8 @@ export async function getTenantContext(req?: NextRequest): Promise<TenantContext
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return null;
 
-  const role = (session.user.role ?? "staff") as TenantRole;
-  const isSuperadmin = role === "superadmin";
+  const role = session.user.role ?? Role.STAFF;
+  const isSuperadmin = role === Role.SUPERADMIN;
 
   if (!session.user.organizationId && !isSuperadmin) return null;
 
@@ -214,7 +215,7 @@ export async function requireSuperadminContext(
     throw new TenantContextError("UNAUTHENTICATED", "No active session");
   }
 
-  if (session.user.role !== "superadmin") {
+  if (session.user.role !== Role.SUPERADMIN) {
     throw new TenantContextError("FORBIDDEN", "Superadmin role required");
   }
 

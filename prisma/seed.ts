@@ -95,6 +95,14 @@ async function main() {
   //   3. The app's prismaAdmin (lib/prismaAdmin.ts) is for runtime superadmin
   //      paths; seed scripts create their own PrismaClient with direct connection
   // TODO: remove after P0.A.7 ships (all orgs will have OWNER set at registration)
+
+  // P0.A.1 backfill — superuser/operator context only.
+  // Mirrors the guard in seed-admin.ts and seed/audit-test.ts.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== '1') {
+    console.log('[P0.A.1 backfill] Skipped in production. Set ALLOW_PROD_SEED=1 to run.');
+    return;
+  }
+
   const orgs = await prisma.organization.findMany({
     include: {
       users: { orderBy: { createdAt: "asc" }, take: 1 },

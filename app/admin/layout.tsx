@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import AdminSidebar from "./AdminSidebar"
+import { Role } from "@prisma/client"
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   let session
@@ -11,7 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/login")
   }
   if (!session) redirect("/login")
-  if (session.user.role !== "superadmin") redirect("/dashboard")
+  if (session.user.role !== Role.SUPERADMIN) redirect("/dashboard")
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#0d1117" }}>
