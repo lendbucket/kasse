@@ -24,6 +24,7 @@
 | [KASSE_FRANCHISE_SYSTEM.md](./KASSE_FRANCHISE_SYSTEM.md) | Franchise management + Franchise Creator portal spec | LIVING |
 | [KASSE_MARKETPLACE.md](./KASSE_MARKETPLACE.md) | Stylist marketplace, supply marketplace, hiring board, gift cards | LIVING |
 | [SALONBACKED.md](./SALONBACKED.md) | HCM layer — tax, insurance, telehealth, HR, payroll, benefits | PLANNING |
+| [KASSE_ENGINE_BOUNDARY.md](./KASSE_ENGINE_BOUNDARY.md) | Layer 1 (Kasse) to Layer 0 (Reyna Pay) API contract. Read before any payment-adjacent PR. | LOCKED |
 
 ---
 
