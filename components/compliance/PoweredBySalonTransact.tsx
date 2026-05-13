@@ -11,8 +11,9 @@
  * Category 5 UX requirement and REYNA_PAY_API_SPEC.md Part IV
  * "Disclosure requirements for agent-originated flows."
  *
- * Styling follows KASSE_UI_PRINCIPLES.md: 12px, #606E74 (brand slate
- * teal), centered, subtle but legible. Uses inline styles to match
+ * Styling follows KASSE_UI_PRINCIPLES.md: 11px, #606E74 (brand slate
+ * teal) for the brand word, #9ca3af for the "Powered by" prefix,
+ * centered, subtle but legible. Uses inline styles to match
  * the codebase convention.
  */
 export function PoweredBySalonTransact() {
@@ -30,7 +31,7 @@ export function PoweredBySalonTransact() {
       }}
     >
       Powered by{" "}
-      <span style={{ color: "#606E74", fontWeight: 600, marginLeft: 3 }}>
+      <span style={{ color: "#606E74", fontWeight: 600, marginLeft: "3px" }}>
         SalonTransact
       </span>
     </div>
