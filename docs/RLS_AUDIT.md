@@ -509,14 +509,16 @@ This phase addresses encryption-at-rest and email-redaction for banking and KYC 
 
 | Sub-phase | What | Status |
 |-----------|------|--------|
-| 0.6-a | Redact banking PII in application submission email (lib/redact.ts + onboarding/complete route) | In Progress (this PR) |
-| 0.6-b | Architecture decision: Payroc tokenization vs KMS encryption for banking fields | Pending (awaiting Christopher Boutwell confirmation on Payroc bank tokenization API) |
-| 0.6-c | Implement at-rest encryption for sensitive Organization fields | Pending |
-| 0.6-d | Audit log every decryption operation | Pending |
-| 0.6-e | Admin Application Detail view (gated, audit-logged access to decrypted PII) | Pending |
+| 0.6-a | Redact banking PII in application submission email | Complete (2026-05-12, PR #31) |
+| 0.6-b | Architecture decision: hybrid Payroc tokenization + KMS encryption | Complete (this PR) |
+| 0.6-c | Payroc bank token integration | Pending (awaiting Matt API details) |
+| 0.6-d | KMS envelope encryption for identity fields | Pending (awaiting AWS account setup) |
+| 0.6-e | Admin Application Detail viewer with gated access | Pending |
+| 0.6-f | Audit logging for all decryption operations | Pending |
 
 ## Phase 0.6 Changelog
 
 | Sub-phase | Change |
 |-----------|--------|
 | 0.6-a | Created lib/redact.ts with masking utilities. Modified app/api/onboarding/complete/route.ts to redact routing number, EIN, and account holder name in application submission email. Added PII-redacted notice block to email body. No database schema changes. No change to data stored on Organization table. |
+| 0.6-b | Architecture decision committed: hybrid Payroc tokenization for banking + AWS KMS envelope encryption for identity PII. New doc docs/KASSE_PII_ENCRYPTION.md (LOCKED) captures the decision rationale, open implementation questions, target schema changes, and rollback considerations. No code or schema changes in this PR — pure architectural commit. Implementation phases 0.6-c through 0.6-f to follow. |
