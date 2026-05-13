@@ -210,6 +210,9 @@ export async function POST(request: NextRequest) {
         </p>
       </div>
     </div>
+    <div style="padding:12px 0;text-align:center;font-size:11px;color:rgba(255,255,255,0.35)">
+      Powered by <span style="color:rgba(255,255,255,0.55);font-weight:600">SalonTransact</span>
+    </div>
   </div>
 </body></html>`,
     });
