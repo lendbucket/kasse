@@ -418,6 +418,7 @@ Charge-related:
 - `CHARGE_ALREADY_SETTLED` — void attempted after settlement window closed
 - `CHARGE_ALREADY_REFUNDED` — refund attempted on fully-refunded charge
 - `CHARGE_RISK_DECLINED` — engine-side risk rule blocked the charge
+- `AUTHORIZATION_EXPIRED` — auth-only charge passed expiration window without capture; held funds released by issuing bank
 
 Refund-related:
 - `REFUND_AMOUNT_EXCEEDS_CHARGE` — refund amount exceeds available refundable balance
@@ -437,6 +438,7 @@ Dispute-related:
 Webhook-related:
 - `WEBHOOK_URL_INSECURE` — HTTP URL provided (HTTPS required)
 - `WEBHOOK_EVENT_TYPE_UNKNOWN` — subscribed event type not in catalog
+- `WEBHOOK_ROTATION_IN_PROGRESS` — rotate-secret called while previous rotation grace period active
 
 Checkout session:
 - `CHECKOUT_SESSION_EXPIRED` — session past expires_at
@@ -636,6 +638,7 @@ Charges and refunds:
 - `charge.created`
 - `charge.completed`
 - `charge.failed`
+- `charge.authorization_expired`
 - `refund.created`
 - `refund.completed`
 - `refund.failed`
@@ -669,6 +672,7 @@ Checkout sessions:
 Webhook system events:
 - `webhook.delivery_succeeded` (the meta-webhook)
 - `webhook.delivery_failed_persistent`
+- `webhook.secret_rotated`
 
 Each event type's `data` payload is documented in the corresponding RESOURCE section in PART II (e.g., `charge.completed` payload is documented under RESOURCE: CHARGES → Webhook events). The webhook envelope structure (id, type, created, api_version, livemode, organization_id, data) is constant; only the `data` field's shape varies by event type.
 
@@ -1247,11 +1251,12 @@ Status `refunded`: `self`, `customer`, `refunds` (GET)
 - `charge.created` — fired immediately on POST. Data: full charge object with status=pending.
 - `charge.completed` — fired when status transitions to succeeded. Data: full charge object.
 - `charge.failed` — fired when status transitions to failed. Data: full charge object with failure_code and failure_message populated.
+- `charge.authorization_expired` — fired when an auth-only charge (created with `capture: false`) reaches its expiration without being captured. Data: the full charge object with `status=failed` and `failure_code=AUTHORIZATION_EXPIRED`. This event is critical for consumers running auth-and-capture flows (e.g., salon pre-auth holds for chemical services) where forgetting to capture before expiration would result in silent loss of the hold. Consumers SHOULD subscribe to this event and trigger a notification or recapture flow when it fires.
 
 ### Special considerations
 
 - **Throughput:** Charges are the highest-volume resource. The idempotency store, rate limiter, and webhook delivery infrastructure must handle this resource's throughput.
-- **Auth-and-capture:** Charges support `capture: false` for authorize-without-capture flows. The authorization holds funds for up to 7 days. After 7 days, uncaptured authorizations expire and the hold is released. The engine fires no webhook for expiration — consumers should track their own auth-and-capture deadlines.
+- **Auth-and-capture:** Charges support `capture: false` for authorize-without-capture flows. The authorization holds funds for up to 7 days. After 7 days, uncaptured authorizations expire and the hold is released. The engine fires `charge.authorization_expired` when an uncaptured authorization reaches its expiration window (typically 7 days, configurable per merchant). Consumers SHOULD subscribe to this event for any merchant using auth-only charges. If a consumer fails to capture before expiration, the held funds are released by the cardholder's issuing bank — this represents lost revenue and should not happen silently.
 - **Auto void vs refund:** The engine SHOULD detect when a refund is requested against an unsettled charge and execute as void instead (faster, lower fee). From the consumer's perspective, they always POST to /refunds — the engine decides the optimal mechanism.
 
 ---
@@ -1705,8 +1710,46 @@ Consumer-managed webhook endpoint subscriptions. Consumers register HTTPS endpoi
 ### Special considerations
 
 - **URL immutability:** The `url` field cannot be PATCHed after creation. To change the URL, create a new subscription and delete the old one. This prevents accidental routing changes on active webhook pipelines.
-- **Signing secret:** Shown once at creation. Last 4 chars available in `signing_secret_last4` for identification. Cannot be rotated — create a new subscription to get a new secret.
-- **No meta-webhooks:** Webhook management does not itself fire webhooks (except the system events `webhook.delivery_succeeded` and `webhook.delivery_failed_persistent` defined in Tier 1).
+- **Signing secret:** Shown once at creation. Last 4 chars available in `signing_secret_last4` for identification. Rotatable via the dual-secret grace period pattern below.
+- **No meta-webhooks:** Webhook management does not itself fire webhooks (except the system events `webhook.delivery_succeeded`, `webhook.delivery_failed_persistent`, and `webhook.secret_rotated` defined in Tier 1).
+
+### Signing secret rotation
+
+Signing secrets can be rotated without dropping deliveries, using a dual-secret grace period pattern. This matches the operational model used by Stripe, Svix, and other production webhook infrastructure.
+
+Rotation operation:
+
+    POST /v1/webhooks/:id/rotate-secret
+
+Response includes:
+- `new_signing_secret` — the new secret, returned in plaintext ONCE (as with API key creation)
+- `new_signing_secret_last4` — last 4 chars for identification (replaces `signing_secret_last4` on the webhook resource)
+- `previous_signing_secret_expires_at` — timestamp when the previous secret stops being honored (default 24 hours after rotation)
+
+Engine behavior during the grace period:
+- All outgoing webhook deliveries are signed with BOTH secrets — the header includes two `v1=` values:
+  
+      Reyna-Pay-Signature: t=1714500000,v1=<new_hex>,v1=<previous_hex>
+
+- Consumers verifying the signature SHOULD attempt verification against each `v1=` value in turn. A match against either value is a valid signature.
+- After `previous_signing_secret_expires_at` passes, the engine drops the previous secret. Deliveries are then signed with the new secret only:
+  
+      Reyna-Pay-Signature: t=1714500000,v1=<new_hex>
+
+Rotation timing recommendations:
+- Default grace period: 24 hours. Configurable via the optional `grace_period_seconds` field in the rotation request body (min 300 seconds, max 7 days).
+- Consumers SHOULD initiate rotation when their signing secret leaks or quarterly as routine hygiene.
+- The consumer is responsible for deploying the new secret to all their verification code before `previous_signing_secret_expires_at`. After expiration, deliveries will fail verification against the old secret.
+
+Rotation-related fields added to the Webhook resource schema:
+- `previous_signing_secret_last4` — nullable; populated only during the grace period
+- `previous_signing_secret_expires_at` — nullable timestamp; populated only during the grace period
+
+Rotation-related error code (extending the Tier 2 catalog):
+- `WEBHOOK_ROTATION_IN_PROGRESS` — attempting to call `/rotate-secret` while a previous rotation's grace period has not expired. Consumers MUST wait for the previous rotation to complete (or pass `force: true` in the request body to overwrite the in-progress rotation, dropping the previous secret immediately — only the most recent secret remains valid).
+
+Webhook event for rotation:
+- `webhook.secret_rotated` — fired on the rotating subscription itself (delivered using BOTH the new and previous secrets during the grace period). Data: the webhook resource with the rotation metadata populated. This event helps consumers detect rotation initiated through other channels (e.g., the engine dashboard) so their automation can track when a rotation is in progress.
 
 ---
 
