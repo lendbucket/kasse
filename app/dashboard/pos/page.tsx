@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, Plus, Trash2, Banknote, CreditCard, MoreHorizontal } from "lucide-react";
+import { PoweredBySalonTransact } from "@/components/compliance/PoweredBySalonTransact";
 
 type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string };
 type Staff = { id: string; name: string; locationId: string };
@@ -173,6 +174,7 @@ export default function POSPage() {
               background: cart.length === 0 ? "#e5e7eb" : "#606E74",
               color: cart.length === 0 ? "#9ca3af" : "white",
             }}>{charging ? "Charging..." : `Charge ${fmt(total)}`}</button>
+            <PoweredBySalonTransact />
           </div>
         </div>
       </div>
