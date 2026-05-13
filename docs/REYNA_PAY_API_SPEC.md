@@ -1790,7 +1790,7 @@ Webhook event for rotation:
 
 # PART III — NON-FUNCTIONAL REQUIREMENTS
 
-Tier 3 of this specification. Defines what the engine guarantees in production beyond the API surface itself: uptime, latency, data residency, compliance posture, sandbox/test environment, deprecation policy, monitoring, and SDKs.
+Part III of this specification (Tier 3 of the iterative-delivery sequence). Defines what the engine guarantees in production beyond the API surface itself: uptime, latency, data residency, compliance posture, sandbox/test environment, deprecation policy, monitoring, and SDKs.
 
 ---
 
@@ -1811,9 +1811,9 @@ If monthly uptime falls below 99.95%, merchants receive a service credit on the 
 
 | Monthly uptime | Service credit |
 |----------------|----------------|
-| 99.95% – 100% | 0% (SLA met) |
-| 99.0% – 99.949% | 10% of monthly subscription |
-| 95.0% – 98.999% | 25% of monthly subscription |
+| ≥99.95% | 0% (SLA met) |
+| ≥99.0% and <99.95% | 10% of monthly subscription |
+| ≥95.0% and <99.0% | 25% of monthly subscription |
 | Below 95.0% | 100% of monthly subscription |
 
 Credits apply only to the engine subscription fee, not to transaction processing fees (those follow Payroc's underlying SLA). Credits are not cash refundable — they roll forward against future invoices.
@@ -2006,7 +2006,7 @@ Sandbox supports query parameter overrides to simulate edge cases:
 - `?simulate=payroc_outage` — returns 502 PAYROC_UPSTREAM_ERROR
 - `?simulate=maintenance` — returns 503 MAINTENANCE_MODE
 
-These overrides are sandbox-only. Production requests with `simulate` parameters are ignored.
+These overrides are sandbox-only. In production, the `simulate` query parameter is silently stripped from the request before processing — the request is then processed normally as if the parameter had never been sent. The charge (or other operation) executes against real card networks and real money. This means a developer who accidentally hits production with a `?simulate=internal_error` query parameter still processes a real charge. There is no warning, no rejection, and no logging of the stripped parameter. Developers SHOULD distinguish production and sandbox by base URL (`api.reynapay.com` vs `api-sandbox.reynapay.com`) and by token prefix (`rpsk_live_` vs `rpsk_test_`), NOT by the presence or absence of simulate parameters.
 
 ### Sandbox lifecycle
 
@@ -2135,7 +2135,7 @@ Community SDKs in other languages (PHP, Java, C#, Rust, etc.) are encouraged but
 
 # PART IV — AGENT-NATIVE DESIGN
 
-Tier 4 of this specification. Reyna Pay is designed from the ground up to be consumed by AI agents (autonomous and semi-autonomous systems that take actions on behalf of users without per-action human approval). This section defines what makes the API agent-friendly beyond standard HATEOAS.
+Part IV of this specification (Tier 4 of the iterative-delivery sequence). Reyna Pay is designed from the ground up to be consumed by AI agents (autonomous and semi-autonomous systems that take actions on behalf of users without per-action human approval). This section defines what makes the API agent-friendly beyond standard HATEOAS.
 
 ---
 
@@ -2201,6 +2201,26 @@ Agent audit logs are retained for 2 years (shorter than the 7-year standard audi
 ### Why this matters
 
 When an agent does something a human disagrees with, "the agent decided to refund this charge" is not a satisfying explanation. The agent audit log captures the context the agent had and the reasoning the agent provided, allowing post-hoc evaluation of whether the action was reasonable.
+
+### PCI scope guardrail
+
+The agent audit log retention of full request and response bodies creates a potential PCI scope expansion if not handled carefully. Card vaulting endpoints (`POST /v1/cards`, `POST /v1/checkout-sessions`, anything that involves Payroc Hosted Fields tokenization) and bank account vaulting (`POST /v1/bank-tokens`) MAY have request bodies that include cardholder-facing or account-holder-facing field values (billing address, name on card, account holder name).
+
+To preserve the engine's PCI SAQ A-EP scope (Tier 3), the agent audit log for these endpoints SHALL log ONLY:
+
+- The endpoint called and HTTP method
+- The resulting token reference (e.g., `card_abc123`, `bt_xyz789`)
+- The HTTP status code and response timestamps
+- The agent_type and agent context headers (X-Agent-Context, X-Agent-Reasoning)
+
+The agent audit log for these endpoints SHALL NOT log:
+
+- The plaintext request body (any field values)
+- The plaintext response body beyond the token reference (e.g., do not log billing_address even if Payroc returns it)
+
+Non-card-vaulting endpoints (charges, refunds, voids, payouts, disputes, etc.) log full request and response bodies per the standard agent audit log pattern. The card/bank-token guardrail applies ONLY to the specific endpoints that touch cardholder or account-holder data.
+
+Implementation requirement: the engine MUST identify card and bank-token creation endpoints by an explicit allowlist at audit-log-write time. New endpoints added to those resource categories MUST be added to the allowlist before the endpoint goes live. Reviewer guidance: any PR adding a route to `app/api/cards/*`, `app/api/checkout-sessions/*`, or `app/api/bank-tokens/*` (engine-side) MUST update the audit-log endpoint allowlist in the same PR.
 
 ---
 
@@ -2308,7 +2328,7 @@ Agent books an appointment and processes payment as a single user-facing operati
 
 Pattern: the agent treats the charge as a "pre-authorization of intent" and refunds if the corresponding business action fails.
 
-Tier 1's idempotency rules apply across all steps. The agent should generate one idempotency key per logical user operation and reuse it for the compensating refund (so retries of the compensating refund are themselves idempotent).
+Tier 1's idempotency rules apply across all steps. Each step in a multi-step workflow gets its OWN idempotency key — the pseudocode below derives distinct keys (chargeKey, bookingKey, refundKey) from a shared workflow ID. Retries of any individual step reuse that step's key (so retries are idempotent at the step level), but the charge and the compensating refund are different operations with different idempotency keys. Reusing the charge's idempotency key on the refund POST would either fail (the engine binds keys to endpoint paths) or, worse, return the cached charge response and silently skip the refund. The pseudocode below shows the correct pattern.
 
 ### Auth-and-capture for held authorizations
 
