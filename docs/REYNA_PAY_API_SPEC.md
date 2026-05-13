@@ -1,8 +1,8 @@
 # REYNA PAY ENGINE API SPECIFICATION
 ## The payment rails contract for Kasse, SalonBacked, RunMySalon, white-label brands, developer API consumers, and AI agents
 
-**Version:** 1.0 — Tier 2 (Resource Definitions)
-**Status:** LIVING (Tier 3+4 to follow in a subsequent PR)
+**Version:** 1.0 — Complete (Tiers 1+2+3+4)
+**Status:** LIVING (errata and clarifications will be appended; substantive changes follow VERSIONING policy)
 **Owner:** Robert Reyna, CEO Reyna Pay LLC
 **Entity:** Reyna Pay LLC (Wyoming)
 **Brand:** SalonTransact (current consumer-facing brand; engine is brand-agnostic)
@@ -42,11 +42,11 @@ SalonTransact is preserved as a consumer-facing brand because the existing salon
 
 This document is delivered in three tiers:
 
-- **Tier 1 — Foundation (Phase 0.9-a, merged):** Cross-cutting conventions — versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI commitment, common patterns.
-- **Tier 2 — Resource Definitions (this PR, Phase 0.9-b):** Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions (aggregate read), Reports, API Keys, Webhooks. One section per resource with full request/response schemas. Platform-token mechanism. Resource-specific error codes.
-- **Tier 3+4 — Non-Functional + Agent-Native (Phase 0.9-c, future PR):** SLA, latency budgets, data residency, compliance posture (PCI, SOC 2), audit log retention, sandbox/test environment, deprecation policy, agent-native semantics, MCP server commitment.
+- **Tier 1 — Foundation (Phase 0.9-a, PR #36, merged):** Cross-cutting conventions — versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI commitment, common patterns.
+- **Tier 2 — Resource Definitions (Phase 0.9-b, PR #37, merged):** Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions (aggregate read), Reports, API Keys, Webhooks. One section per resource with full request/response schemas. Platform-token mechanism. Resource-specific error codes.
+- **Tier 3+4 — Non-Functional + Agent-Native (Phase 0.9-c, this PR):** SLA, latency budgets, data residency, compliance posture (PCI, SOC 2), audit log retention, sandbox/test environment, deprecation policy, monitoring, SDKs, agent-native semantics, MCP server commitment, agent audit logging, per-agent-type rate limits, semantic enhancements, multi-step transaction patterns.
 
-The complete specification when all three tiers are merged will define an enterprise-grade API contract that the SalonTransact engineering team implements.
+All four tiers are now complete. The SalonTransact engineering team can implement against the full contract.
 
 ---
 
@@ -732,7 +732,7 @@ Example for a charge:
 
 ### Why this matters
 
-Tier 4 will expand on agent-native design. For Tier 1, the principle is: every response is self-describing. An AI agent receiving a charge object knows it can refund, void, or fetch the receipt without reading any documentation.
+Part IV (Agent-Native Design) expands on agent-native semantics. For the HATEOAS layer, the principle is: every response is self-describing. An AI agent receiving a charge object knows it can refund, void, or fetch the receipt without reading any documentation.
 
 ---
 
@@ -759,7 +759,7 @@ Recommended tools (engine team to evaluate in Tier 2):
 ### Validation
 
 - The published OpenAPI spec SHALL be validated against the OpenAPI 3.1 schema at CI time.
-- SDKs and client libraries (Tier 3 will list) SHALL be auto-generated from the OpenAPI spec.
+- SDKs and client libraries (see Part III — SDKs AND CLIENT LIBRARIES) SHALL be auto-generated from the OpenAPI spec.
 
 ---
 
@@ -807,8 +807,7 @@ Recommended tools (engine team to evaluate in Tier 2):
 
 ### Locales and languages
 
-- Tier 1: English error messages only.
-- Tier 3 will define multi-language support if/when international merchants are onboarded.
+- English error messages only in v1. International localization is deferred to v2 (see Part III — Cross-border data transfer).
 
 ---
 
@@ -819,7 +818,7 @@ Detailed sandbox specification is Tier 3. Tier 1 lays the principle:
 - Test mode uses a parallel set of credentials (`rpsk_test_*` tokens) and a separate data store.
 - Test mode operations do not affect production data.
 - Test mode is available before production merchant boarding completes.
-- Tier 3 will document test card numbers, test bank account numbers, simulated failure modes (decline, network error, fraud rule trigger), and webhook delivery in test mode.
+- Test card numbers, test bank account numbers, simulated failure modes, and test webhook delivery are documented in Part III — SANDBOX AND TEST MODE.
 
 ---
 
@@ -1787,25 +1786,612 @@ Webhook event for rotation:
 
 ---
 
+---
+
+# PART III — NON-FUNCTIONAL REQUIREMENTS
+
+Tier 3 of this specification. Defines what the engine guarantees in production beyond the API surface itself: uptime, latency, data residency, compliance posture, sandbox/test environment, deprecation policy, monitoring, and SDKs.
+
+---
+
+## SLA AND UPTIME COMMITMENTS
+
+### Target SLA by environment
+
+- **Production (live)**: 99.95% monthly uptime SLA after GA. Excludes scheduled maintenance windows announced ≥7 days in advance.
+- **UAT/sandbox**: 99.5% monthly uptime, no SLA credits, best-effort restoration.
+
+### Maintenance windows
+
+Scheduled maintenance occurs in a fixed weekly window: Sundays 02:00–04:00 ET. Most maintenance is rolling/zero-downtime (deploy with health checks, drain connections, deploy new version). Disruptive maintenance (database migrations requiring downtime, major version cuts) is rare and is announced ≥7 days in advance via status.reynapay.com and email to all merchant primary contacts.
+
+### SLA credits
+
+If monthly uptime falls below 99.95%, merchants receive a service credit on the next invoice. Credit schedule:
+
+| Monthly uptime | Service credit |
+|----------------|----------------|
+| 99.95% – 100% | 0% (SLA met) |
+| 99.0% – 99.949% | 10% of monthly subscription |
+| 95.0% – 98.999% | 25% of monthly subscription |
+| Below 95.0% | 100% of monthly subscription |
+
+Credits apply only to the engine subscription fee, not to transaction processing fees (those follow Payroc's underlying SLA). Credits are not cash refundable — they roll forward against future invoices.
+
+### Status page
+
+Live engine status at status.reynapay.com. Includes:
+- Uptime metrics for the last 90 days
+- Active incidents with timestamps and remediation status
+- Scheduled maintenance announcements
+- Historical postmortems for incidents lasting >15 minutes
+- RSS feed and email subscription for status changes
+
+---
+
+## LATENCY BUDGETS
+
+### Per-endpoint-class latency targets (p95, measured from engine ingress to response complete)
+
+| Endpoint class | p95 target | p99 target | Notes |
+|----------------|-----------|-----------|-------|
+| Authentication validation | 10ms | 25ms | Token lookup + scope check |
+| Read endpoints (GET resource by id) | 100ms | 250ms | Single-record fetches |
+| List endpoints (paginated GET) | 200ms | 500ms | Cursor-based queries |
+| Charge creation (`POST /v1/charges`) | 800ms | 2000ms | Includes Payroc round-trip |
+| Refund creation (`POST /v1/refunds`) | 1000ms | 2500ms | Includes Payroc round-trip |
+| Bank token vault (`POST /v1/bank-tokens`) | 1500ms | 3000ms | Includes Payroc vault round-trip |
+| Merchant boarding (`POST /v1/merchants`) | 5000ms | 15000ms | Async — completion via webhook |
+| Reports (`GET /v1/reports/*`) | 2000ms | 5000ms | Aggregations, may be cached |
+| OpenAPI spec fetch (`GET /v1/openapi.json`) | 50ms | 100ms | Static asset |
+
+### Why these numbers
+
+Charge creation latency is dominated by the Payroc round-trip. The engine adds approximately 100–200ms of overhead (auth, idempotency check, database write, webhook fan-out scheduling). Payroc's own p95 for authorization is approximately 500–700ms. Total p95 of 800ms reflects this.
+
+Report endpoints are slower because they run aggregations across charges/refunds/payouts tables. The engine caches report results for 60 seconds (Tier 2) to keep p95 under 2 seconds. Consumers requesting a freshly-computed report each time will see p95 closer to 5 seconds for large date ranges.
+
+### Latency monitoring
+
+The engine exports p50/p95/p99 latency metrics per endpoint to the status page. If p95 latency for any endpoint class exceeds the target for more than 10 minutes, an incident is auto-opened and merchants subscribed to status updates are notified.
+
+### Timeout recommendations for consumers
+
+Consumers SHOULD set HTTP request timeouts to 2x the published p99 budget for the endpoint they're calling. Example timeouts:
+- Charge creation: 4–5 seconds
+- Refund creation: 5–6 seconds
+- Bank token vault: 6 seconds
+- Merchant boarding: 30 seconds (then poll status or wait for webhook)
+
+---
+
+## DATA RESIDENCY
+
+### Geographic location
+
+All Reyna Pay engine data is stored in AWS us-east-2 (Ohio). This matches the Kasse database location to minimize cross-region latency and avoid cross-region data transfer costs.
+
+### Backup and disaster recovery
+
+- **Daily automated backups** retained for 35 days
+- **Cross-region replication** to AWS us-west-2 (Oregon) for disaster recovery
+- **Recovery time objective (RTO)**: 4 hours for complete region failure
+- **Recovery point objective (RPO)**: 15 minutes (worst-case data loss window)
+
+### Cross-border data transfer
+
+Tier 3 of this spec covers US-only operations. International expansion (Canada, EU, UK) would require additional residency commitments (Canada: residency in Canadian regions; EU/UK: GDPR + local residency). When the engine adds international support, this section will be amended via a versioned addendum.
+
+---
+
+## COMPLIANCE POSTURE
+
+### PCI DSS
+
+Reyna Pay inherits PCI Level 1 certification from Payroc, which holds Level 1 directly. Reyna Pay's role is limited to:
+
+- Vaulting cards via Payroc Hosted Fields (PAN never touches the engine)
+- Vaulting bank accounts via Payroc's tokenization endpoint (account numbers stored only as tokens)
+- Processing charges, refunds, voids, payouts through Payroc's processing infrastructure
+- Storing transaction metadata (no cardholder data)
+
+Reyna Pay's PCI scope is therefore SAQ A-EP (e-commerce, payment data handled exclusively by PCI-validated third party). Annual SAQ A-EP submission to acquiring bank (Payroc).
+
+### SOC 2 Type II — Roadmap
+
+Target: SOC 2 Type II audit complete within 18 months of GA. Audit covers:
+- Security (access controls, encryption, vulnerability management)
+- Availability (uptime, backup, disaster recovery)
+- Confidentiality (data segregation, retention, deletion)
+- Processing integrity (idempotency, audit logging, error handling)
+
+Pre-audit period (months 1–12 post-GA): SOC 2 Type I (point-in-time assessment) to validate controls are designed correctly. Post-Type-I and through month 18: continuous monitoring and Type II audit period.
+
+Until SOC 2 Type II is achieved, enterprise consumers requiring SOC 2 evidence receive a security questionnaire response packet covering equivalent controls.
+
+### Audit logging
+
+Every authenticated request to the engine produces an audit log entry. Each entry includes:
+- `request_id` (Tier 1)
+- Authenticated API key ID (`ak_*`)
+- Merchant ID and (if applicable) platform ID
+- Endpoint called, HTTP method, query parameters
+- Response status code
+- Latency (engine-side processing time)
+- IP address of caller
+- User agent
+- Timestamp (UTC, microsecond precision)
+
+Audit logs are retained for 7 years (matches typical financial recordkeeping requirements). Cross-tenant access is impossible — merchants see only their own audit log.
+
+### Data deletion and right-to-be-forgotten
+
+Merchants can request full data deletion via support (admin-scope process). Deletion process:
+1. Merchant is suspended immediately (no new charges)
+2. 30-day grace period (allows merchant to download data, contest deletion)
+3. After grace period, all merchant data is purged from primary database
+4. Backups are purged on their normal rotation (35 days)
+5. Transaction records required for regulatory recordkeeping (7 years) are retained in a sealed audit archive with no merchant-portal access — only accessible via court order or regulatory request
+
+Note: deletion is irreversible. There is no undo.
+
+### Encryption at rest
+
+All sensitive data encrypted at rest:
+- **Identity fields** (EIN, owner SSN last-4, owner DOB): AES-256 via AWS KMS envelope encryption
+- **Bank account tokens**: stored as opaque tokens (the underlying account number is in Payroc's vault, not the engine)
+- **Card tokens**: stored as opaque tokens (PAN is in Payroc's vault)
+- **Webhook signing secrets**: AES-256 via AWS KMS envelope encryption
+- **API key hashes**: bcrypt hashed (the plaintext token is never stored)
+- **Audit logs**: encrypted at the storage layer
+
+### Encryption in transit
+
+All API traffic requires TLS 1.2 or higher. TLS 1.1 and lower are rejected at the load balancer. HSTS is enforced with `max-age=63072000; includeSubDomains; preload`.
+
+---
+
+## SANDBOX AND TEST MODE
+
+### Environment separation
+
+- **Production**: `https://api.reynapay.com/v1` (or `https://app.salontransact.com/api/v1` during migration). Real money, real card networks, real settlement.
+- **Sandbox**: `https://api-sandbox.reynapay.com/v1`. No real money, no card networks, simulated responses.
+
+Production and sandbox are separate environments with separate databases. Test mode data does NOT exist in production and vice versa.
+
+### Sandbox credentials
+
+Sandbox uses test-prefixed tokens: `rpsk_test_*` and `rpsp_test_*`. These tokens are issued separately from production tokens. Merchants get one set of sandbox credentials at account creation, regardless of production boarding status.
+
+### Test card numbers
+
+The engine recognizes specific card numbers in sandbox to simulate outcomes:
+
+| Card number | Brand | Behavior |
+|-------------|-------|----------|
+| 4242424242424242 | Visa | Always succeeds |
+| 4000000000000002 | Visa | Always declined (`CARD_DECLINED`) |
+| 4000000000000119 | Visa | Always returns processing error (`PAYROC_UPSTREAM_ERROR`) |
+| 4000000000000259 | Visa | Always disputed (auto-creates a dispute 5 minutes after charge) |
+| 4000000000009995 | Visa | Insufficient funds (`CARD_DECLINED`) |
+| 5555555555554444 | Mastercard | Always succeeds |
+| 5200828282828210 | Mastercard | Always declined |
+| 378282246310005 | Amex | Always succeeds |
+| 6011111111111117 | Discover | Always succeeds |
+
+All test cards accept any future expiration date, any CVV (3 digits for non-Amex, 4 for Amex), any ZIP code.
+
+### Test bank accounts
+
+For ACH/payout testing:
+
+| Routing | Account | Behavior |
+|---------|---------|----------|
+| 110000000 | 000123456789 | Always succeeds |
+| 110000000 | 000222222227 | Always returns invalid routing |
+| 110000000 | 000333333333 | Returns invalid account |
+| 110000000 | 000444444444 | Account closed |
+
+### Test webhooks
+
+Sandbox webhooks are delivered to the consumer's registered URL just like production. The `livemode` field in the event envelope is `false` for sandbox events.
+
+### Simulated failure modes
+
+Sandbox supports query parameter overrides to simulate edge cases:
+- `?simulate=rate_limit` — returns 429 even if rate limit not exceeded
+- `?simulate=timeout` — engine deliberately delays the response by 10 seconds
+- `?simulate=internal_error` — returns 500 INTERNAL_ERROR
+- `?simulate=payroc_outage` — returns 502 PAYROC_UPSTREAM_ERROR
+- `?simulate=maintenance` — returns 503 MAINTENANCE_MODE
+
+These overrides are sandbox-only. Production requests with `simulate` parameters are ignored.
+
+### Sandbox lifecycle
+
+Sandbox data is retained for 90 days after last activity. Inactive sandbox accounts have data purged after 90 days. This avoids unbounded growth of sandbox database storage.
+
+---
+
+## DEPRECATION POLICY
+
+### Deprecation lifecycle
+
+Per Tier 1's VERSIONING section, each major version has four phases (Beta, GA, Deprecated, Sunset). This section operationalizes those phases.
+
+### Deprecation notice mechanism
+
+When a major version enters Deprecated phase, the engine returns these headers on every response from the deprecated version:
+
+    Deprecation: true
+    Sunset: <date-when-sunset-occurs>
+    Link: <https://api.reynapay.com/v2>; rel="successor-version"
+
+These headers follow RFC 8594 (Sunset HTTP Header).
+
+### Notice period
+
+Minimum 18 months between Deprecated and Sunset. Consumers have at least 18 months to migrate. Engineering and operational teams should plan migration projects within 12 months of Deprecated announcement to leave 6 months of buffer.
+
+### Migration support
+
+When v2 is announced, the engine publishes:
+- A migration guide at `docs.reynapay.com/migrate/v1-to-v2`
+- A compatibility shim (for breaking changes that have a mechanical translation) at `docs.reynapay.com/v2/compatibility`
+- Office hours / migration support sessions during the deprecation window
+
+### Sunset behavior
+
+After sunset, deprecated version endpoints return:
+
+    HTTP/1.1 410 Gone
+    Content-Type: application/json
+
+    {
+      "error": {
+        "code": "VERSION_SUNSET",
+        "message": "The v1 API has been sunset. Please migrate to v2.",
+        "type": "invalid_request_error",
+        "request_id": "req_..."
+      }
+    }
+
+No automatic redirect to v2 (paths and shapes may differ). Migration is the consumer's responsibility.
+
+---
+
+## MONITORING AND OBSERVABILITY
+
+### Engine-side monitoring
+
+The engine emits the following telemetry to its observability infrastructure:
+- Per-endpoint latency (p50/p95/p99)
+- Per-endpoint error rate
+- Per-endpoint throughput
+- Database connection pool utilization
+- Payroc upstream latency and error rate
+- Webhook delivery success rate
+- Idempotency cache hit rate
+
+### Consumer-visible metrics
+
+Each merchant's dashboard surfaces:
+- Current month's API usage (request count, by endpoint)
+- Rate limit utilization
+- Webhook delivery success rate
+- Charge success rate
+- Average processing latency
+
+### Incident communication
+
+Incidents are communicated via:
+- status.reynapay.com (always-on status page)
+- Email to affected merchants' primary contacts (for incidents impacting >5% of merchants)
+- Webhook event `system.incident_started` and `system.incident_resolved` (for merchants subscribed to system events)
+
+### Postmortems
+
+For incidents lasting >15 minutes, a postmortem is published within 5 business days. Postmortems are public on status.reynapay.com and include:
+- Timeline of the incident
+- Impact (which merchants, which endpoints, what behavior)
+- Root cause
+- Remediation actions
+- Prevention measures going forward
+
+---
+
+## SDKs AND CLIENT LIBRARIES
+
+### Officially supported SDKs
+
+Reyna Pay commits to maintaining officially supported SDKs for:
+- **TypeScript / JavaScript** — `@reyna-pay/node` (also works in Deno, Bun)
+- **Python** — `reyna-pay` (PyPI)
+- **Ruby** — `reyna_pay` (RubyGems)
+- **Go** — `github.com/reyna-pay/reyna-pay-go`
+
+### Generation source
+
+All SDKs are auto-generated from the OpenAPI 3.1 spec. Manual changes to generated code are forbidden — the SDK is regenerated on every spec change.
+
+Generation tooling: OpenAPI Generator (`openapi-generator-cli`) with custom templates for idempotency-key handling, retry logic, and HATEOAS link traversal.
+
+### Versioning
+
+SDK major version aligns with API major version: `@reyna-pay/node@1.x.x` targets `/v1`; `@reyna-pay/node@2.x.x` will target `/v2`. SDK minor and patch versions are independent of API minor changes — SDK 1.5.0 may support all 1.x API features.
+
+### Update cadence
+
+- **Patch releases**: as needed for SDK bugs, weekly cadence maximum
+- **Minor releases**: when the API adds new endpoints or fields (backward-compatible per VERSIONING)
+- **Major releases**: when the API major version increments
+
+### Community SDKs
+
+Community SDKs in other languages (PHP, Java, C#, Rust, etc.) are encouraged but not officially supported. The OpenAPI spec is the canonical source; community SDKs SHOULD be generated from it.
+
+---
+
+# PART IV — AGENT-NATIVE DESIGN
+
+Tier 4 of this specification. Reyna Pay is designed from the ground up to be consumed by AI agents (autonomous and semi-autonomous systems that take actions on behalf of users without per-action human approval). This section defines what makes the API agent-friendly beyond standard HATEOAS.
+
+---
+
+## MCP SERVER COMMITMENT
+
+Reyna Pay commits to maintaining a Model Context Protocol (MCP) server at `mcp.reynapay.com` that exposes the engine's capabilities as MCP tools.
+
+### MCP tools exposed
+
+The MCP server exposes one tool per significant API action. Tools are named in `verb_resource` format matching the underlying API operation:
+
+- `create_charge` (wraps POST /v1/charges)
+- `refund_charge` (wraps POST /v1/refunds)
+- `void_charge` (wraps POST /v1/charges/:id/void)
+- `lookup_customer` (wraps GET /v1/customers/:id)
+- `list_charges` (wraps GET /v1/charges)
+- `get_payout` (wraps GET /v1/payouts/:id)
+- `respond_to_dispute` (wraps PATCH /v1/disputes/:id)
+- `create_checkout_session` (wraps POST /v1/checkout-sessions)
+- ...and one tool per remaining resource operation
+
+Each MCP tool has:
+- Semantic description (agent-readable purpose statement)
+- Input schema (matches the API endpoint's request body, with constraints and examples)
+- Output schema (matches the API endpoint's response, including HATEOAS _links)
+- Error semantics (which error codes are expected, what they mean for the agent)
+
+### MCP authentication
+
+MCP server authenticates the agent's call via the agent's Reyna Pay API key in the MCP request metadata. The engine treats MCP-originated requests identically to direct API requests — same rate limits, same audit logging, same scope enforcement.
+
+### MCP server lifecycle
+
+The MCP server is auto-generated from the OpenAPI spec (the same source as the SDKs). When the spec adds a new endpoint, the MCP server gains a corresponding tool on the next deploy.
+
+---
+
+## AGENT AUDIT LOGGING
+
+### Identifying agent traffic
+
+API keys carry an optional `agent_type` tag at creation:
+
+    POST /v1/api-keys
+    {
+      "scope": ["read", "write"],
+      "agent_type": "anthropic_claude" | "openai_gpt" | "custom",
+      "description": "Booking agent for Salon Envy"
+    }
+
+When set, every request authenticated by that key is logged with the `agent_type` field for downstream analysis.
+
+### Agent-specific audit log
+
+In addition to the standard audit log (Tier 3), agent-originated requests are logged to a separate agent-audit table with extended fields:
+- Full request body (regular audit log stores only metadata)
+- Full response body
+- Agent-claimed context (when present in the request as `X-Agent-Context` header — e.g., "user requested refund for order #1234")
+- Agent reasoning trace (when present as `X-Agent-Reasoning` header — short text explaining why the agent took this action)
+
+Agent audit logs are retained for 2 years (shorter than the 7-year standard audit log because of the higher storage cost from logging full bodies).
+
+### Why this matters
+
+When an agent does something a human disagrees with, "the agent decided to refund this charge" is not a satisfying explanation. The agent audit log captures the context the agent had and the reasoning the agent provided, allowing post-hoc evaluation of whether the action was reasonable.
+
+---
+
+## PER-AGENT-TYPE RATE LIMITS
+
+Agents can run hot. A single rogue agent in a retry loop could exhaust a merchant's entire rate budget. Reyna Pay applies additional rate limits scoped to agent traffic:
+
+### Per-API-key agent limits
+
+When an API key has `agent_type` set (any non-null value), additional limits apply on top of the regular tier limits:
+- **Maximum 30 requests/minute per individual API key**, regardless of the merchant's tier
+- **Maximum 1,000 requests/day per individual API key**
+- These limits stack with merchant-tier limits — the more restrictive applies
+
+### Per-merchant agent aggregate limits
+
+Across all agent-tagged API keys for a single merchant:
+- **Maximum 50% of the merchant's tier rate limit** can be consumed by agent traffic
+- Non-agent traffic is unconstrained by this rule
+
+### Override
+
+A merchant can request elevated agent rate limits by contacting Reyna Pay support. Approval requires evidence that the agent traffic is well-behaved (e.g., the agent uses idempotency keys correctly, handles 429s with appropriate backoff, doesn't retry on 4xx errors).
+
+---
+
+## SEMANTIC ENHANCEMENTS BEYOND HATEOAS
+
+Tier 1 introduced HATEOAS `_links`. Tier 4 extends this with additional semantic affordances designed for agent consumption.
+
+### Action descriptions in _links
+
+Every `_links` entry that represents an action (not just a resource fetch) includes a `description` field:
+
+    "_links": {
+      "refund": {
+        "href": "/v1/charges/ch_abc123/refunds",
+        "method": "POST",
+        "description": "Refund this charge in full or in part. Refunds against settled charges go through ACH return (3-5 business days). Refunds against same-day charges are processed as voids and complete within minutes.",
+        "preconditions": ["charge.status == 'completed'", "charge.refunded_amount < charge.amount"]
+      }
+    }
+
+Description fields are short prose statements that an agent's reasoning model can read to decide whether the action is appropriate. Precondition expressions are machine-readable constraints the agent can verify before attempting the action.
+
+### Resource state predicates
+
+In addition to `status`, agent-relevant boolean predicates are surfaced on resources:
+
+    {
+      "id": "ch_abc123",
+      "status": "completed",
+      "predicates": {
+        "is_refundable": true,
+        "is_voidable": false,
+        "is_disputed": false,
+        "can_be_captured": false,
+        "is_settled": true,
+        "is_test_mode": false
+      }
+    }
+
+Agents can evaluate predicates without consulting the full state machine. The engine guarantees predicates are consistent with the resource's full state at the time of read.
+
+### Suggested next actions
+
+For resources in transient states, the engine includes a `suggested_next_actions` array sorted by likely usefulness:
+
+    {
+      "id": "dp_xyz789",
+      "status": "needs_response",
+      "evidence_due_by": "2026-06-13T00:00:00Z",
+      "suggested_next_actions": [
+        {
+          "action": "submit_evidence",
+          "href": "/v1/disputes/dp_xyz789",
+          "method": "PATCH",
+          "rationale": "Evidence is due in 3 days. Failure to respond results in automatic loss of the dispute."
+        },
+        {
+          "action": "accept_dispute",
+          "href": "/v1/disputes/dp_xyz789/close",
+          "method": "POST",
+          "rationale": "If the dispute is legitimate, accepting it immediately refunds the customer and avoids further legal action."
+        }
+      ]
+    }
+
+Suggested actions are advisory. An agent may choose actions outside this list.
+
+---
+
+## MULTI-STEP TRANSACTION PATTERNS
+
+Some agent workflows span multiple API calls that must succeed as a unit (or fail without partial state). Reyna Pay does not natively support multi-statement transactions, but provides patterns for compensating action.
+
+### The book-and-pay flow (canonical example)
+
+Agent books an appointment and processes payment as a single user-facing operation:
+
+1. Agent calls `POST /v1/charges` with the payment details
+2. Charge succeeds with `status=completed`
+3. Agent calls into the consumer's booking system (Kasse) to record the appointment
+4. If step 3 fails, the agent MUST call `POST /v1/refunds` to compensate for the now-orphaned charge
+
+Pattern: the agent treats the charge as a "pre-authorization of intent" and refunds if the corresponding business action fails.
+
+Tier 1's idempotency rules apply across all steps. The agent should generate one idempotency key per logical user operation and reuse it for the compensating refund (so retries of the compensating refund are themselves idempotent).
+
+### Auth-and-capture for held authorizations
+
+When the agent doesn't yet know the final amount (e.g., a service-business hold for a chemical service before final scope is determined):
+
+1. Agent calls `POST /v1/charges` with `capture: false` for the maximum estimated amount
+2. Charge succeeds with `status=authorized`
+3. Service is performed; final scope determined
+4. Agent calls `POST /v1/charges/:id/capture` with the actual amount (must be ≤ authorized amount)
+5. Captured amount is settled; any remaining authorized-but-not-captured amount is released back to the cardholder
+
+Tier 2 documented capture; Tier 4 explicitly recommends this pattern for agent workflows where the final amount is uncertain at authorization time.
+
+### Idempotency for multi-step
+
+When an agent's workflow spans multiple endpoints, each endpoint requires its own idempotency key. The agent should derive related keys from a single workflow ID:
+
+    // Pseudocode — workflow keys derived deterministically
+    const workflowId = `wf_${uuidv4()}`;
+    const chargeKey = `${workflowId}:charge`;
+    const bookingKey = `${workflowId}:booking`;
+    const refundKey = `${workflowId}:refund`;
+
+This pattern lets the agent retry any individual step without breaking idempotency, and lets the engine's audit trail correlate steps belonging to one workflow.
+
+---
+
+## AGENT IDENTITY AND AUTHORIZATION
+
+### Establishing agent identity
+
+An agent operates with one of two identity models:
+
+**1. Agent owns its own API key.** The agent is a first-class consumer. Its API key is issued at agent registration. Examples: a Claude-based booking agent operating across many merchants; an enterprise-tier custom agent.
+
+**2. Agent acts on behalf of a merchant via platform token.** The agent uses a platform token (rpsp_*) with `X-Reyna-Pay-On-Behalf-Of: org_xxx`. The platform's relationship with the merchant is the basis of authorization. Examples: Kasse's AI receptionist booking on behalf of a salon.
+
+Both models support agent identity tagging via the `agent_type` field at API key creation (Tier 4 Per-Agent-Type Rate Limits section).
+
+### Authorization scope for agents
+
+Agent API keys should be issued with minimum-necessary scope. For an agent that only processes payments and refunds:
+
+    POST /v1/api-keys
+    {
+      "scope": ["write"],
+      "agent_type": "claude_booking_agent",
+      "endpoint_allowlist": ["/v1/charges", "/v1/refunds", "/v1/customers"]
+    }
+
+The optional `endpoint_allowlist` further restricts the agent to specific endpoints regardless of scope. This is a defense-in-depth measure for agent traffic — an agent that needs to create charges should NOT be able to delete merchants even if its scope is `admin`.
+
+### Agent revocation
+
+When an agent misbehaves, revoke the API key immediately via `DELETE /v1/api-keys/:id`. The token is invalidated at the next auth-cache refresh (under 60 seconds). All in-flight requests with that token continue to completion; new requests fail with `TOKEN_REVOKED`.
+
+---
+
+## CONCLUSION
+
+This concludes the Reyna Pay engine API specification, v1, Tiers 1 through 4. The complete document defines:
+
+- **Tier 1 (Foundation):** versioning, authentication, idempotency, error format, pagination, rate limits, webhook envelope, HATEOAS, OpenAPI commitment, common conventions
+- **Tier 2 (Resources):** 14 resources (Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions, Reports, API Keys, Webhooks) with full schemas, operations, filtering, expansion, HATEOAS, and webhook events
+- **Tier 3 (Non-functional):** SLA, latency budgets, data residency, compliance posture (PCI inheritance, SOC 2 roadmap, audit logging, encryption, retention, deletion), sandbox/test mode, deprecation policy, monitoring, SDKs
+- **Tier 4 (Agent-native):** MCP server commitment, agent audit logging, per-agent-type rate limits, semantic enhancements (action descriptions, predicates, suggested next actions), multi-step transaction patterns, agent identity and authorization
+
+The SalonTransact engineering team is now unblocked to implement the engine against this contract. Implementation work happens in the separate `lendbucket/salontransact` repo and follows the engineering work queue maintained in the appendix of KASSE_ENGINE_BOUNDARY.md (which references the endpoint shapes defined throughout this document).
+
+Future amendments to this spec follow the CHANGE LOG convention and the VERSIONING policy (Tier 1).
+
+---
+
+## SPECIFICATION COMPLETE
+
+Tiers 1 through 4 of this specification are now defined. Future changes to the v1 API surface follow the VERSIONING policy (Tier 1). Breaking changes require v2. Backward-compatible additions can be made within v1. The CHANGE LOG below tracks all amendments.
+
+---
+
 ## CHANGE LOG
 
 | Tier | Change |
 |------|--------|
-| Tier 1 (Phase 0.9-a) | Foundation established: versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI, common conventions. |
-| Tier 2 (Phase 0.9-b) | Resource definitions added: Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions, Reports, API Keys, Webhooks. Platform-token mechanism defined. Resource-specific error codes added. |
-
----
-
-## OUT OF SCOPE FOR TIERS 1+2
-
-The following are deliberately deferred to later tiers and SHALL NOT be addressed in implementation work that uses this Tiers 1+2 doc:
-
-- SLA, latency budgets, uptime commitments — Tier 3
-- Data residency, compliance posture (PCI, SOC 2 roadmap), audit log retention — Tier 3
-- Sandbox test card numbers and failure simulation — Tier 3
-- Migration guides and deprecation procedures — Tier 3
-- Localization, multi-language support — Tier 3
-- Agent-native deep design (MCP server commitment, agent audit logs, per-agent rate limits, semantic enhancement) — Tier 4
-- SDKs, client libraries, OpenAPI-derived code generation — Tier 3
-
-The SalonTransact engineering team can now implement both the common infrastructure (auth middleware, idempotency store, error formatter, rate limiter, webhook signer, OpenAPI generator) AND the resource endpoints defined in Part II. Tier 3+4 will complete the spec with non-functional requirements and agent-native extensions.
+| Tier 1 (Phase 0.9-a, PR #36) | Foundation established: versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI, common conventions. |
+| Tier 2 (Phase 0.9-b, PR #37) | Resource definitions added: Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions, Reports, API Keys, Webhooks. Platform-token mechanism defined. Resource-specific error codes added. |
+| Tier 3+4 (Phase 0.9-c, this PR) | Non-functional requirements added: SLA, latency budgets, data residency, compliance posture, sandbox/test mode, deprecation policy, monitoring, SDKs. Agent-native design added: MCP server commitment, agent audit logging, per-agent-type rate limits, semantic enhancements, multi-step transaction patterns, agent identity and authorization. Specification complete. |
