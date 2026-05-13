@@ -1,8 +1,8 @@
 # REYNA PAY ENGINE API SPECIFICATION
 ## The payment rails contract for Kasse, SalonBacked, RunMySalon, white-label brands, developer API consumers, and AI agents
 
-**Version:** 1.0 — Tier 1 (Foundation)
-**Status:** LIVING (Tier 2 and Tier 3+4 to follow in subsequent PRs)
+**Version:** 1.0 — Tier 2 (Resource Definitions)
+**Status:** LIVING (Tier 3+4 to follow in a subsequent PR)
 **Owner:** Robert Reyna, CEO Reyna Pay LLC
 **Entity:** Reyna Pay LLC (Wyoming)
 **Brand:** SalonTransact (current consumer-facing brand; engine is brand-agnostic)
@@ -42,8 +42,8 @@ SalonTransact is preserved as a consumer-facing brand because the existing salon
 
 This document is delivered in three tiers:
 
-- **Tier 1 — Foundation (this PR, Phase 0.9-a):** Cross-cutting conventions — versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI commitment, common patterns.
-- **Tier 2 — Resource Definitions (Phase 0.9-b, future PR):** Charges, Refunds, Voids, Bank Tokens, Cards, Customers, Merchants, Payouts, Disputes, Checkout Sessions, Transactions (aggregate read), Reports. One section per resource with full request/response schemas.
+- **Tier 1 — Foundation (Phase 0.9-a, merged):** Cross-cutting conventions — versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI commitment, common patterns.
+- **Tier 2 — Resource Definitions (this PR, Phase 0.9-b):** Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions (aggregate read), Reports, API Keys, Webhooks. One section per resource with full request/response schemas. Platform-token mechanism. Resource-specific error codes.
 - **Tier 3+4 — Non-Functional + Agent-Native (Phase 0.9-c, future PR):** SLA, latency budgets, data residency, compliance posture (PCI, SOC 2), audit log retention, sandbox/test environment, deprecation policy, agent-native semantics, MCP server commitment.
 
 The complete specification when all three tiers are merged will define an enterprise-grade API contract that the SalonTransact engineering team implements.
@@ -180,7 +180,7 @@ Multiple scopes can be assigned to one token: `scope=read,write` means GET + POS
 
 Every authenticated request executes in the context of the merchant whose token was used. The engine has NO concept of "calling org" separate from "owning org" for the token. This simplifies the auth model: if you have the token, you have access to that merchant's data and nothing else.
 
-Exception: a future Tier 2 will define "platform tokens" issued to Kasse, SalonBacked, RunMySalon, and white-label brands. Platform tokens allow operations on behalf of any merchant boarded under that platform, with an additional `X-Reyna-Pay-On-Behalf-Of: org_abc123` header that names the target merchant. The engine verifies the target merchant is boarded under the platform that owns the token before authorizing.
+Exception: "platform tokens" are issued to Kasse, SalonBacked, RunMySalon, and white-label brands. Platform tokens allow operations on behalf of any merchant boarded under that platform, with an additional `X-Reyna-Pay-On-Behalf-Of: org_abc123` header that names the target merchant. The engine verifies the target merchant is boarded under the platform that owns the token before authorizing. See PLATFORM TOKENS in Part II for full details.
 
 ### Error responses
 
@@ -367,7 +367,7 @@ Fields:
 | 503 | api_error | Engine maintenance mode |
 | 504 | integration_error | Upstream Payroc timeout |
 
-### Error code catalog (Tier 1 — extensible in Tier 2 per resource)
+### Error code catalog
 
 Authentication / Authorization:
 - `MISSING_AUTH` — Authorization header absent
@@ -397,7 +397,50 @@ Engine / integration:
 - `PAYROC_TIMEOUT` — Payroc did not respond within timeout window
 - `MAINTENANCE_MODE` — engine is in scheduled maintenance
 
-Tier 2 will extend this catalog with resource-specific codes (e.g., `CHARGE_AMOUNT_TOO_LOW`, `BANK_TOKEN_NOT_FOUND`, `MERCHANT_BOARDING_FAILED`).
+Resource-specific error codes are defined in Part II under each resource's "Special considerations" section and consolidated below.
+
+### Resource-specific error codes (Tier 2)
+
+Authentication / Authorization (additions):
+- `PLATFORM_TOKEN_REQUIRED` — operation is platform-scope-only, regular token used
+- `ON_BEHALF_OF_REQUIRED` — operation requires X-Reyna-Pay-On-Behalf-Of header on platform token
+- `ON_BEHALF_OF_NOT_ALLOWED` — header provided on non-platform token
+
+Merchant-related:
+- `MERCHANT_NOT_BOARDED` — operation requires boarded merchant, current status is not `boarded`
+- `MERCHANT_SUSPENDED` — operation blocked due to suspension
+- `MERCHANT_FIELD_NOT_WRITABLE` — attempting to PATCH a write-once field (ein, owner_ssn_last4, owner_dob)
+
+Charge-related:
+- `CHARGE_AMOUNT_TOO_LOW` — amount below merchant's per-currency minimum
+- `CHARGE_AMOUNT_TOO_HIGH` — amount exceeds merchant's per-currency maximum or daily volume limit
+- `CHARGE_PAYMENT_METHOD_NOT_ACCEPTED` — merchant does not accept the requested payment method
+- `CHARGE_ALREADY_SETTLED` — void attempted after settlement window closed
+- `CHARGE_ALREADY_REFUNDED` — refund attempted on fully-refunded charge
+- `CHARGE_RISK_DECLINED` — engine-side risk rule blocked the charge
+
+Refund-related:
+- `REFUND_AMOUNT_EXCEEDS_CHARGE` — refund amount exceeds available refundable balance
+
+Card-related:
+- `CARD_EXPIRED` — saved card past expiration date
+- `CARD_DECLINED` — issuing bank declined the charge
+
+Bank token-related:
+- `BANK_TOKEN_NOT_FOUND` — referenced token does not exist or does not belong to this merchant
+- `BANK_TOKEN_VAULT_ERROR` — Payroc vault rejected the bank account info
+
+Dispute-related:
+- `DISPUTE_EVIDENCE_TOO_LARGE` — evidence file exceeds engine size limit (50MB per file)
+- `DISPUTE_DEADLINE_PASSED` — evidence submission after deadline
+
+Webhook-related:
+- `WEBHOOK_URL_INSECURE` — HTTP URL provided (HTTPS required)
+- `WEBHOOK_EVENT_TYPE_UNKNOWN` — subscribed event type not in catalog
+
+Checkout session:
+- `CHECKOUT_SESSION_EXPIRED` — session past expires_at
+- `CHECKOUT_SESSION_ALREADY_USED` — session_token already consumed
 
 ### Error message guidelines
 
@@ -514,7 +557,7 @@ Reyna Pay uses a token bucket per API key. The bucket refills at the per-minute 
 
 ### Per-endpoint limits
 
-Tier 2 will define stricter per-endpoint limits for sensitive operations (e.g., bank token detokenization may be limited to 10/minute regardless of overall tier). These compose with the overall tier limits — both are enforced.
+Per-endpoint limits for sensitive operations (e.g., bank token detokenization: 10/minute, reports: 10/minute regardless of overall tier). These compose with the overall tier limits — both are enforced. See each resource's "Special considerations" in Part II for per-endpoint rate limit details.
 
 ---
 
@@ -627,7 +670,7 @@ Webhook system events:
 - `webhook.delivery_succeeded` (the meta-webhook)
 - `webhook.delivery_failed_persistent`
 
-Tier 2 will document the `data` payload for each event type.
+Each event type's `data` payload is documented in the corresponding RESOURCE section in PART II (e.g., `charge.completed` payload is documented under RESOURCE: CHARGES → Webhook events). The webhook envelope structure (id, type, created, api_version, livemode, organization_id, data) is constant; only the `data` field's shape varies by event type.
 
 ---
 
@@ -784,17 +827,902 @@ Consumers SHALL include the request ID when contacting support. Logs without req
 
 ---
 
-## CHANGE LOG
+# PART II — RESOURCE DEFINITIONS
 
-Tier 1 establishes the foundation. Subsequent changes within v1 will be appended to a CHANGE LOG section in the final consolidated doc. For Tier 1, no changes yet.
+Tier 2 of this specification. Each section below defines one resource: the schema fields, the operations available on it, the query parameters for list endpoints, and the webhook events associated with the resource.
+
+Every resource definition follows an identical template for consistency. The template is:
+
+- **Resource name and identifier prefix** (e.g., Charges, prefix `ch_`)
+- **Description and use cases**
+- **Schema** — every field, its type, whether it's nullable, whether it's writable, whether it appears on creation only
+- **Operations** — list, retrieve, create, update, delete, and resource-specific actions
+- **Filtering and sorting** — for list endpoints
+- **Expansion** — which related resources can be inlined via the `expand` parameter
+- **HATEOAS _links** — the action links included in responses
+- **Webhook events** — with full data payload definitions
+- **Special considerations** — anything resource-specific (PCI implications, async behavior, rate limit exceptions)
+
+Resources are presented in implementation priority order: foundational resources first (Merchants, Customers), then payment instruments (Cards, Bank Tokens), then payment lifecycle (Charges, Refunds, Voids, Payouts, Disputes), then specialized (Checkout Sessions, Transactions, Reports), then meta-resources (API Keys, Webhooks).
 
 ---
 
-## OUT OF SCOPE FOR TIER 1
+## PLATFORM TOKENS (closes Tier 1 deferred item)
 
-The following are deliberately deferred to later tiers and SHALL NOT be addressed in implementation work that uses this Tier 1 doc:
+Platform tokens are a distinct token type issued to consumers that operate on behalf of multiple merchants:
+- Kasse, SalonBacked, RunMySalon
+- Certified white-label brands consuming Kasse or SalonBacked
 
-- Resource definitions (charges, refunds, voids, bank tokens, cards, customers, merchants, payouts, disputes, checkout sessions, transactions, reports) — Tier 2
+Platform tokens have a different prefix:
+- `rpsp_live_*` for production platform tokens
+- `rpsp_test_*` for sandbox platform tokens
+
+Platform tokens carry the same scope concepts (read, write, admin, webhooks, reports) but additionally require an `X-Reyna-Pay-On-Behalf-Of` header naming the target merchant on every request that operates on a specific merchant's data.
+
+Example platform-token request:
+
+    POST /v1/charges
+    Authorization: Bearer rpsp_live_<token>
+    X-Reyna-Pay-On-Behalf-Of: org_abc123
+    Idempotency-Key: <uuid>
+    Content-Type: application/json
+
+    { "amount": 25000, "currency": "usd", ... }
+
+Engine behavior on platform-token requests:
+1. Authenticate the platform token (lookup in api_keys table, verify not revoked, verify scope)
+2. Read the `X-Reyna-Pay-On-Behalf-Of` header to determine target merchant
+3. Verify the platform owns (is the boarding platform for) the target merchant — if not, return 403 with code `MERCHANT_NOT_OWNED`
+4. Execute the operation in the context of the target merchant
+5. Charge rate limits to the platform's quota, NOT the merchant's quota
+
+Operations that do not involve a specific merchant (e.g., listing all merchants under the platform, fetching platform-level reports) can be called without `X-Reyna-Pay-On-Behalf-Of`. The engine inspects the endpoint definition (per the OpenAPI spec) to determine whether the header is required.
+
+Platform-token-related error codes (extending the Tier 1 catalog):
+- `PLATFORM_TOKEN_REQUIRED` — operation is platform-scope-only, regular token used
+- `ON_BEHALF_OF_REQUIRED` — operation requires X-Reyna-Pay-On-Behalf-Of header on platform token, not provided
+- `ON_BEHALF_OF_NOT_ALLOWED` — header provided on non-platform token (regular tokens never set this)
+- `MERCHANT_NOT_OWNED` — platform attempting operation on merchant not boarded under this platform
+
+Issuance: platform tokens are issued by Reyna Pay LLC (Robert) through an admin process. They cannot be self-served. Each platform token includes the platform's identifier in its metadata so the engine can resolve the platform-merchant relationship at auth time.
+
+---
+
+## RESOURCE: MERCHANTS
+
+### Identity
+
+- Resource name: Merchant
+- Identifier prefix: `org_*` (organization, since merchants are organizations in the engine's data model)
+- Plural endpoint: `/v1/merchants`
+
+### Description
+
+A merchant is a business that processes payments through Reyna Pay. Every charge, refund, payout, dispute, and bank token belongs to exactly one merchant. The merchant resource is the root tenant boundary — Tier 1's tenant isolation rule (every endpoint filters by authenticated merchant) means every other resource is scoped to a merchant.
+
+Merchants are boarded through a multi-step process:
+1. Application submission (via POST /v1/merchants) with business info, owner info, banking info (bank token), payment volume estimates
+2. KYC/KYB review by Reyna Pay LLC (currently manual; Payroc Boarding API integration is Phase 10+ on the engine side)
+3. Payroc terminal provisioning (currently manual via ERF)
+4. Merchant marked as `boarded`, can begin processing charges
+
+Until step 4 completes, the merchant cannot process charges. Webhook events fire at each step.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `org_<base62>` |
+| `legal_name` | string | no | yes | Business legal name as registered with state |
+| `dba_name` | string | yes | yes | Doing-business-as name; defaults to legal_name |
+| `business_type` | enum | no | yes | One of: `sole_proprietorship`, `single_member_llc`, `multi_member_llc`, `c_corp`, `s_corp`, `partnership`, `nonprofit` |
+| `ein` | string | yes | yes (write-once) | Encrypted at rest in engine database. Returned only as last-4 in API responses (`ein_last4`). Full value never returned. |
+| `mcc` | string | no | yes | 4-digit Merchant Category Code |
+| `vertical` | string | no | yes | High-level vertical: `salon`, `restaurant`, `gym`, `retail`, `service`, `other` |
+| `email` | string | no | yes | Primary business contact email |
+| `phone` | string | no | yes | E.164 format business phone |
+| `address` | object | no | yes | `{ line1, line2, city, state, postal_code, country }` |
+| `owner_first_name` | string | no | yes | Beneficial owner (>25% ownership) first name |
+| `owner_last_name` | string | no | yes | Beneficial owner last name |
+| `owner_ssn_last4` | string | no | yes (write-once) | Encrypted at rest. Returned as `••••` in API responses; full value never returned. |
+| `owner_dob` | string | no | yes (write-once) | ISO 8601 date. Encrypted at rest. Returned as year-only (`1985`) in API responses. |
+| `owner_email` | string | no | yes | Owner personal email |
+| `owner_phone` | string | no | yes | Owner personal phone |
+| `bank_token_id` | string | yes | yes | Reference to the merchant's primary bank account, a `bt_*` token from the Bank Tokens resource |
+| `payment_volume_monthly_estimate` | integer | no | yes | Estimated monthly volume in cents |
+| `avg_transaction_estimate` | integer | no | yes | Estimated average transaction in cents |
+| `accepts_payment_methods` | array | no | yes | List of methods: `card_present`, `card_not_present`, `ach`, `cash`, `gift_card` |
+| `boarding_status` | enum | no | server-managed | One of: `submitted`, `under_review`, `approved`, `boarded`, `rejected`, `suspended` |
+| `boarding_status_reason` | string | yes | server-managed | Human-readable explanation when status is `rejected` or `suspended` |
+| `boarded_at` | timestamp | yes | server-managed | When merchant became `boarded` |
+| `created_at` | timestamp | no | server-managed | When application was submitted |
+| `updated_at` | timestamp | no | server-managed | When any field last changed |
+| `payroc_merchant_id` | string | yes | server-managed | Underlying Payroc MID; populated when boarded; opaque to consumers |
+| `metadata` | object | yes | yes | Free-form key/value object for consumer-side reference data |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/merchants` | List merchants (platform-scoped only — regular merchant tokens can only see their own merchant via GET on the singular endpoint) |
+| GET | `/v1/merchants/:id` | Retrieve a merchant |
+| POST | `/v1/merchants` | Submit a merchant boarding application |
+| PATCH | `/v1/merchants/:id` | Update mutable merchant fields (legal_name, dba_name, email, phone, address, metadata; restricted fields like ein and owner_ssn_last4 are write-once and cannot be patched) |
+| POST | `/v1/merchants/:id/suspend` | Suspend a merchant (admin-scope only, halts new charges, preserves history) |
+| POST | `/v1/merchants/:id/reinstate` | Reinstate a suspended merchant (admin-scope only) |
+
+### Filtering and sorting (list endpoint)
+
+Available query parameters:
+- `boarding_status` — filter by status (single value or comma-separated for OR)
+- `vertical` — filter by vertical
+- `created_after`, `created_before` — date range
+- `boarded_after`, `boarded_before` — date range on `boarded_at`
+- `sort` — `created.desc` (default), `created.asc`, `legal_name.asc`
+
+### Expansion
+
+Available `expand` values:
+- `bank_token` — inline the merchant's primary bank token object instead of just the `bank_token_id`
+
+### HATEOAS _links
+
+Examples by boarding_status:
+
+Status `submitted`: `self` (GET), `update` (PATCH)
+
+Status `boarded`: `self`, `update`, `charges` (GET /v1/charges), `payouts` (GET /v1/payouts), `disputes` (GET /v1/disputes), `suspend` (POST — admin-only)
+
+Status `suspended`: `self`, `reinstate` (POST — admin-only)
+
+### Webhook events
+
+- `merchant.boarding_started` — fired when POST /v1/merchants succeeds. Data: full merchant object with boarding_status=submitted.
+- `merchant.boarded` — fired when boarding completes. Data: full merchant object with boarding_status=boarded and boarded_at populated.
+- `merchant.boarding_failed` — fired when boarding fails. Data: full merchant object with boarding_status=rejected and boarding_status_reason populated.
+- `merchant.settings_updated` — fired on any PATCH that changes any field. Data: full merchant object plus a `changes` array listing the field paths that changed.
+- `merchant.suspended` — fired on suspend. Data: full merchant object with boarding_status=suspended and boarding_status_reason populated.
+- `merchant.reinstated` — fired on reinstate. Data: full merchant object with boarding_status=boarded.
+
+### Special considerations
+
+- **PII encryption at rest:** `ein`, `owner_ssn_last4`, `owner_dob` are encrypted at the database level. The engine MUST never store these in plaintext, even temporarily. AWS KMS envelope encryption is the required pattern per KASSE_PII_ENCRYPTION.md.
+- **PCI scope:** Merchants do NOT carry card-storage scope; that lives on Customers and Cards resources. Merchant boarding does include bank account info but only via a `bank_token_id` reference — the engine vaults the underlying bank account in Bank Tokens, never on the Merchant directly.
+- **Tenant isolation:** A merchant can NEVER see another merchant's data. Platform-token consumers (Kasse, etc.) can see all merchants under their platform via the list endpoint or `X-Reyna-Pay-On-Behalf-Of` per-merchant on singular endpoints.
+
+---
+
+## RESOURCE: CUSTOMERS
+
+### Identity
+
+- Resource name: Customer
+- Identifier prefix: `cust_*`
+- Plural endpoint: `/v1/customers`
+
+### Description
+
+A customer is a person who makes purchases at a merchant. The Reyna Pay Customer is the Payroc-customer-of-merchant concept — distinct from Kasse's Client model. Kasse maps its Client to the engine's Customer when making charges on behalf of a saved customer.
+
+Customers can have saved cards and bank tokens attached for repeat purchases. The customer resource stores contact info and references to payment instruments; it never stores raw card or bank data.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `cust_<base62>` |
+| `merchant_id` | string | no | server-assigned | The merchant this customer belongs to |
+| `email` | string | yes | yes | Customer email |
+| `phone` | string | yes | yes | E.164 format |
+| `name` | string | yes | yes | Full name |
+| `address` | object | yes | yes | `{ line1, line2, city, state, postal_code, country }` |
+| `default_card_id` | string | yes | yes | Default saved card (`card_*`) for charges |
+| `default_bank_token_id` | string | yes | yes | Default bank token (`bt_*`) for ACH |
+| `metadata` | object | yes | yes | Free-form key/value |
+| `deleted_at` | timestamp | yes | server-managed | Soft-delete marker |
+| `created_at` | timestamp | no | server-managed | |
+| `updated_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/customers` | List customers for the authenticated merchant |
+| GET | `/v1/customers/:id` | Retrieve a customer |
+| POST | `/v1/customers` | Create a customer |
+| PATCH | `/v1/customers/:id` | Update customer fields |
+| DELETE | `/v1/customers/:id` | Soft-delete (sets deleted_at; customer data retained for charge history) |
+
+### Filtering and sorting
+
+- `email` — exact match or prefix search
+- `name` — partial match
+- `created_after`, `created_before` — date range
+- `sort` — `created.desc` (default), `name.asc`
+
+### Expansion
+
+- `default_card` — inline the default card object
+- `cards` — inline all cards for this customer
+
+### HATEOAS _links
+
+Standard: `self`, `update`, `delete`, `cards` (GET /v1/customers/:id/cards), `charges` (GET /v1/charges?customer_id=:id)
+
+### Webhook events
+
+- `customer.created` — Data: full customer object.
+- `customer.updated` — Data: full customer object plus `changes` array.
+- `customer.deleted` — Data: full customer object with deleted_at populated.
+
+### Special considerations
+
+- **Soft-delete:** DELETE sets `deleted_at` rather than removing the row. Soft-deleted customers do not appear in list results by default; add `include_deleted=true` to see them. Charges referencing a deleted customer still resolve the customer data for historical reporting.
+
+---
+
+## RESOURCE: CARDS
+
+### Identity
+
+- Resource name: Card
+- Identifier prefix: `card_*`
+- Plural endpoint: `/v1/customers/:customer_id/cards` (nested under customer)
+
+### Description
+
+A saved card token for repeat purchases. Cards are tokenized via Payroc Hosted Fields — the engine never stores raw PAN. The card object stores brand, last4, expiration, and an opaque Payroc token reference.
+
+Cards are immutable. To "update" a card (new expiration, new number), create a new card and optionally set it as default on the customer.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `card_<base62>` |
+| `customer_id` | string | no | server-assigned | The customer who owns this card |
+| `merchant_id` | string | no | server-assigned | The merchant context |
+| `brand` | string | no | server-managed | `visa`, `mastercard`, `amex`, `discover`, `other` |
+| `last4` | string | no | server-managed | Last 4 digits of card number |
+| `exp_month` | integer | no | server-managed | 1-12 |
+| `exp_year` | integer | no | server-managed | 4-digit year |
+| `billing_address` | object | yes | server-managed | Address provided during tokenization |
+| `is_default` | boolean | no | yes | Whether this is the customer's default card |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/customers/:customer_id/cards` | List cards for a customer |
+| GET | `/v1/customers/:customer_id/cards/:id` | Retrieve a card |
+| POST | `/v1/customers/:customer_id/cards` | Create a card (requires a completed checkout session token from Hosted Fields) |
+| DELETE | `/v1/customers/:customer_id/cards/:id` | Delete a card (permanent — removes the token from Payroc) |
+
+No PATCH — cards are immutable.
+
+### Webhook events
+
+- `card.created` — Data: full card object.
+- `card.deleted` — Data: full card object (snapshot at time of deletion).
+
+### Special considerations
+
+- **PCI scope:** The engine NEVER stores raw PAN, CVV, or full card number. The `card` resource stores brand + last4 + exp + an opaque Payroc token reference. All PCI-scoped data lives in Payroc's vault.
+- **Immutability:** Cards cannot be updated. This matches Payroc's underlying model — a token is bound to a specific card number.
+
+---
+
+## RESOURCE: BANK TOKENS
+
+### Identity
+
+- Resource name: Bank Token
+- Identifier prefix: `bt_*`
+- Plural endpoint: `/v1/bank-tokens`
+
+### Description
+
+A tokenized bank account for ACH push (merchant payouts) and future merchant-to-customer ACH disbursements. The create operation vaults a routing number + account number in Payroc's secure vault and returns an opaque token. The engine stores only the token, never the raw bank data.
+
+This is the engine endpoint that closes Kasse Phase 0.6-c — Kasse calls `POST /v1/bank-tokens` through the engine instead of calling Payroc directly.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `bt_<base62>` |
+| `merchant_id` | string | no | server-assigned | The merchant this token belongs to |
+| `customer_id` | string | yes | yes | Null when bank account belongs to merchant; populated for customer-owned accounts |
+| `account_holder_name` | string | no | yes | Name on the bank account |
+| `account_type` | enum | no | yes | `checking` or `savings` |
+| `bank_name` | string | yes | server-managed | Resolved from routing number when available |
+| `routing_number_last4` | string | no | server-managed | Last 4 digits of routing number |
+| `account_number_last4` | string | no | server-managed | Last 4 digits of account number |
+| `is_default_for_merchant_payout` | boolean | no | yes | Whether this is the merchant's primary payout destination |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/bank-tokens` | List bank tokens for the authenticated merchant |
+| GET | `/v1/bank-tokens/:id` | Retrieve a bank token |
+| POST | `/v1/bank-tokens` | Vault a bank account (accepts routing_number + account_number + account_holder_name + account_type; returns token with last4 values only) |
+| DELETE | `/v1/bank-tokens/:id` | Delete a bank token (removes from Payroc vault) |
+| POST | `/v1/bank-tokens/:id/detokenize` | Detokenize — admin-scope only, returns the full routing + account numbers. Audit-logged. For legitimate operational use only (compliance, legal, audit). |
+
+### Webhook events
+
+- `bank_token.created` — Data: full bank token object (last4 values only, never raw numbers).
+- `bank_token.deleted` — Data: full bank token object (snapshot at deletion).
+
+### Special considerations
+
+- **Detokenization rate limit:** POST /v1/bank-tokens/:id/detokenize is limited to 10 requests/minute regardless of overall tier. Every detokenization request is audit-logged with the requesting API key, timestamp, and IP address.
+- **Raw data never stored:** The engine passes routing_number and account_number to Payroc's vault API on create, receives an opaque token, stores only the token + last4 values. The raw numbers never touch the engine's database.
+- **Kasse Phase 0.6-c dependency:** This is the endpoint Kasse's onboarding flow calls (via the feature-flag pattern documented in KASSE_ENGINE_BOUNDARY.md) to vault merchant bank accounts.
+
+---
+
+## RESOURCE: CHARGES
+
+### Identity
+
+- Resource name: Charge
+- Identifier prefix: `ch_*`
+- Plural endpoint: `/v1/charges`
+
+### Description
+
+A charge is a payment processed through Reyna Pay. This is the core payment-processing resource — the highest-volume, most latency-sensitive endpoint in the engine.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `ch_<base62>` |
+| `merchant_id` | string | no | server-assigned | |
+| `customer_id` | string | yes | yes | If charging a saved customer |
+| `amount` | integer | no | yes | Amount in cents |
+| `currency` | string | no | yes | ISO 4217 lowercase (default: merchant's default currency) |
+| `status` | enum | no | server-managed | `pending`, `succeeded`, `failed`, `refunded`, `partially_refunded`, `disputed` |
+| `payment_method` | enum | no | yes | `card`, `ach`, `cash` |
+| `card_id` | string | yes | yes | If paid via saved card |
+| `card_brand` | string | yes | server-managed | Populated from card or Hosted Fields result |
+| `card_last4` | string | yes | server-managed | |
+| `description` | string | yes | yes | Internal description |
+| `statement_descriptor` | string | yes | yes | What appears on cardholder's statement (max 22 chars) |
+| `application_fee` | integer | yes | yes | Engine-charged fee in cents (for platform tokens taking a cut) |
+| `tip_amount` | integer | yes | yes | Tip in cents |
+| `receipt_email` | string | yes | yes | Email to send receipt to |
+| `receipt_phone` | string | yes | yes | Phone to send receipt SMS to |
+| `capture` | boolean | no | yes | Default `true`. Set `false` for authorize-only. |
+| `captured_at` | timestamp | yes | server-managed | When the charge was captured (null for auth-only until captured) |
+| `failure_code` | string | yes | server-managed | Payroc decline code when status=failed |
+| `failure_message` | string | yes | server-managed | Human-readable failure description |
+| `risk_score` | integer | yes | server-managed | 0-100, engine-computed fraud risk estimate |
+| `refunded_amount` | integer | no | server-managed | Running total of refunds in cents |
+| `metadata` | object | yes | yes | Free-form key/value |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/charges` | List charges |
+| GET | `/v1/charges/:id` | Retrieve a charge |
+| POST | `/v1/charges` | Create a charge (process a payment) |
+| POST | `/v1/charges/:id/capture` | Capture an authorized charge (when original was created with capture=false) |
+| POST | `/v1/charges/:id/void` | Void a same-day charge before settlement |
+| POST | `/v1/charges/:id/refunds` | Create a refund against this charge (convenience alias for POST /v1/refunds) |
+
+### Filtering and sorting
+
+- `status` — single or comma-separated
+- `customer_id` — exact match
+- `card_id` — exact match
+- `payment_method` — exact match
+- `amount_gte`, `amount_lte` — amount range
+- `created_after`, `created_before` — date range
+- `sort` — `created.desc` (default), `created.asc`, `amount.desc`, `amount.asc`
+
+### Expansion
+
+- `customer` — inline the customer object
+- `refunds` — inline the list of refunds against this charge
+
+### HATEOAS _links
+
+Status `succeeded`: `self`, `refund` (POST /v1/charges/:id/refunds), `void` (POST — only if same-day, before settlement), `customer` (GET — if customer_id present), `receipt` (GET /v1/charges/:id/receipt)
+
+Status `pending` (auth-only): `self`, `capture` (POST /v1/charges/:id/capture), `void` (POST)
+
+Status `failed`: `self`, `customer` (GET — if present)
+
+Status `refunded`: `self`, `customer`, `refunds` (GET)
+
+### Webhook events
+
+- `charge.created` — fired immediately on POST. Data: full charge object with status=pending.
+- `charge.completed` — fired when status transitions to succeeded. Data: full charge object.
+- `charge.failed` — fired when status transitions to failed. Data: full charge object with failure_code and failure_message populated.
+
+### Special considerations
+
+- **Throughput:** Charges are the highest-volume resource. The idempotency store, rate limiter, and webhook delivery infrastructure must handle this resource's throughput.
+- **Auth-and-capture:** Charges support `capture: false` for authorize-without-capture flows. The authorization holds funds for up to 7 days. After 7 days, uncaptured authorizations expire and the hold is released. The engine fires no webhook for expiration — consumers should track their own auth-and-capture deadlines.
+- **Auto void vs refund:** The engine SHOULD detect when a refund is requested against an unsettled charge and execute as void instead (faster, lower fee). From the consumer's perspective, they always POST to /refunds — the engine decides the optimal mechanism.
+
+---
+
+## RESOURCE: REFUNDS
+
+### Identity
+
+- Resource name: Refund
+- Identifier prefix: `re_*`
+- Plural endpoint: `/v1/refunds`
+
+### Description
+
+A refund returns funds from a previously completed charge back to the customer. Refunds can be full or partial. Multiple partial refunds can be issued against a single charge until the total refunded equals the original charge amount.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `re_<base62>` |
+| `charge_id` | string | no | yes | The charge being refunded |
+| `merchant_id` | string | no | server-assigned | |
+| `amount` | integer | no | yes | Refund amount in cents (must be ≤ charge.amount - charge.refunded_amount) |
+| `currency` | string | no | server-assigned | Matches the charge's currency |
+| `status` | enum | no | server-managed | `pending`, `succeeded`, `failed` |
+| `reason` | enum | yes | yes | `duplicate`, `fraudulent`, `requested_by_customer`, `other` |
+| `failure_code` | string | yes | server-managed | |
+| `failure_message` | string | yes | server-managed | |
+| `metadata` | object | yes | yes | |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/refunds` | List refunds |
+| GET | `/v1/refunds/:id` | Retrieve a refund |
+| POST | `/v1/refunds` | Create a refund (requires charge_id in body) |
+| POST | `/v1/charges/:id/refunds` | Create a refund (convenience — charge_id from URL) |
+
+### Filtering and sorting
+
+- `charge_id` — exact match
+- `status` — single or comma-separated
+- `created_after`, `created_before` — date range
+- `sort` — `created.desc` (default)
+
+### Expansion
+
+- `charge` — inline the original charge object
+
+### HATEOAS _links
+
+Standard: `self`, `charge` (GET the original charge)
+
+### Webhook events
+
+- `refund.created` — Data: full refund object with status=pending.
+- `refund.completed` — Data: full refund object with status=succeeded.
+- `refund.failed` — Data: full refund object with failure_code populated.
+
+### Special considerations
+
+- **Partial refunds:** Multiple partial refunds are supported. The engine tracks `charge.refunded_amount` as a running total. When `charge.refunded_amount == charge.amount`, the charge status transitions to `refunded`.
+- **Auto-void:** If the charge is unsettled, the engine executes a void instead of a refund (faster processing, lower fee). The consumer does not need to distinguish — they always POST /refunds.
+
+---
+
+## RESOURCE: VOIDS
+
+### Identity
+
+- Resource name: Void
+- Identifier prefix: `vd_*`
+- Endpoint: `/v1/charges/:charge_id/void`
+
+### Description
+
+A void cancels an authorization before settlement. Voids are only possible before the charge's settlement window closes (typically end-of-day in the merchant's timezone, depending on Payroc batch close time).
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `vd_<base62>` |
+| `charge_id` | string | no | server-assigned | |
+| `merchant_id` | string | no | server-assigned | |
+| `status` | enum | no | server-managed | `succeeded`, `failed` |
+| `failure_code` | string | yes | server-managed | |
+| `failure_message` | string | yes | server-managed | |
+| `metadata` | object | yes | yes | |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/charges/:charge_id/void` | Retrieve the void for a charge (if one exists) |
+| POST | `/v1/charges/:charge_id/void` | Create a void |
+
+### Webhook events
+
+- `void.completed` — Data: full void object with status=succeeded.
+- `void.failed` — Data: full void object with failure_code populated.
+
+### Special considerations
+
+- **Settlement window:** After settlement, voids are impossible. The engine returns `422 Unprocessable Entity` with error code `CHARGE_ALREADY_SETTLED`. Consumer should use refund instead.
+- **Relationship to refunds:** When a consumer POSTs to /refunds for an unsettled charge, the engine MAY auto-execute as a void. The void object is created and linked to the charge. The refund object is also created and points to the void.
+
+---
+
+## RESOURCE: PAYOUTS
+
+### Identity
+
+- Resource name: Payout
+- Identifier prefix: `po_*`
+- Plural endpoint: `/v1/payouts`
+
+### Description
+
+A payout moves settled funds from Reyna Pay's reserve to the merchant's bank account via ACH push. Payouts can be automatic (engine-initiated per the merchant's schedule) or manual (ad-hoc disbursements triggered by a platform or admin).
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `po_<base62>` |
+| `merchant_id` | string | no | server-assigned | |
+| `bank_token_id` | string | no | yes | The destination bank account (`bt_*`) |
+| `amount` | integer | no | yes | Payout amount in cents |
+| `currency` | string | no | server-assigned | |
+| `status` | enum | no | server-managed | `pending`, `in_transit`, `paid`, `failed`, `canceled` |
+| `arrival_date` | string | yes | server-managed | Estimated ACH arrival date (ISO 8601 date) |
+| `failure_code` | string | yes | server-managed | |
+| `failure_message` | string | yes | server-managed | |
+| `automatic` | boolean | no | server-managed | true if engine-initiated per schedule, false if manual |
+| `metadata` | object | yes | yes | |
+| `created_at` | timestamp | no | server-managed | |
+| `paid_at` | timestamp | yes | server-managed | When funds arrived at merchant's bank |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/payouts` | List payouts |
+| GET | `/v1/payouts/:id` | Retrieve a payout |
+| POST | `/v1/payouts` | Create a manual payout (admin or platform scope) |
+| POST | `/v1/payouts/:id/cancel` | Cancel a pending payout (before in_transit) |
+
+### Filtering and sorting
+
+- `status` — single or comma-separated
+- `automatic` — boolean
+- `created_after`, `created_before` — date range
+- `sort` — `created.desc` (default)
+
+### Expansion
+
+- `bank_token` — inline the destination bank token
+
+### HATEOAS _links
+
+Status `pending`: `self`, `cancel` (POST)
+Status `in_transit`: `self`
+Status `paid`: `self`, `bank_token` (GET)
+
+### Webhook events
+
+- `payout.created` — Data: full payout object with status=pending.
+- `payout.completed` — Data: full payout object with status=paid and paid_at populated.
+- `payout.failed` — Data: full payout object with failure_code populated.
+
+---
+
+## RESOURCE: DISPUTES
+
+### Identity
+
+- Resource name: Dispute
+- Identifier prefix: `dp_*`
+- Plural endpoint: `/v1/disputes`
+
+### Description
+
+A dispute (chargeback) is initiated by the cardholder against a charge. The merchant must respond with evidence within a deadline, or the dispute is auto-lost.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `dp_<base62>` |
+| `charge_id` | string | no | server-assigned | The disputed charge |
+| `merchant_id` | string | no | server-assigned | |
+| `amount` | integer | no | server-managed | Disputed amount in cents |
+| `currency` | string | no | server-managed | |
+| `status` | enum | no | server-managed | `warning_needs_response`, `needs_response`, `under_review`, `won`, `lost`, `refunded` |
+| `reason` | enum | no | server-managed | `fraudulent`, `duplicate`, `credit_not_processed`, `general`, `other` |
+| `evidence_due_by` | timestamp | no | server-managed | Hard deadline for evidence submission |
+| `evidence` | object | yes | yes | See evidence fields below |
+| `metadata` | object | yes | yes | |
+| `created_at` | timestamp | no | server-managed | |
+| `resolved_at` | timestamp | yes | server-managed | When dispute reached terminal status |
+
+Evidence object fields: `customer_email_address`, `customer_purchase_ip`, `customer_signature` (URL), `receipt` (URL), `service_documentation` (URL), `shipping_documentation` (URL), `refund_policy` (URL), `customer_communication` (URL), `uncategorized_text` (free text), `uncategorized_file` (URL).
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/disputes` | List disputes |
+| GET | `/v1/disputes/:id` | Retrieve a dispute |
+| PATCH | `/v1/disputes/:id` | Update evidence |
+| POST | `/v1/disputes/:id/close` | Accept the dispute (merchant concedes, customer refunded) |
+
+### Webhook events
+
+- `dispute.created` — Data: full dispute object.
+- `dispute.updated` — Data: full dispute object. Also fired 72 hours before evidence_due_by as a reminder.
+- `dispute.closed` — Data: full dispute object with resolved_at and terminal status.
+
+### Special considerations
+
+- **Evidence deadline:** Once `evidence_due_by` passes, the dispute is auto-lost. The engine fires `dispute.updated` 72 hours before the deadline as a reminder.
+- **Evidence file size:** Each evidence file must be ≤ 50MB. Error code `DISPUTE_EVIDENCE_TOO_LARGE` if exceeded.
+
+---
+
+## RESOURCE: CHECKOUT SESSIONS
+
+### Identity
+
+- Resource name: Checkout Session
+- Identifier prefix: `cs_*`
+- Plural endpoint: `/v1/checkout-sessions`
+
+### Description
+
+A checkout session is a temporary token issued to the consumer's frontend for initiating a Payroc Hosted Fields iframe. The session binds an expected charge amount to a tokenization flow.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `cs_<base62>` |
+| `merchant_id` | string | no | server-assigned | |
+| `amount` | integer | no | yes | Expected charge amount in cents |
+| `currency` | string | no | yes | |
+| `customer_id` | string | yes | yes | If charging a saved customer |
+| `customer_email` | string | yes | yes | For receipt |
+| `customer_phone` | string | yes | yes | For receipt SMS |
+| `return_url` | string | no | yes | Where to redirect after completion |
+| `cancel_url` | string | yes | yes | Where to redirect on cancel |
+| `status` | enum | no | server-managed | `open`, `completed`, `expired` |
+| `session_token` | string | no | server-managed | Opaque token to pass to Hosted Fields — single-use |
+| `expires_at` | timestamp | no | server-managed | 30 minutes after creation by default |
+| `completed_at` | timestamp | yes | server-managed | |
+| `charge_id` | string | yes | server-managed | Populated when session completes successfully |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/checkout-sessions` | List sessions |
+| GET | `/v1/checkout-sessions/:id` | Retrieve a session |
+| POST | `/v1/checkout-sessions` | Create a session |
+| POST | `/v1/checkout-sessions/:id/expire` | Manually expire a session (idempotent) |
+
+### Webhook events
+
+- `checkout_session.created` — Data: full session object with status=open.
+- `checkout_session.completed` — Data: full session object with status=completed and charge_id populated.
+- `checkout_session.expired` — Data: full session object with status=expired.
+
+### Special considerations
+
+- **Session expiry:** Sessions expire 30 minutes after creation. The `session_token` is single-use — once Hosted Fields tokenizes a card with it, the token is invalidated.
+- **Error codes:** `CHECKOUT_SESSION_EXPIRED` if attempting to use an expired session. `CHECKOUT_SESSION_ALREADY_USED` if the session_token was already consumed.
+
+---
+
+## RESOURCE: TRANSACTIONS (read-only aggregate view)
+
+### Identity
+
+- Resource name: Transaction
+- No dedicated identifier prefix — transactions reference the underlying resource ID (ch_*, re_*, po_*)
+- Plural endpoint: `/v1/transactions`
+
+### Description
+
+A unified read view combining charges, refunds, and payouts for reporting and ledger purposes. This resource exists so consumers can build a transaction ledger without making three separate API calls.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | — | The underlying resource ID (ch_*, re_*, po_*) |
+| `merchant_id` | string | no | — | |
+| `type` | enum | no | — | `charge`, `refund`, `payout` |
+| `amount` | integer | no | — | Signed: positive for charges, negative for refunds and payouts |
+| `currency` | string | no | — | |
+| `status` | string | no | — | Status of the underlying resource |
+| `customer_id` | string | yes | — | If applicable |
+| `description` | string | yes | — | From the underlying resource |
+| `created_at` | timestamp | no | — | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/transactions` | List transactions (the only operation) |
+| GET | `/v1/transactions/:id` | Retrieve — returns the underlying resource in its native shape |
+
+### Filtering and sorting
+
+- `type` — `charge`, `refund`, `payout` (single or comma-separated)
+- `status` — single or comma-separated
+- `customer_id` — exact match
+- `amount_gte`, `amount_lte` — amount range (applies to absolute value)
+- `created_after`, `created_before` — date range
+- `sort` — `created.desc` (default, only)
+
+### Special considerations
+
+- **Read-only:** No create, update, or delete operations. The underlying resources fire their own webhooks.
+- **Unified cursor:** Pagination uses a single cursor across the three underlying tables, sorted by created_at descending.
+
+---
+
+## RESOURCE: REPORTS (engine-side aggregations)
+
+### Identity
+
+- Resource name: Report
+- No identifier prefix — reports are computed views, not stored entities
+- Base endpoint: `/v1/reports`
+
+### Description
+
+Pre-computed aggregations the engine produces for consumer convenience. Reports endpoints return structured objects with computed aggregations. They are stateless computations on every request.
+
+### Available reports
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /v1/reports/revenue` | Revenue summary by period |
+| `GET /v1/reports/fees` | Engine fees collected by period |
+| `GET /v1/reports/settlements` | Daily settlement summaries per merchant |
+| `GET /v1/reports/disputes` | Dispute volumes and outcomes by period |
+| `GET /v1/reports/payouts` | Payout summaries by period |
+
+### Common query parameters
+
+- `period` — `daily`, `weekly`, `monthly`, `yearly`
+- `date_after`, `date_before` — date range
+
+### Special considerations
+
+- **Rate limit:** Reports endpoints are limited to 10 requests/minute per merchant, regardless of overall tier. The engine MAY cache report results for up to 60 seconds — consumers SHOULD treat responses as eventually-consistent.
+- **No webhooks:** Reports are stateless computations. No webhook events.
+
+---
+
+## RESOURCE: API KEYS
+
+### Identity
+
+- Resource name: API Key
+- Identifier prefix: `ak_*`
+- Plural endpoint: `/v1/api-keys`
+
+### Description
+
+Management of the API keys consumers use to authenticate. API keys are either merchant-scoped (regular tokens, prefix `rpsk_*`) or platform-scoped (platform tokens, prefix `rpsp_*`).
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `ak_<base62>` |
+| `merchant_id` | string | yes | server-assigned | Null for platform tokens |
+| `platform_id` | string | yes | server-assigned | Null for regular tokens |
+| `prefix` | string | no | server-managed | `rpsk_live`, `rpsk_test`, `rpsp_live`, `rpsp_test` |
+| `scope` | array | no | yes | Array of: `read`, `write`, `admin`, `webhooks`, `reports` |
+| `description` | string | yes | yes | Human-readable description |
+| `last_used_at` | timestamp | yes | server-managed | |
+| `last_used_ip` | string | yes | server-managed | |
+| `revoked_at` | timestamp | yes | server-managed | Set on DELETE |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/api-keys` | List API keys (metadata only — never returns the token value) |
+| GET | `/v1/api-keys/:id` | Retrieve an API key's metadata |
+| POST | `/v1/api-keys` | Create an API key — returns the plaintext token ONCE, never again |
+| DELETE | `/v1/api-keys/:id` | Revoke an API key (sets revoked_at; the key immediately stops working) |
+
+### Special considerations
+
+- **Plaintext shown once:** The plaintext token is returned ONLY on creation in the response body's `token` field. After that, only the metadata is accessible. Lost tokens cannot be recovered — they must be revoked and replaced.
+- **No webhooks:** API key management is a meta-resource; no consumer webhook subscription needed.
+
+---
+
+## RESOURCE: WEBHOOKS
+
+### Identity
+
+- Resource name: Webhook
+- Identifier prefix: `we_*`
+- Plural endpoint: `/v1/webhooks`
+
+### Description
+
+Consumer-managed webhook endpoint subscriptions. Consumers register HTTPS endpoints to receive event notifications from the engine.
+
+### Schema
+
+| Field | Type | Nullable | Writable | Notes |
+|-------|------|----------|----------|-------|
+| `id` | string | no | server-assigned | Format `we_<base62>` |
+| `merchant_id` | string | yes | server-assigned | Null for platform-scoped subscriptions |
+| `platform_id` | string | yes | server-assigned | Null for merchant-scoped subscriptions |
+| `url` | string | no | yes (create-only) | HTTPS URL — HTTP rejected with `WEBHOOK_URL_INSECURE` |
+| `event_types` | array | no | yes | Array of event type strings, or `["*"]` for all events |
+| `active` | boolean | no | yes | Can be toggled without deletion |
+| `description` | string | yes | yes | |
+| `signing_secret_last4` | string | no | server-managed | Last 4 chars of signing secret (full secret shown once at creation) |
+| `last_delivery_at` | timestamp | yes | server-managed | |
+| `last_delivery_status` | string | yes | server-managed | HTTP status code of last delivery attempt |
+| `created_at` | timestamp | no | server-managed | |
+
+### Operations
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/webhooks` | List webhook subscriptions |
+| GET | `/v1/webhooks/:id` | Retrieve a subscription |
+| POST | `/v1/webhooks` | Create a subscription (returns signing_secret once) |
+| PATCH | `/v1/webhooks/:id` | Update (toggle active, change event_types — URL cannot be changed; create a new subscription) |
+| DELETE | `/v1/webhooks/:id` | Delete a subscription |
+| GET | `/v1/webhooks/:id/deliveries` | Delivery history (last 30 days) |
+| POST | `/v1/webhooks/:id/deliveries/:delivery_id/replay` | Manual replay of a past delivery |
+
+### Special considerations
+
+- **URL immutability:** The `url` field cannot be PATCHed after creation. To change the URL, create a new subscription and delete the old one. This prevents accidental routing changes on active webhook pipelines.
+- **Signing secret:** Shown once at creation. Last 4 chars available in `signing_secret_last4` for identification. Cannot be rotated — create a new subscription to get a new secret.
+- **No meta-webhooks:** Webhook management does not itself fire webhooks (except the system events `webhook.delivery_succeeded` and `webhook.delivery_failed_persistent` defined in Tier 1).
+
+---
+
+## CHANGE LOG
+
+| Tier | Change |
+|------|--------|
+| Tier 1 (Phase 0.9-a) | Foundation established: versioning, auth, idempotency, errors, pagination, rate limits, webhooks, HATEOAS, OpenAPI, common conventions. |
+| Tier 2 (Phase 0.9-b) | Resource definitions added: Merchants, Customers, Cards, Bank Tokens, Charges, Refunds, Voids, Payouts, Disputes, Checkout Sessions, Transactions, Reports, API Keys, Webhooks. Platform-token mechanism defined. Resource-specific error codes added. |
+
+---
+
+## OUT OF SCOPE FOR TIERS 1+2
+
+The following are deliberately deferred to later tiers and SHALL NOT be addressed in implementation work that uses this Tiers 1+2 doc:
+
 - SLA, latency budgets, uptime commitments — Tier 3
 - Data residency, compliance posture (PCI, SOC 2 roadmap), audit log retention — Tier 3
 - Sandbox test card numbers and failure simulation — Tier 3
@@ -803,4 +1731,4 @@ The following are deliberately deferred to later tiers and SHALL NOT be addresse
 - Agent-native deep design (MCP server commitment, agent audit logs, per-agent rate limits, semantic enhancement) — Tier 4
 - SDKs, client libraries, OpenAPI-derived code generation — Tier 3
 
-The SalonTransact engineering team SHOULD NOT implement endpoints in Tier 2 areas until Tier 2 is published. Tier 1 supports building the common infrastructure (auth middleware, idempotency store, error formatter, rate limiter, webhook signer, OpenAPI generator) that all Tier 2 endpoints will use.
+The SalonTransact engineering team can now implement both the common infrastructure (auth middleware, idempotency store, error formatter, rate limiter, webhook signer, OpenAPI generator) AND the resource endpoints defined in Part II. Tier 3+4 will complete the spec with non-functional requirements and agent-native extensions.
