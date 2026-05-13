@@ -12,7 +12,7 @@
 
 PR #32 (Phase 0.7-a) brought components/layout/Sidebar.tsx visual styling into compliance with the locked design system in KASSE_UI_PRINCIPLES.md. That PR fixed colors only — it did not change nav structure.
 
-However, the locked sidebar IA in KASSE_PORTAL_ARCHITECTURE.md is substantially more comprehensive than what's currently in nav-items.ts. The current code ships approximately 12 nav items across 6 sections; the locked spec defines approximately 25+ nav items across 7 sections, with role-based visibility, vertical-conditional sections, notification badging, location switching, and franchise/payroll/banking features that don't exist in code at all.
+However, the locked sidebar IA in KASSE_PORTAL_ARCHITECTURE.md is substantially more comprehensive than what's currently in nav-items.ts. The current code ships approximately 12 nav items across 6 sections; the locked spec defines 25+ nav items across 7 sections, with role-based visibility, vertical-conditional sections, notification badging, location switching, and franchise/payroll/banking features that don't exist in code at all.
 
 This document enumerates every gap, assigns each a priority, estimates implementation scope, and provides the gap-closure roadmap. Each gap is a candidate for a future PR (Phase 0.8-c onward).
 
@@ -23,7 +23,7 @@ This document is LIVING. As gaps are closed, the corresponding rows are updated 
 ## METHODOLOGY
 
 This audit is grounded in three sources of truth:
-- The CURRENT CODE: components/layout/Sidebar.tsx, components/layout/BottomNav.tsx, components/layout/nav-items.ts as of commit 73dd254 (PR #34 merge — Phase 0.8-a fix3)
+- The CURRENT CODE: components/layout/Sidebar.tsx, components/layout/BottomNav.tsx, components/layout/nav-items.ts as of the merge of PR #34 (Phase 0.8-a — KASSE_ENGINE_BOUNDARY.md). The specific commit hash at the time of this audit is not pinned to avoid staleness; any future refresh of this audit should re-baseline against the then-current main branch and update this line.
 - The LOCKED SPEC: docs/KASSE_PORTAL_ARCHITECTURE.md "SIDEBAR NAVIGATION — FULL STRUCTURE" section + the entire "PAGE-BY-PAGE SPECIFICATION" section
 - The CROSS-CUTTING SPECS: docs/KASSE_PORTALS.md (VerticalConfig system), docs/KASSE_FRANCHISE_SYSTEM.md (franchise nav), docs/KASSE_TIERS.md (plan gating)
 
@@ -119,11 +119,13 @@ The locked spec defines additional sidebar infrastructure beyond just nav items.
 |------------------------|-------------------|---------------------|-----|----------|
 | Location switcher | Dropdown at top for multi-location merchants. Spec shows "All Locations ▾" next to wordmark. | MISSING — no location switcher anywhere in Sidebar.tsx. The Organization model supports multiple Locations (schema has Location table with organizationId FK), but there is no UI for switching between them. | Need: location dropdown component + context for selected location + filtering all queries by locationId. Multi-location is a Phase 1+ concern but the UI hook should exist early. | P1 |
 | Notification badge counts | Numeric or alert badges on nav items (unread messages, pending appointments). Spec "Notification center" section: "Bell icon in topbar with unread count badge." | PARTIAL — Bell icon exists in bottom utility row (line 169) but has no count badge and no notification dropdown. No badge counts on individual nav items (Messages, Appointments). | Need: unread count query for Messages + pending count for Appointments + badge rendering on nav items. Bell icon needs notification dropdown panel. | P1 |
-| Powered by SalonTransact footer | Non-removable footer label per SD-K-010 (KASSE_STRATEGIC_DECISIONS.md). Per KASSE_ENGINE_BOUNDARY.md, required on all payment-adjacent screens. | MISSING — no "Powered by SalonTransact" text anywhere in Sidebar.tsx. The sidebar is visible on all dashboard pages including payment-adjacent ones (POS, Banking when added). | Need: small text label in sidebar footer area. XS implementation. | P1 |
+| Powered by SalonTransact footer | Non-removable footer label per SD-K-010 (KASSE_STRATEGIC_DECISIONS.md). Per KASSE_ENGINE_BOUNDARY.md, required on all payment-adjacent screens. | MISSING — no "Powered by SalonTransact" text anywhere in Sidebar.tsx. The sidebar is visible on all dashboard pages including payment-adjacent ones (POS, Banking when added). | P0 — contractually required on every payment-adjacent screen per SD-K-010 (KASSE_STRATEGIC_DECISIONS.md) and reaffirmed in KASSE_ENGINE_BOUNDARY.md. The sidebar is rendered on every dashboard page including payment-adjacent ones (POS, Banking when added, Payments & Invoices). Merchant #1 cannot be onboarded without this label present. Implementation scope is XS (single component addition to the bottom of Sidebar.tsx) so there is no engineering cost to front-loading it. | P0 |
 | Sidebar collapse/expand | Icons-only mode for narrow viewports. Standard SaaS pattern — sidebar collapses to ~56px width showing only icons. | MISSING — sidebar is fixed 220px width with no collapse mechanism. On mobile, sidebar is hidden entirely and BottomNav.tsx takes over. No intermediate "icons-only" state for tablet-sized viewports. | Need: collapse state + toggle button + icon-only rendering mode. Nice-to-have. | P3 |
 | Current user identification | Bottom-of-sidebar avatar + role dropdown. Spec "Profile avatar" section: "Owner avatar in topbar → dropdown: My Profile, Settings, Sign Out." | PARTIAL — Sign Out button exists in bottom utility row. No avatar, no user name display, no role indicator, no dropdown menu. The `user` prop has name/email/image but they are not rendered. | Need: avatar component + name display + role badge + dropdown with profile/settings/sign-out. | P2 |
 | Search input | Top-of-sidebar search field anchor. Spec "Search (global)": "cmd+K / ctrl+K opens search from anywhere." | PRESENT — search input exists at top of sidebar (lines 76-88). However, it is a static `<input>` with no functionality — no cmd+K binding, no search logic, no results dropdown. The input is visual-only. | Need: wire search input to global search. cmd+K shortcut. Results panel. This is a substantial feature (M scope) beyond just the sidebar. | P2 |
 | Take payment CTA | Bottom CTA opening POS. | PRESENT — "Take payment" button exists linking to /dashboard/pos (lines 156-164). Styled with brand color, CreditCard icon. Matches spec intent. | — | — |
+
+Authority note: The "Powered by SalonTransact" footer is authoritatively required by SD-K-010 (the strategic decision lock in KASSE_STRATEGIC_DECISIONS.md) AND by KASSE_ENGINE_BOUNDARY.md (the implementation contract that carries the requirement forward to all payment-adjacent screens). Both are authoritative; they do not contradict. SD-K-010 establishes WHY the label exists (reseller contract obligation, non-removable). KASSE_ENGINE_BOUNDARY.md establishes WHERE the label must appear (every payment-adjacent screen, including the sidebar visible across all dashboard pages).
 
 ---
 
@@ -171,18 +173,28 @@ Each PR in the roadmap should be:
 - Independently mergeable (no cross-dependencies on other roadmap PRs except where noted)
 - Verifiable via smoke tests + visual check
 
+---
+
+STANDING REMINDER FOR ALL IMPLEMENTATION PRs IN THIS ROADMAP
+
+Most rows in this roadmap will create new route shells in `app/dashboard/*` and corresponding API routes in `app/api/*`. Per the tenant-scoping policy documented in docs/RLS_AUDIT.md, every new route added to `app/api/*` MUST be classified in RLS_AUDIT.md (as TENANT_SCOPED, BYPASS_NEEDED, or PRE_SESSION) in the same PR that creates the route. Reviewer will flag any PR that adds an API route without updating RLS_AUDIT.md.
+
+This standing reminder is in effect for every PR in this roadmap. Implementing engineers should not need to be reminded individually per PR — the reminder is here as the canonical reference.
+
+---
+
 Roadmap (proposed sequencing):
 
 | PR # | Phase ID | What | Depends on | Priority | Estimate |
 |------|----------|------|------------|----------|----------|
-| 1 | 0.8-c | Add FINANCIAL section (Banking, Bill Pay, P&L) — owner-only with empty-state route shells. This PR bootstraps the role-based nav filtering mechanism (extend NavItem with `roles` array, filter in Sidebar.tsx render loop). | none | P0 | M |
-| 2 | 0.8-d | Add Payroll + Time & Attendance to TEAM section — owner-only with empty-state route shells | 0.8-c (role-gating mechanism) | P0 | M |
-| 3 | 0.8-e | Add notification badge counts to existing nav items (unread messages count from Message table) | none | P1 | S |
-| 4 | 0.8-f | Add location switcher dropdown for multi-location merchants | none | P1 | S |
-| 5 | 0.8-g | Add Gift Cards & Loyalty nav item to GROWTH section with empty-state route | none | P1 | XS |
-| 6 | 0.8-h | Add "Powered by SalonTransact" footer to sidebar per SD-K-010 | none | P1 | XS |
+| 1 | 0.8-c | Add "Powered by SalonTransact" footer to sidebar per SD-K-010 + KASSE_ENGINE_BOUNDARY.md | none | P0 | XS |
+| 2 | 0.8-d | Add FINANCIAL section (Banking, Bill Pay, P&L) — owner-only with empty-state route shells. This PR bootstraps the role-based nav filtering mechanism (extend NavItem with `roles` array, filter in Sidebar.tsx render loop). | none | P0 | M |
+| 3 | 0.8-e | Add Payroll + Time & Attendance to TEAM section — owner-only with empty-state route shells | 0.8-d (role-gating mechanism) | P0 | M |
+| 4 | 0.8-f | Add notification badge counts to existing nav items (unread messages count from Message table) | none | P1 | S |
+| 5 | 0.8-g | Add location switcher dropdown for multi-location merchants | none | P1 | S |
+| 6 | 0.8-h | Add Gift Cards & Loyalty nav item to GROWTH section with empty-state route | none | P1 | XS |
 | 7 | 0.8-i | Mobile BottomNav: reorder tabs to match spec + implement "More" drawer with full nav | none | P1 | S |
-| 8 | 0.8-j | Mobile BottomNav: add badge counts to tabs (unread messages, pending appointments) | 0.8-e (badge count data source) | P1 | XS |
+| 8 | 0.8-j | Mobile BottomNav: add badge counts to tabs (unread messages, pending appointments) | 0.8-f (badge count data source) | P1 | XS |
 | 9 | 0.8-k | Add Color Studio nav item (salon/nail conditional) with empty-state route | requires vertical-conditional mechanism (can use simple Organization.businessType check as interim) | P2 | S |
 | 10 | 0.8-l | Add Forms & Waivers nav item (vertical-conditional) with empty-state route | requires vertical-conditional mechanism | P2 | S |
 | 11 | 0.8-m | Add user avatar + name + role display to sidebar bottom area | none | P2 | S |
@@ -192,7 +204,7 @@ Roadmap (proposed sequencing):
 | 15 | 0.8-q | Add sidebar collapse/expand state for narrow viewports | none | P3 | S |
 | 16 | 0.8-r | Add Franchise section (entire feature area — likely multiple sub-PRs) | major schema additions per KASSE_FRANCHISE_SYSTEM.md | P3 (Phase 7) | L |
 
-This roadmap is a RECOMMENDATION, not a commitment. Robert may re-order based on actual business priorities (e.g., bumping #6 to first if reseller demos are imminent).
+This roadmap is a RECOMMENDATION, not a commitment. Robert may re-order based on actual business priorities.
 
 ---
 
