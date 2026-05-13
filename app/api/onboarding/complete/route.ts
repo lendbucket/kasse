@@ -12,6 +12,7 @@ import {
 } from "@/lib/tenant/allowlists";
 import { Resend } from "resend";
 import crypto from "crypto";
+import { redactRoutingNumber, redactEIN, redactName } from "@/lib/redact";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -125,6 +126,38 @@ export async function POST(request: NextRequest) {
     const bizType = data.businessType?.replace(/_/g, " ") || "Unknown";
     const paymentMethodLabels = (data.paymentMethods || []).join(", ");
 
+    // EMAIL CONTENT AUDIT (Phase 0.6-a, last updated Phase 0.6-a-fix2):
+    //
+    // Banking PII fields — REDACTED in this email:
+    //   - Account Holder (via redactName, shows first-char-per-word)
+    //   - Routing Number (via redactRoutingNumber, shows last 4 digits)
+    //   - EIN            (via redactEIN, shows last 4 digits with EIN hyphen format)
+    //
+    // Banking/KYC fields — NEVER included in this email at all:
+    //   - Account Number (data.account / data.bankAccount)
+    //   - SSN-last-4     (data.ssnLast4)
+    //   - Owner DOB      (data.dob*)
+    //   - Owner SSN      (data.ssn — never collected anyway)
+    //
+    // Non-banking fields — DELIBERATELY UNREDACTED in this email:
+    //   - Legal Name     (data.legalName) — business legal name is public information
+    //                    (registered with state, appears in DBA filings, etc.)
+    //                    Not classified as PII under SD-K-008's scope.
+    //   - Phone Number   (data.phone) — business phone number, listed publicly on
+    //                    Google/Yelp/website. Used to call the merchant if their
+    //                    application needs follow-up. Not classified as personal PII.
+    //   - Business Type, DBA, Address, City/State/Zip, Owner Name (first/last),
+    //     Owner Title, Ownership %, Account Type, Funding Speed, Volume, Avg Tx,
+    //     Payment Methods — all business/non-sensitive context for application review.
+    //
+    // If a future PR introduces ANY field from the "NEVER included" list into the
+    // email template, it MUST apply the corresponding redaction helper from
+    // lib/redact.ts OR remove the field entirely. Same goes for re-classifying any
+    // field from the "DELIBERATELY UNREDACTED" list as sensitive — update both
+    // SD-K-008 (KASSE_STRATEGIC_DECISIONS.md) and this audit comment in lockstep.
+    //
+    // The PII-redacted notice block at the bottom of the email body references
+    // these fields by name to make this contract explicit to email recipients.
     await resend.emails.send({
       from: "Kasse System <onboarding@kasseapp.com>",
       to: "ceo@36west.org",
@@ -144,7 +177,7 @@ export async function POST(request: NextRequest) {
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Legal Name</td><td style="padding:6px 0;color:white;font-size:14px;font-weight:500;text-align:right">${data.legalName}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">DBA</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.dbaName || "\u2014"}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Type</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${bizType}</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">EIN</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.ein}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">EIN</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactEIN(data.ein)}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Phone</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.phone}</td></tr>
       </table>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Owner</h3>
@@ -158,10 +191,10 @@ export async function POST(request: NextRequest) {
       <p style="color:white;font-size:14px;margin:0 0 24px">${data.address}, ${data.city}, ${data.state} ${data.zip}</p>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Banking</h3>
       <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Account Holder</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.bankHolder}</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Routing</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.routing}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Account Holder</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactName(data.bankHolder)}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Routing</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactRoutingNumber(data.routing)}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Type</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.accountType}</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Funding</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.fundingSpeed?.replace("_", " ")}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Funding</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.fundingSpeed?.replace(/_/g, " ")}</td></tr>
       </table>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Processing</h3>
       <table style="width:100%;border-collapse:collapse">
@@ -169,6 +202,13 @@ export async function POST(request: NextRequest) {
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Avg Transaction</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.avgTx}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Methods</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${paymentMethodLabels}</td></tr>
       </table>
+      <div style="margin-top:24px;padding:16px;background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.2);border-radius:6px">
+        <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.7);line-height:1.5">
+          <strong style="color:#fbbf24">PII Redaction (Phase 0.6-a)</strong><br/>
+          Banking and KYC fields shown above (EIN, routing number, account holder) are partially redacted in this email. The full unredacted values are stored in the production database — to view, query directly via Supabase SQL Editor, or wait for the admin Application Detail view (Phase 0.6-e).<br/><br/>
+          <strong style="color:#fbbf24">Never included in email:</strong> Bank account number, SSN-last-4, owner DOB. These are stored on the Organization row but never sent through email, even partially. At-rest encryption for sensitive fields is tracked under Phase 0.6-c.
+        </p>
+      </div>
     </div>
   </div>
 </body></html>`,

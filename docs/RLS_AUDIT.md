@@ -498,3 +498,25 @@ Triggered Vercel redeployment of the Kasse production deployment. New deployment
 | 0.5.3b-3d-e | Staged Vercel env vars for cutover. DATABASE_URL and DIRECT_URL changed to kasse_app credentials. New MIGRATION_DATABASE_URL added pointing at postgres for future migrations. No redeployment triggered — env vars saved but not loaded into running deployment. Production app behavior unchanged until PR #28f redeploy. |
 | 0.5.3b-3d-f | CUTOVER: Triggered Vercel redeployment. App now connects as kasse_app. RLS enforcing on every production query. Verified end-to-end via superadmin login + dashboard data load + pg_stat_activity confirmation of kasse_app connections. Zero errors. |
 | 0.5.3b-3d-g | Phase 0.5.3b complete. RLS rollout finished. Documentation finalized. |
+
+---
+
+# Phase 0.6 — Banking PII Hardening
+
+This phase addresses encryption-at-rest and email-redaction for banking and KYC fields stored on the Organization table. Per SD-K-008 (KASSE_STRATEGIC_DECISIONS.md), HIPAA-adjacent and sensitive financial data must be encrypted at the column level. Phase 0.5.3b (RLS) addressed *access control* — Phase 0.6 addresses *encryption*.
+
+## Phase 0.6 Status: IN PROGRESS
+
+| Sub-phase | What | Status |
+|-----------|------|--------|
+| 0.6-a | Redact banking PII in application submission email (lib/redact.ts + onboarding/complete route) | In Progress (this PR) |
+| 0.6-b | Architecture decision: Payroc tokenization vs KMS encryption for banking fields | Pending (awaiting Christopher Boutwell confirmation on Payroc bank tokenization API) |
+| 0.6-c | Implement at-rest encryption for sensitive Organization fields | Pending |
+| 0.6-d | Audit log every decryption operation | Pending |
+| 0.6-e | Admin Application Detail view (gated, audit-logged access to decrypted PII) | Pending |
+
+## Phase 0.6 Changelog
+
+| Sub-phase | Change |
+|-----------|--------|
+| 0.6-a | Created lib/redact.ts with masking utilities. Modified app/api/onboarding/complete/route.ts to redact routing number, EIN, and account holder name in application submission email. Added PII-redacted notice block to email body. No database schema changes. No change to data stored on Organization table. |
