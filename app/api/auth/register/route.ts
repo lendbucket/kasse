@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
         name,
         email: email.toLowerCase(),
         password: hashedPassword,
-        role: "owner",
+        role: "OWNER",
         organizationId: org.id,
         emailVerifyToken: verifyToken,
         emailVerifyExp: verifyExp,

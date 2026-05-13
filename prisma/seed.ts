@@ -84,6 +84,25 @@ async function main() {
   });
 
   console.log("Seeded organization + location + services + staff");
+
+  // P0.A.1: Ensure first user of each Organization is OWNER (idempotent)
+  // This handles legacy data where the org-creator may not have OWNER role
+  const orgs = await prisma.organization.findMany({
+    include: {
+      users: { orderBy: { createdAt: "asc" }, take: 1 },
+    },
+  });
+
+  for (const o of orgs) {
+    const firstUser = o.users[0];
+    if (firstUser && firstUser.role !== "OWNER") {
+      await prisma.user.update({
+        where: { id: firstUser.id },
+        data: { role: "OWNER" },
+      });
+      console.log(`P0.A.1: Promoted ${firstUser.email} to OWNER for org ${o.id}`);
+    }
+  }
 }
 
 main()

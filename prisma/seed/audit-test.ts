@@ -82,7 +82,7 @@ async function main() {
     update: {
       password: hash,
       organizationId: org.id,
-      role: "owner",
+      role: "OWNER",
       isActive: true,
       emailVerified: new Date(),
     },
@@ -90,7 +90,7 @@ async function main() {
       email: AUDIT_USER_EMAIL,
       name: "Audit Test User",
       password: hash,
-      role: "owner",
+      role: "OWNER",
       organizationId: org.id,
       emailVerified: new Date(),
       isActive: true,
