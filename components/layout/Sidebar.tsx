@@ -89,38 +89,45 @@ export default function Sidebar({ user }: SidebarProps) {
 
       {/* Sectioned Nav */}
       <nav style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
-        {NAV_SECTIONS.map((section) => (
-          <div key={section.label}>
-            <p style={{
-              padding: "12px 20px 4px", fontSize: 10, fontWeight: 700,
-              color: TEXT_LABEL, letterSpacing: "0.10em",
-              textTransform: "uppercase", margin: 0,
-            }}>{section.label}</p>
-            {section.items.map((item) => {
-              const active = item.href === "/dashboard"
-                ? pathname === "/dashboard"
-                : pathname.startsWith(item.href)
-              const Icon = item.icon
-              return (
-                <Link key={item.href} href={item.href} style={{
-                  height: 36, display: "flex", alignItems: "center", gap: 10,
-                  padding: "0 12px 0 17px", fontSize: 13, textDecoration: "none",
-                  fontWeight: active ? 600 : 500,
-                  color: active ? TEXT_ACTIVE : TEXT_INACTIVE,
-                  background: active ? SIDEBAR_BG_ACTIVE : "transparent",
-                  borderLeft: active ? `3px solid ${BRAND}` : "3px solid transparent",
-                  transition: "background 120ms, color 120ms",
-                }}>
-                  <Icon size={16} strokeWidth={1.75} style={{
-                    color: active ? TEXT_ACTIVE : TEXT_ICON_INACTIVE,
-                    flexShrink: 0,
-                  }} />
-                  {item.label}
-                </Link>
-              )
-            })}
-          </div>
-        ))}
+        {NAV_SECTIONS.map((section) => {
+          const visibleItems = section.items.filter((item) => {
+            if (!item.roles || item.roles.length === 0) return true
+            return item.roles.includes(user.role || "")
+          })
+          if (visibleItems.length === 0) return null
+          return (
+            <div key={section.label}>
+              <p style={{
+                padding: "12px 20px 4px", fontSize: 10, fontWeight: 700,
+                color: TEXT_LABEL, letterSpacing: "0.10em",
+                textTransform: "uppercase", margin: 0,
+              }}>{section.label}</p>
+              {visibleItems.map((item) => {
+                const active = item.href === "/dashboard"
+                  ? pathname === "/dashboard"
+                  : pathname.startsWith(item.href)
+                const Icon = item.icon
+                return (
+                  <Link key={item.href} href={item.href} style={{
+                    height: 36, display: "flex", alignItems: "center", gap: 10,
+                    padding: "0 12px 0 17px", fontSize: 13, textDecoration: "none",
+                    fontWeight: active ? 600 : 500,
+                    color: active ? TEXT_ACTIVE : TEXT_INACTIVE,
+                    background: active ? SIDEBAR_BG_ACTIVE : "transparent",
+                    borderLeft: active ? `3px solid ${BRAND}` : "3px solid transparent",
+                    transition: "background 120ms, color 120ms",
+                  }}>
+                    <Icon size={16} strokeWidth={1.75} style={{
+                      color: active ? TEXT_ACTIVE : TEXT_ICON_INACTIVE,
+                      flexShrink: 0,
+                    }} />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </div>
+          )
+        })}
 
         {user.role === "superadmin" && (
           <div>

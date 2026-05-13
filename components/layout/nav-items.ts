@@ -14,6 +14,9 @@ import {
   Megaphone,
   Star,
   Phone,
+  Landmark,
+  Receipt,
+  LineChart,
   type LucideIcon,
 } from "lucide-react"
 
@@ -21,6 +24,7 @@ export type NavItem = {
   label: string
   href: string
   icon: LucideIcon
+  roles?: string[]  // If undefined, visible to all roles. If set, only users whose role is in this array see the item.
 }
 
 export type NavSection = {
@@ -51,6 +55,14 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Staff", href: "/dashboard/staff", icon: UserCog },
       { label: "Services & items", href: "/dashboard/services", icon: Tag },
+    ],
+  },
+  {
+    label: "FINANCIAL",
+    items: [
+      { label: "Banking", href: "/dashboard/banking", icon: Landmark, roles: ["owner", "superadmin"] },
+      { label: "Bill Pay", href: "/dashboard/bill-pay", icon: Receipt, roles: ["owner", "superadmin"] },
+      { label: "Profit & Loss", href: "/dashboard/profit-loss", icon: LineChart, roles: ["owner", "superadmin"] },
     ],
   },
   {
