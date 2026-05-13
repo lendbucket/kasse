@@ -405,6 +405,7 @@ Authentication / Authorization (additions):
 - `PLATFORM_TOKEN_REQUIRED` — operation is platform-scope-only, regular token used
 - `ON_BEHALF_OF_REQUIRED` — operation requires X-Reyna-Pay-On-Behalf-Of header on platform token
 - `ON_BEHALF_OF_NOT_ALLOWED` — header provided on non-platform token
+- `MERCHANT_NOT_OWNED` — platform token attempting operation on a merchant not boarded under this platform
 
 Merchant-related:
 - `MERCHANT_NOT_BOARDED` — operation requires boarded merchant, current status is not `boarded`
@@ -443,6 +444,8 @@ Webhook-related:
 Checkout session:
 - `CHECKOUT_SESSION_EXPIRED` — session past expires_at
 - `CHECKOUT_SESSION_ALREADY_USED` — session_token already consumed
+- `CHECKOUT_SESSION_REDIRECT_URL_NOT_ALLOWED` — return_url or cancel_url scheme is not https, OR host is not in merchant's redirect_domains allowlist
+- `CHECKOUT_SESSION_REDIRECT_URL_MALFORMED` — URL cannot be parsed as a valid URL
 
 ### Error message guidelines
 
@@ -839,7 +842,16 @@ Every resource definition follows an identical template for consistency. The tem
 
 - **Resource name and identifier prefix** (e.g., Charges, prefix `ch_`)
 - **Description and use cases**
-- **Schema** — every field, its type, whether it's nullable, whether it's writable, whether it appears on creation only
+- **Schema** — every field, with the following columns:
+    - **Type** — string, integer, boolean, timestamp, enum, array, object
+    - **Nullable** — `yes` if the field can be null in responses, `no` if it is always present
+    - **Writable** — one of:
+      - `yes` — consumer can set this field via POST or PATCH
+      - `no` — read-only, consumer cannot set
+      - `server-assigned` — the engine assigns this field on create; consumer cannot override
+      - `server-managed` — the engine maintains this field over time (e.g., `updated_at`)
+      - `yes (write-once)` — consumer can set on POST, but PATCH attempts to change it return `MERCHANT_FIELD_NOT_WRITABLE` (or the equivalent per-resource error)
+    - **Notes** — anything special about the field (e.g., format constraints, encryption-at-rest requirements, special validation rules)
 - **Operations** — list, retrieve, create, update, delete, and resource-specific actions
 - **Filtering and sorting** — for list endpoints
 - **Expansion** — which related resources can be inlined via the `expand` parameter
@@ -936,6 +948,7 @@ Until step 4 completes, the merchant cannot process charges. Webhook events fire
 | `payment_volume_monthly_estimate` | integer | no | yes | Estimated monthly volume in cents |
 | `avg_transaction_estimate` | integer | no | yes | Estimated average transaction in cents |
 | `accepts_payment_methods` | array | no | yes | List of methods: `card_present`, `card_not_present`, `ach`, `cash`, `gift_card` |
+| `redirect_domains` | array of string | no | yes | Allowlist of fully-qualified domain names that Checkout Sessions can redirect to. Max 10 entries. Exact host match only (no wildcards). Each entry is a hostname like `app.kasseapp.com`. Required to use Checkout Sessions resource. |
 | `boarding_status` | enum | no | server-managed | One of: `submitted`, `under_review`, `approved`, `boarded`, `rejected`, `suspended` |
 | `boarding_status_reason` | string | yes | server-managed | Human-readable explanation when status is `rejected` or `suspended` |
 | `boarded_at` | timestamp | yes | server-managed | When merchant became `boarded` |
@@ -993,6 +1006,7 @@ Status `suspended`: `self`, `reinstate` (POST — admin-only)
 - **PII encryption at rest:** `ein`, `owner_ssn_last4`, `owner_dob` are encrypted at the database level. The engine MUST never store these in plaintext, even temporarily. AWS KMS envelope encryption is the required pattern per KASSE_PII_ENCRYPTION.md.
 - **PCI scope:** Merchants do NOT carry card-storage scope; that lives on Customers and Cards resources. Merchant boarding does include bank account info but only via a `bank_token_id` reference — the engine vaults the underlying bank account in Bank Tokens, never on the Merchant directly.
 - **Tenant isolation:** A merchant can NEVER see another merchant's data. Platform-token consumers (Kasse, etc.) can see all merchants under their platform via the list endpoint or `X-Reyna-Pay-On-Behalf-Of` per-merchant on singular endpoints.
+- **redirect_domains allowlist:** Required if the merchant intends to use Checkout Sessions. The engine validates Checkout Session `return_url` and `cancel_url` against this list. See Checkout Sessions Special considerations for the validation rules.
 
 ---
 
@@ -1218,7 +1232,7 @@ A charge is a payment processed through Reyna Pay. This is the core payment-proc
 | GET | `/v1/charges/:id` | Retrieve a charge |
 | POST | `/v1/charges` | Create a charge (process a payment) |
 | POST | `/v1/charges/:id/capture` | Capture an authorized charge (when original was created with capture=false) |
-| POST | `/v1/charges/:id/void` | Void a same-day charge before settlement |
+| POST | `/v1/charges/:id/void` | Void a same-day charge before settlement. See RESOURCE: VOIDS for the full Void resource spec. This endpoint and the Voids resource's POST endpoint are the same implementation — referenced in two places for discoverability. |
 | POST | `/v1/charges/:id/refunds` | Create a refund against this charge (convenience alias for POST /v1/refunds) |
 
 ### Filtering and sorting
@@ -1355,8 +1369,8 @@ A void cancels an authorization before settlement. Voids are only possible befor
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/v1/charges/:charge_id/void` | Retrieve the void for a charge (if one exists) |
-| POST | `/v1/charges/:charge_id/void` | Create a void |
+| GET | `/v1/charges/:charge_id/void` | Retrieve the void for a charge, if one exists. Returns 404 if the charge has not been voided. |
+| POST | `/v1/charges/:charge_id/void` | Create a void. The endpoint defined here is the same endpoint listed under RESOURCE: CHARGES → Operations. There is one implementation; two spec references for discoverability (consumers may approach this via "I want to void a charge" or via "I want to create a Void resource" — both arrive at the same endpoint). |
 
 ### Webhook events
 
@@ -1510,8 +1524,8 @@ A checkout session is a temporary token issued to the consumer's frontend for in
 | `customer_id` | string | yes | yes | If charging a saved customer |
 | `customer_email` | string | yes | yes | For receipt |
 | `customer_phone` | string | yes | yes | For receipt SMS |
-| `return_url` | string | no | yes | Where to redirect after completion |
-| `cancel_url` | string | yes | yes | Where to redirect on cancel |
+| `return_url` | string | no | yes | Where to redirect after completion. MUST be HTTPS. MUST match the merchant's registered redirect_domains allowlist (see Merchants resource). |
+| `cancel_url` | string | yes | yes | Where to redirect on cancel. MUST be HTTPS. MUST match the merchant's registered redirect_domains allowlist. |
 | `status` | enum | no | server-managed | `open`, `completed`, `expired` |
 | `session_token` | string | no | server-managed | Opaque token to pass to Hosted Fields — single-use |
 | `expires_at` | timestamp | no | server-managed | 30 minutes after creation by default |
@@ -1536,6 +1550,7 @@ A checkout session is a temporary token issued to the consumer's frontend for in
 
 ### Special considerations
 
+- **Redirect URL allowlisting (security):** The `return_url` and `cancel_url` fields MUST be validated against the merchant's registered `redirect_domains` allowlist (a field on the Merchant resource — see Merchants schema). The engine MUST reject any URL whose scheme is not `https` or whose host component does not exactly match one of the entries in the allowlist. Without this validation, the Checkout Session redirect mechanism becomes an open-redirect vector that attackers can exploit for phishing — particularly dangerous because the redirect follows a payment flow, placing the victim in a maximum-trust context immediately after legitimate authentication. Error codes: `CHECKOUT_SESSION_REDIRECT_URL_NOT_ALLOWED` (scheme not https or host not in allowlist), `CHECKOUT_SESSION_REDIRECT_URL_MALFORMED` (URL cannot be parsed). The merchant configures their allowlist via the Merchants resource's `redirect_domains` field (a string array, max 10 entries, each a fully-qualified domain name like `app.kasseapp.com`). Wildcards are NOT supported — exact host match only. Subdomains MUST be explicitly listed.
 - **Session expiry:** Sessions expire 30 minutes after creation. The `session_token` is single-use — once Hosted Fields tokenizes a card with it, the token is invalidated.
 - **Error codes:** `CHECKOUT_SESSION_EXPIRED` if attempting to use an expired session. `CHECKOUT_SESSION_ALREADY_USED` if the session_token was already consumed.
 
@@ -1587,6 +1602,7 @@ A unified read view combining charges, refunds, and payouts for reporting and le
 
 - **Read-only:** No create, update, or delete operations. The underlying resources fire their own webhooks.
 - **Unified cursor:** Pagination uses a single cursor across the three underlying tables, sorted by created_at descending.
+- **Sort restricted to `created.desc`:** Transactions is a multi-table cursor view (joining charges + refunds + payouts). Maintaining cursor integrity across three underlying tables with potentially different sort keys is impractical at scale — the cursor would have to encode positions in all three tables and the relative offsets between them. Sort is therefore limited to `created.desc` (the natural insertion order across all three tables). Consumers needing different sorts (e.g., by amount) should query the specific resource directly (Charges/Refunds/Payouts) rather than the Transactions aggregate view.
 
 ---
 
@@ -1663,6 +1679,11 @@ Management of the API keys consumers use to authenticate. API keys are either me
 ### Special considerations
 
 - **Plaintext shown once:** The plaintext token is returned ONLY on creation in the response body's `token` field. After that, only the metadata is accessible. Lost tokens cannot be recovered — they must be revoked and replaced.
+- **Two distinct identifier namespaces:** The API Keys resource has two prefixes that serve different purposes:
+    - `ak_*` is the resource identifier — used in API responses, audit logs, and the URL path (e.g., `GET /v1/api-keys/ak_abc123`). This is the metadata-object ID, NOT the secret token.
+    - `rpsk_live_*`, `rpsk_test_*`, `rpsp_live_*`, `rpsp_test_*` are the plaintext token values — the secret credential the consumer sends in the `Authorization: Bearer` header.
+    
+    These are not interchangeable. The `ak_*` identifier is safe to log, store in plaintext, and pass between systems. The `rpsk_*` / `rpsp_*` token values are credentials and MUST be treated as secrets — never logged in plaintext, never stored unhashed in databases, never passed in URLs.
 - **No webhooks:** API key management is a meta-resource; no consumer webhook subscription needed.
 
 ---
