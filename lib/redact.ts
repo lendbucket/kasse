@@ -9,17 +9,42 @@
  * application submission email, which is the most acute exposure today.
  */
 
+// ──────────────────────────────────────────────────────────────────────────
+// FUTURE-USE EXPORTS (intentional)
+// ──────────────────────────────────────────────────────────────────────────
+// The following functions are exported but not yet used in Phase 0.6-a:
+//   - redactBankAccount  (will be used if a future template adds account number)
+//   - redactSsnLast4     (will be used by Phase 0.6-e admin viewer for SSN display)
+//   - redactDob          (will be used by Phase 0.6-e admin viewer for DOB display)
+//
+// These are pre-built so that Phase 0.6-c (encryption) and Phase 0.6-e (admin
+// viewer) can import them without needing to re-author the redaction logic.
+// The threat models for each are documented in their individual JSDoc blocks.
+// Removing them now and re-adding later would be churn for no benefit.
+
 /**
  * Mask all but the last N characters of a string with bullet characters.
  * Example: maskExceptLast("123456789", 4) → "•••••6789"
- * If input is shorter than `keep`, returns all bullets.
- * Null/undefined/empty returns "—".
+ *
+ * Edge cases:
+ *   - Null/undefined/empty input → "—" (em-dash, indicates missing data)
+ *   - Input length <= keep → "(invalid: N chars)" so a short input is
+ *     visually distinguishable from fully-redacted normal input. This
+ *     matters because a routing number partially-entered as "123" should
+ *     not look identical to a fully-redacted valid one.
+ *   - Default keep = 4
  */
 export function maskExceptLast(value: string | null | undefined, keep: number = 4): string {
   if (!value || typeof value !== "string") return "\u2014";
   const trimmed = value.trim();
   if (trimmed.length === 0) return "\u2014";
-  if (trimmed.length <= keep) return "\u2022".repeat(trimmed.length);
+  if (trimmed.length <= keep) {
+    // Short input — distinguishable from fully-redacted normal input.
+    // Visible signal: "(invalid: N chars)" so a future operator inspecting
+    // the email can tell that the underlying data is malformed, not just
+    // redacted.
+    return `(invalid: ${trimmed.length} chars)`;
+  }
   const maskedLength = trimmed.length - keep;
   return "\u2022".repeat(maskedLength) + trimmed.slice(-keep);
 }
