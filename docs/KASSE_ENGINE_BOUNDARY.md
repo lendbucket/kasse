@@ -52,7 +52,7 @@ Endpoints Kasse currently uses (Reyna Pay implementation status: BUILT, PROD-REA
 | Process a card charge | `lib/engine/charge.ts` (TBD) | `POST /v1/charges` | BUILT |
 | Refund a transaction | `lib/engine/refund.ts` (TBD) | `POST /v1/refunds` | BUILT |
 | Void a same-day transaction | `lib/engine/void.ts` (TBD) | `POST /v1/voids` | BUILT |
-| Tokenize a card for future use | Payroc Hosted Fields (frontend) | Payroc Hosted Fields SDK | BUILT |
+| Tokenize a card for future use | Payroc Hosted Fields (frontend, iframe SDK) | Payroc Hosted Fields SDK + `POST /v1/checkout-sessions` (Reyna Pay session token endpoint) | BUILT |
 
 Note: Card tokenization specifically uses Payroc Hosted Fields, which is an iframe-based frontend SDK that runs in the merchant's browser. The Hosted Fields iframe communicates directly with Payroc — Kasse's backend never sees the raw card number. This is the same pattern SalonTransact uses (lib/payroc/hosted-fields.ts in the SalonTransact repo). Hosted Fields is NOT an exception to the engine-boundary rule, because the frontend iframe is a Payroc-served UI component, not a Kasse-to-Payroc API call.
 
@@ -118,7 +118,18 @@ Webhooks Kasse subscribes to (Reyna Pay implementation status: PARTIAL):
 
 UX requirement for webhook-derived UI: Any Kasse screen that displays data sourced from Reyna Pay webhooks (transaction status, refund status, payout status, dispute notifications) is a payment-related screen per the engine-boundary contract. The "Powered by SalonTransact" non-removable footer label (SD-K-010, KASSE_STRATEGIC_DECISIONS.md) MUST be present on these screens, even when the webhook event has been transformed into a Kasse-domain entity for display (e.g., a payout webhook surfacing as an entry on Kasse's banking page). Reviewers should flag any PR that adds a webhook-derived UI screen without the label and cite this paragraph.
 
-RLS_AUDIT classification reminder for the planned webhook route: When `app/api/webhooks/reyna-pay/route.ts` is created, the PR creating it MUST classify the route in `docs/RLS_AUDIT.md` before merging. Webhook routes have no NextAuth session (the caller is Reyna Pay, not a human), so the standard `withTenantScope` pattern does not apply. The webhook handler MUST establish identity via HMAC signature verification on the request payload, resolve the target organization from the verified payload contents (e.g., `data.organizationId` in the event envelope), and use `prismaAdmin` for the actual database writes — wrapping each write in `withSuperadminScope` with the resolved org as context. Alternative classification: PRE_SESSION (akin to webhook signature verification at the auth layer), with the route handler then invoking `withTenantScope({ organizationId: resolvedOrgId })` for tenant-scoped writes. The PR creating the webhook handler must explicitly justify which classification it uses and why.
+RLS_AUDIT classification reminder for the planned webhook route: When `app/api/webhooks/reyna-pay/route.ts` is created, the PR creating it MUST classify the route in `docs/RLS_AUDIT.md` before merging. Webhook routes have no NextAuth session (the caller is Reyna Pay, not a human), so the standard NextAuth-session-based tenant context establishment does not apply.
+
+The required pattern for this webhook handler:
+
+1. Verify the HMAC signature on the request payload against the Reyna Pay webhook signing secret (`process.env.REYNA_PAY_WEBHOOK_SECRET`). Reject with 401 if signature is invalid.
+2. Parse the payload and extract `data.organizationId` from the verified event envelope.
+3. Validate that the organizationId exists in the Kasse database via `prismaAdmin` ONLY for this existence check (read-only, no data writes through prismaAdmin).
+4. For all subsequent reads and writes triggered by the webhook, use `prisma` inside `withTenantScope({ organizationId: resolvedOrgId })`. This ensures RLS policies fire on every query as if the merchant themselves were performing the operation.
+
+Do NOT use `prismaAdmin` for the webhook's data writes (transaction creation, payout updates, dispute records). `prismaAdmin` is locked to auth and superadmin routes per the system's locked architecture. A webhook resolving a specific organizationId from a verified payload has tenant context — that context just arrived from a signed external source instead of a NextAuth session. The correct expression of "external-but-authenticated tenant context" is `withTenantScope`, not `withSuperadminScope`.
+
+The RLS_AUDIT.md classification for this route is therefore: TENANT_SCOPED, with the unusual property that tenant context is established via HMAC signature verification on the webhook payload rather than via NextAuth session. The PR author must document this in the route's header comment AND in RLS_AUDIT.md so future reviewers understand why this route uses tenant scope without a session.
 
 ---
 
@@ -169,13 +180,22 @@ IMPORTANT — the fallback path in Step 3 below stores bank routing and account 
 - If Reyna Pay's endpoint ships first: Phase 0.6-c uses tokens unconditionally, no fallback
 - If neither has shipped: do NOT ship Phase 0.6-c — onboarding-complete continues to email plaintext to ceo@36west.org as documented in Phase 0.6-a (now redacted per Phase 0.6-a-fix)
 
+    // import { kmsEnvelopeEncrypt } from "@/lib/kms/envelope";
+    // ^^ Phase 0.6-d will create this module. Until then, this fallback path is unavailable.
+    
     const usingTokens = process.env.FEATURE_REYNA_PAY_BANK_TOKENS === "true";
     if (usingTokens) {
       const token = await vaultBankAccount({ routing, account });
       await db.organization.update({ data: { payrocBankTokenId: token.id } });
     } else {
-      // Fallback: store plaintext encrypted via KMS (Phase 0.6-d)
-      await db.organization.update({ data: { bankRoutingNumber: encrypt(routing), bankAccountNumber: encrypt(account) } });
+      // Fallback: store plaintext encrypted via KMS envelope encryption (Phase 0.6-d)
+      // See docs/KASSE_PII_ENCRYPTION.md for the encryption contract and key management.
+      await db.organization.update({
+        data: {
+          bankRoutingNumber: await kmsEnvelopeEncrypt(routing),
+          bankAccountNumber: await kmsEnvelopeEncrypt(account),
+        },
+      });
     }
 
 Step 4 — When Reyna Pay's endpoint goes live:
@@ -235,4 +255,6 @@ Any new payment-adjacent feature in Kasse follows this process:
 4. If endpoint does NOT exist: file an issue on the Reyna Pay repo describing the needed endpoint shape, AND ship the Kasse side using the feature-flag pattern
 5. PR description must reference this doc and identify which Category + which endpoint the PR depends on
 
-Reviewer is instructed (in .github/claude-review-prompt.md) to flag any payment-adjacent PR that doesn't reference KASSE_ENGINE_BOUNDARY.md.
+Reviewer instruction (to be added to `.github/claude-review-prompt.md` in a follow-up PR): "Any PR touching files in `app/api/payments/*`, `app/api/onboarding/*`, `app/api/webhooks/reyna-pay/*`, `lib/engine/*`, or modifying Prisma schema fields related to banking, payouts, disputes, or Payroc must reference KASSE_ENGINE_BOUNDARY.md in its description and confirm which Category (1-5) the change falls into. PRs missing this reference should receive a Concern-level finding."
+
+Until that instruction is added to the reviewer prompt, PR authors must self-enforce by including the reference voluntarily.
