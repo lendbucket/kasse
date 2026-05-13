@@ -37,6 +37,45 @@ The Kasse Engine Boundary is the contract between Layer 1 (Kasse) and Layer 0 (R
 
 ---
 
+## ENGINE IDENTITY: REYNA PAY VS SALONTRANSACT
+
+Kasse's engine counterparty is **Reyna Pay**, owned by Reyna Pay LLC (Wyoming). The Reyna Pay engine is the payment rails described by the API contract in `docs/REYNA_PAY_API_SPEC.md`.
+
+Currently, the Reyna Pay engine is hosted at `app.salontransact.com/api/v1` because the SalonTransact domain is already provisioned and live. This is a brand-vs-engine distinction that matters during the migration window:
+
+- **Engine (technology):** Reyna Pay. Owned by Reyna Pay LLC. Source of truth for payment processing, tokenization, payouts, disputes, merchant boarding.
+- **SalonTransact:** The consumer-facing brand for the salon vertical. It's the merchant portal at `app.salontransact.com`, the marketing site, the Slack channel with Payroc — but underneath, it consumes the Reyna Pay engine.
+
+### Current state (as of Phase 0.9-a)
+
+- Reyna Pay engine reachable at: `https://app.salontransact.com/api/v1`
+- Kasse env var: `SALONTRANSACT_API_URL=https://app.salontransact.com/api/v1`
+- Kasse env var: `SALONTRANSACT_API_KEY=<value>`
+
+Kasse calls the engine through the env vars above. The vars are NAMED for SalonTransact because that's the current URL, but POINT to the Reyna Pay engine.
+
+### Target state (post-migration, target 2026-Q4)
+
+- Reyna Pay engine reachable at: `https://api.reynapay.com/v1`
+- Kasse env var: `REYNA_PAY_API_URL=https://api.reynapay.com/v1`
+- Kasse env var: `REYNA_PAY_API_KEY=<value>`
+- Backward-compatible: `SALONTRANSACT_API_URL` and `SALONTRANSACT_API_KEY` fall back as aliases for at least one Kasse release after the migration
+
+### Migration implication for Kasse PRs
+
+Until the migration completes:
+- New code calling the engine SHOULD reference `process.env.SALONTRANSACT_API_URL` (the active env var)
+- New code SHOULD NOT use `process.env.REYNA_PAY_API_URL` until the migration is staged
+- When the migration is staged, a single Kasse PR will rename the env var with a backward-compatible read pattern. All call sites will pick up the new name through the existing helper module (`lib/engine/config.ts` if it exists, or wherever the env var is centralized).
+
+For documentation, use "Reyna Pay engine" as the canonical name. Phrases like "the SalonTransact API" should be avoided in code comments and PR descriptions — they reinforce the legacy framing. The engine is Reyna Pay; SalonTransact is the consumer brand wrapper.
+
+### Why this matters for the engine boundary
+
+This doc (KASSE_ENGINE_BOUNDARY.md) is the authoritative source on Kasse's engine counterparty. Saying "Kasse calls SalonTransact" reinforces a confusion where SalonTransact appears to be a separate engine — it's not. There is exactly one payment engine in the 36 West Holdings ecosystem and it's Reyna Pay. SalonTransact is a brand wrapper, currently hosting the engine at a SalonTransact domain.
+
+---
+
 ## THE FIVE CATEGORIES OF PAYMENT OPERATIONS
 
 Every payment-adjacent operation falls into one of five categories. The rule for each is fixed:

@@ -11,6 +11,33 @@
 
 ---
 
+## BRAND AND ENTITY RELATIONSHIP
+
+The Reyna Pay engine and the SalonTransact brand have a specific relationship that affects how this spec maps to current and future production reality. This section locks the relationship so consumers and engineers reading this spec have an unambiguous reference.
+
+**Reyna Pay LLC** (Wyoming entity, owned by Robert Reyna) owns the engine. The engine is the payment rails, the database of merchants/charges/payouts/disputes, the integration with Payroc, and the API contract described in this document.
+
+**SalonTransact** is the consumer-facing brand for that engine. Until 2026-Q3, SalonTransact is also the brand consumed by the salon-vertical merchant portal. The engine API is currently hosted at `app.salontransact.com/api/v1` because that domain is already provisioned and live. As the engine matures into a multi-vertical payment rails layer (consumed by Kasse for salons, future RestaurantTransact-as-SaaS for restaurants, future GymTransact-as-SaaS for gyms, plus SalonBacked, RunMySalon, and developer API consumers), the engine will rebrand to its parent-entity identity: Reyna Pay.
+
+**Migration plan:**
+- Current: engine reachable at `app.salontransact.com/api/v1`
+- Target: engine reachable at `api.reynapay.com/v1`
+- During migration: both URLs serve identical responses, with `Reyna-Pay-Engine-Url` response header on both pointing to the canonical URL
+- Post-migration: `app.salontransact.com/api/v1` returns `301 Moved Permanently` with `Location: api.reynapay.com/v1/...` for at least 18 months
+
+**Implication for consumers reading this spec:**
+- The SalonTransact Claude chat (the AI engineer maintaining the engine codebase) implements against this contract, hosted at whichever URL is currently primary.
+- The Kasse codebase calls the engine via the `SALONTRANSACT_API_URL` environment variable. The variable name will be renamed to `REYNA_PAY_API_URL` (with a backward-compatible fallback to `SALONTRANSACT_API_URL` for at least one Kasse release) when the URL migration completes. Until then, the env var name remains `SALONTRANSACT_API_URL`.
+- The base URL field in this spec's header carries a `[PENDING-MIGRATION]` marker to make the migration state explicit. When migration completes, the marker is removed and the line updated to `api.reynapay.com/v1`.
+
+**Implication for `KASSE_ENGINE_BOUNDARY.md`:**
+KASSE_ENGINE_BOUNDARY.md (Phase 0.8-a) currently describes "Kasse calls Reyna Pay's engine, hosted at the SalonTransact API URL during the migration window." That doc carries the migration plan in its own section so Kasse-side reviewers don't need to read this spec to understand the engine identity.
+
+**Why the brand exists at all:**
+SalonTransact is preserved as a consumer-facing brand because the existing salon-vertical merchant ecosystem (SalonTransact merchants, the SalonTransact portal at `app.salontransact.com`, the SalonTransact marketing site, the SalonTransact Slack channels with Payroc) is already established. Renaming the brand outright would break inertia. The strategy is: SalonTransact remains the salon-vertical brand wrapper; Reyna Pay becomes the engine identity that all vertical brand wrappers consume.
+
+---
+
 ## DOCUMENT STATUS
 
 This document is delivered in three tiers:
@@ -124,7 +151,7 @@ All API requests authenticate via Bearer token in the Authorization header:
 ### Token format
 
 - Prefix indicates environment: `rpsk_live_*` for production, `rpsk_test_*` for sandbox
-- Note: the `rpsk_live_` and `rpsk_test_` prefixes are always exactly 10 characters (4 chars + underscore + 4 chars + underscore). Consumers performing prefix-based validation can rely on this exact length. The token body following the prefix is opaque.
+- Note: the `rpsk_live_` and `rpsk_test_` prefixes are always exactly 10 characters total — 4 chars for `rpsk` + underscore + 4 chars for the environment label (`live` or `test`) + underscore. Both environment labels happen to be 4 characters, so the prefix length is constant regardless of environment. Consumers performing prefix-based validation can rely on this exact 10-character length. The token body following the prefix is opaque.
 - Token body is opaque, minimum 32 chars after prefix
 - Tokens are issued per-merchant, scoped to that merchant's data
 - Tokens are revocable from the merchant's dashboard or via DELETE /v1/api-keys/:id (Tier 2 endpoint)
@@ -173,7 +200,35 @@ Every POST and PATCH request to Reyna Pay MUST include an `Idempotency-Key` head
 
 GET requests do not require an idempotency key — they are inherently safe to retry.
 
-DELETE requests do not require an idempotency key because HTTP semantics define DELETE as idempotent at the protocol level: a second DELETE of an already-deleted resource returns `404 Not Found`, not a cached `204 No Content`. Consumers that want client-side replay protection on destructive operations should track their own delete history; the engine does not maintain a delete-replay cache.
+DELETE requests do not require an idempotency key because HTTP semantics define DELETE as idempotent at the protocol level: a second DELETE of an already-deleted resource returns `404 Not Found`, not a cached `204 No Content`.
+
+Consumer retry guidance for DELETE: consumers SHOULD treat `404 Not Found` on a retry of a DELETE call as a SUCCESS case, NOT as a failure. The 404 indicates the resource is already in the desired state (deleted). This is the idempotency convention for DELETE in Reyna Pay.
+
+Concrete pattern:
+
+    // Consumer-side pseudocode — correct DELETE retry handling
+    let response;
+    let attempt = 0;
+    while (attempt < maxRetries) {
+      try {
+        response = await fetch(`/v1/api-keys/${keyId}`, { method: "DELETE", ... });
+        if (response.status === 204) break;             // success on first delete
+        if (response.status === 404) break;             // already deleted — also success
+        if (response.status >= 500) {
+          attempt++;
+          await sleep(backoff(attempt));
+          continue;
+        }
+        throw new Error(`Unexpected status ${response.status}`);
+      } catch (networkError) {
+        attempt++;
+        await sleep(backoff(attempt));
+      }
+    }
+
+The consumer's retry loop treats 204 and 404 as equivalent terminal success states. Network errors and 5xx errors trigger retries. Any other 4xx is a programming error.
+
+This consumer-side convention means Reyna Pay does NOT need to maintain a delete-replay cache to support safe retries — the natural 404 semantics already provide the guarantee, as long as consumers handle 404 correctly. Consumers that want richer audit trails on destructive operations (e.g., distinguishing "I deleted this" from "this was already gone") should soft-delete and record the delete with a `deleted_at` timestamp on the resource, then GET the resource after a DELETE to confirm state. The engine supports soft-deletes for resources where appropriate; per-resource soft-delete behavior is defined in Tier 2.
 
 ### Key format
 
@@ -428,6 +483,8 @@ Invalid filter values: `400 Bad Request`, error code `INVALID_FIELD_VALUE`.
 | Platform (Kasse, SalonBacked, RunMySalon, certified white-label) | 5,000 | Unlimited |
 | Internal (Reyna Pay's own ops) | Unlimited | Unlimited |
 
+*Note: Platform tier enforcement depends on the platform-token mechanism (the `X-Reyna-Pay-On-Behalf-Of` header and per-platform-merchant authorization model) which is defined in Tier 2 of this spec. Until Tier 2 ships, the rate limiter implementation MUST treat Platform tier as a STUB classification. Implementation guidance: assign Platform tier limits only after the API key's `tier` field returns `platform` — until the platform-token system is built, no key will have that classification, so this row is documentary until activated. The rate limiter SHOULD include the Platform row in its tier lookup table from day one so adding the classification later is a database-update operation, not a code change.*
+
 Tier is determined by the API key's subscription level, not by the requesting IP.
 
 ### Headers on every response
@@ -587,7 +644,7 @@ Example for a charge:
     {
       "id": "ch_abc123",
       "status": "completed",
-      "amount": 25000,
+      "amount": 25000,        // integer cents — $250.00 USD per COMMON CONVENTIONS
       "currency": "usd",
       "customer_id": "cust_xyz789",
       "_links": {
