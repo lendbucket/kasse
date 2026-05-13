@@ -446,6 +446,7 @@ Checkout session:
 - `CHECKOUT_SESSION_ALREADY_USED` — session_token already consumed
 - `CHECKOUT_SESSION_REDIRECT_URL_NOT_ALLOWED` — return_url or cancel_url scheme is not https, OR host is not in merchant's redirect_domains allowlist
 - `CHECKOUT_SESSION_REDIRECT_URL_MALFORMED` — URL cannot be parsed as a valid URL
+- `CHECKOUT_SESSION_NO_REDIRECT_DOMAINS_CONFIGURED` — POST /v1/checkout-sessions called for a merchant whose redirect_domains field is empty or null
 
 ### Error message guidelines
 
@@ -1272,6 +1273,12 @@ Status `refunded`: `self`, `customer`, `refunds` (GET)
 - **Throughput:** Charges are the highest-volume resource. The idempotency store, rate limiter, and webhook delivery infrastructure must handle this resource's throughput.
 - **Auth-and-capture:** Charges support `capture: false` for authorize-without-capture flows. The authorization holds funds for up to 7 days. After 7 days, uncaptured authorizations expire and the hold is released. The engine fires `charge.authorization_expired` when an uncaptured authorization reaches its expiration window (typically 7 days, configurable per merchant). Consumers SHOULD subscribe to this event for any merchant using auth-only charges. If a consumer fails to capture before expiration, the held funds are released by the cardholder's issuing bank — this represents lost revenue and should not happen silently.
 - **Auto void vs refund:** The engine SHOULD detect when a refund is requested against an unsettled charge and execute as void instead (faster, lower fee). From the consumer's perspective, they always POST to /refunds — the engine decides the optimal mechanism.
+- **Consumer-layer metadata convention (informational):** The engine's `metadata` field is a free-form key/value object. Consumers MAY use it to tag charges with consumer-domain context that the engine does not understand or enforce. Kasse, as the salon-vertical consumer, MUST include the following keys in `metadata` on every charge it creates:
+    - `kasse.booking_id` — the Kasse Appointment ID this charge corresponds to (or null for walk-in / non-appointment charges)
+    - `kasse.location_id` — the Kasse Location ID where the charge originated
+    - `kasse.stylist_id` — the Kasse Staff ID who performed the service (for commission attribution)
+  
+  Other consumers (SalonBacked, RunMySalon, white-label brands, future RestaurantTransact, future GymTransact) MAY define their own metadata key namespaces. The engine treats all metadata as opaque — it stores it, returns it, and includes it in webhook payloads but does not parse or enforce structure. Reviewer guidance: any Kasse PR that creates a Reyna Pay charge MUST include all three keys above in the metadata. PRs missing these keys should be flagged.
 
 ---
 
@@ -1300,8 +1307,10 @@ A refund returns funds from a previously completed charge back to the customer. 
 | `reason` | enum | yes | yes | `duplicate`, `fraudulent`, `requested_by_customer`, `other` |
 | `failure_code` | string | yes | server-managed | |
 | `failure_message` | string | yes | server-managed | |
+| `void_id` | string | yes | server-managed | When this refund was executed as a void (auto-void path for unsettled charges), this references the resulting Void resource. Null for refunds against settled charges. |
 | `metadata` | object | yes | yes | |
 | `created_at` | timestamp | no | server-managed | |
+| `updated_at` | timestamp | no | server-managed | When any field on this refund last changed (status transitions, failure reasons populated, metadata updates) |
 
 ### Operations
 
@@ -1336,7 +1345,8 @@ Standard: `self`, `charge` (GET the original charge)
 ### Special considerations
 
 - **Partial refunds:** Multiple partial refunds are supported. The engine tracks `charge.refunded_amount` as a running total. When `charge.refunded_amount == charge.amount`, the charge status transitions to `refunded`.
-- **Auto-void:** If the charge is unsettled, the engine executes a void instead of a refund (faster processing, lower fee). The consumer does not need to distinguish — they always POST /refunds.
+- **Concurrent partial refund atomicity:** Two distinct partial refund requests with distinct idempotency keys against the same charge can race. The engine MUST acquire a row-level write lock (or use optimistic concurrency control via a version column) on the Charge record when processing each refund, to prevent the sum of refund amounts from exceeding the original charge amount. Implementation pattern: SELECT FOR UPDATE on the charge row at the start of refund processing, validate `charge.amount - charge.refunded_amount >= refund.amount`, increment `charge.refunded_amount`, commit. Without this, two parallel partial refunds for amounts that individually fit but jointly exceed `charge.amount - charge.refunded_amount` will both succeed and result in over-refunding. The engine MUST return `422 Unprocessable Entity` with error code `REFUND_AMOUNT_EXCEEDS_CHARGE` if the second of two racing refunds would exceed the remaining refundable balance.
+- **Auto-void on unsettled charges:** Refunds against settled charges go through ACH return rails. Refunds against unsettled (same-day) charges are voids at the underlying Payroc level — the engine SHOULD auto-detect this and execute as a void rather than a refund (faster, lower fee). Consumers always POST /refunds; the engine decides void vs refund internally. When the auto-void path is taken, the engine creates BOTH a Refund resource AND a Void resource with cross-reference linkage: the Refund has `void_id` populated, the Void has `refund_id` populated. This preserves the consumer's expectation (they requested a refund, they get a Refund object back) while accurately reflecting the underlying Payroc semantics (a Void was the actual operation).
 
 ---
 
@@ -1362,6 +1372,7 @@ A void cancels an authorization before settlement. Voids are only possible befor
 | `status` | enum | no | server-managed | `succeeded`, `failed` |
 | `failure_code` | string | yes | server-managed | |
 | `failure_message` | string | yes | server-managed | |
+| `refund_id` | string | yes | server-managed | When this void was created as the implementation of a Refund (auto-void path), this references the originating Refund resource. Null for direct voids initiated via POST /v1/charges/:id/void. |
 | `metadata` | object | yes | yes | |
 | `created_at` | timestamp | no | server-managed | |
 
@@ -1405,7 +1416,7 @@ A payout moves settled funds from Reyna Pay's reserve to the merchant's bank acc
 | `bank_token_id` | string | no | yes | The destination bank account (`bt_*`) |
 | `amount` | integer | no | yes | Payout amount in cents |
 | `currency` | string | no | server-assigned | |
-| `status` | enum | no | server-managed | `pending`, `in_transit`, `paid`, `failed`, `canceled` |
+| `status` | enum | no | server-managed | One of: `pending`, `in_transit`, `paid`, `failed`, `canceled`. The `canceled` status is the terminal state after a successful POST /v1/payouts/:id/cancel call (cancel is only possible while status is `pending`; once `in_transit`, cancel returns 422). |
 | `arrival_date` | string | yes | server-managed | Estimated ACH arrival date (ISO 8601 date) |
 | `failure_code` | string | yes | server-managed | |
 | `failure_message` | string | yes | server-managed | |
@@ -1469,7 +1480,7 @@ A dispute (chargeback) is initiated by the cardholder against a charge. The merc
 | `merchant_id` | string | no | server-assigned | |
 | `amount` | integer | no | server-managed | Disputed amount in cents |
 | `currency` | string | no | server-managed | |
-| `status` | enum | no | server-managed | `warning_needs_response`, `needs_response`, `under_review`, `won`, `lost`, `refunded` |
+| `status` | enum | no | server-managed | One of: `warning_needs_response`, `needs_response`, `under_review`, `won`, `lost`, `refunded`. The `refunded` status means the merchant accepted the dispute (via POST /v1/disputes/:id/close) and the disputed amount was refunded to the cardholder. This is distinct from the Charges resource's `refunded` status — a Dispute is `refunded` when the merchant gave up, a Charge is `refunded` when any refund was issued (with or without a dispute). |
 | `reason` | enum | no | server-managed | `fraudulent`, `duplicate`, `credit_not_processed`, `general`, `other` |
 | `evidence_due_by` | timestamp | no | server-managed | Hard deadline for evidence submission |
 | `evidence` | object | yes | yes | See evidence fields below |
@@ -1551,6 +1562,7 @@ A checkout session is a temporary token issued to the consumer's frontend for in
 ### Special considerations
 
 - **Redirect URL allowlisting (security):** The `return_url` and `cancel_url` fields MUST be validated against the merchant's registered `redirect_domains` allowlist (a field on the Merchant resource — see Merchants schema). The engine MUST reject any URL whose scheme is not `https` or whose host component does not exactly match one of the entries in the allowlist. Without this validation, the Checkout Session redirect mechanism becomes an open-redirect vector that attackers can exploit for phishing — particularly dangerous because the redirect follows a payment flow, placing the victim in a maximum-trust context immediately after legitimate authentication. Error codes: `CHECKOUT_SESSION_REDIRECT_URL_NOT_ALLOWED` (scheme not https or host not in allowlist), `CHECKOUT_SESSION_REDIRECT_URL_MALFORMED` (URL cannot be parsed). The merchant configures their allowlist via the Merchants resource's `redirect_domains` field (a string array, max 10 entries, each a fully-qualified domain name like `app.kasseapp.com`). Wildcards are NOT supported — exact host match only. Subdomains MUST be explicitly listed.
+- **Pre-creation prerequisite — merchant redirect_domains MUST be populated:** Before any Checkout Session can be created for a merchant, that merchant's `redirect_domains` field MUST contain at least one entry. Attempting POST /v1/checkout-sessions for a merchant with empty or null `redirect_domains` returns `400 Bad Request` with error code `CHECKOUT_SESSION_NO_REDIRECT_DOMAINS_CONFIGURED`. Consumer integration guidance: configure redirect_domains during merchant onboarding (Phase 0.9 in Kasse, the merchant boarding flow). Do not defer this configuration until first checkout attempt — that creates a confusing error during the first user-facing payment flow.
 - **Session expiry:** Sessions expire 30 minutes after creation. The `session_token` is single-use — once Hosted Fields tokenizes a card with it, the token is invalidated.
 - **Error codes:** `CHECKOUT_SESSION_EXPIRED` if attempting to use an expired session. `CHECKOUT_SESSION_ALREADY_USED` if the session_token was already consumed.
 
@@ -1596,7 +1608,7 @@ A unified read view combining charges, refunds, and payouts for reporting and le
 - `customer_id` — exact match
 - `amount_gte`, `amount_lte` — amount range (applies to absolute value)
 - `created_after`, `created_before` — date range
-- `sort` — `created.desc` (default, only)
+- `sort` — `created.desc` (only supported sort order; see Special considerations for the cursor-integrity reason)
 
 ### Special considerations
 
@@ -1693,7 +1705,7 @@ Management of the API keys consumers use to authenticate. API keys are either me
 ### Identity
 
 - Resource name: Webhook
-- Identifier prefix: `we_*`
+- Identifier prefix: `wh_*`
 - Plural endpoint: `/v1/webhooks`
 
 ### Description
@@ -1704,7 +1716,7 @@ Consumer-managed webhook endpoint subscriptions. Consumers register HTTPS endpoi
 
 | Field | Type | Nullable | Writable | Notes |
 |-------|------|----------|----------|-------|
-| `id` | string | no | server-assigned | Format `we_<base62>` |
+| `id` | string | no | server-assigned | Format `wh_<base62>` |
 | `merchant_id` | string | yes | server-assigned | Null for platform-scoped subscriptions |
 | `platform_id` | string | yes | server-assigned | Null for merchant-scoped subscriptions |
 | `url` | string | no | yes (create-only) | HTTPS URL — HTTP rejected with `WEBHOOK_URL_INSECURE` |
