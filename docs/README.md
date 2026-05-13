@@ -22,7 +22,7 @@
 | [KASSE_UI_PRINCIPLES.md](./KASSE_UI_PRINCIPLES.md) | Design system, typography, colors, component standards | LOCKED |
 | [KASSE_VERTICAL_SPECS.md](./KASSE_VERTICAL_SPECS.md) | Per-vertical feature config (salon, barbershop, nail, med spa, gym, restaurant, auto) | LIVING |
 | [KASSE_API_SPEC.md](./KASSE_API_SPEC.md) | Full API capability matrix, endpoints, webhooks, agent commerce design | LIVING |
-| [REYNA_PAY_API_SPEC.md](./REYNA_PAY_API_SPEC.md) | (LIVING — Tier 1 of 3) The payment rails contract for Kasse, SalonBacked, RunMySalon, and developer consumers. Currently Tier 1 (Foundation) only. Tier 2 (Resources) and Tier 3+4 (Non-functional + Agent-native) to follow in subsequent PRs. | LIVING |
+| [REYNA_PAY_API_SPEC.md](./REYNA_PAY_API_SPEC.md) | (LIVING — Tier 1 of 3) Payment rails contract for Kasse, SalonBacked, RunMySalon, and developer consumers. Tier 1 (Foundation) shipped; Tier 2 (Resources) and Tier 3+4 (Non-functional + Agent-native) to follow. | LIVING |
 | [KASSE_WHITE_LABEL_GUIDE.md](./KASSE_WHITE_LABEL_GUIDE.md) | Reseller setup, theme config, deployment steps | LIVING |
 | [KASSE_FRANCHISE_SYSTEM.md](./KASSE_FRANCHISE_SYSTEM.md) | Franchise management + Franchise Creator portal spec | LIVING |
 | [KASSE_MARKETPLACE.md](./KASSE_MARKETPLACE.md) | Stylist marketplace, supply marketplace, hiring board, gift cards | LIVING |

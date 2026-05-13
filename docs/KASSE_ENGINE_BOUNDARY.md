@@ -151,6 +151,41 @@ The RLS_AUDIT.md classification for this route is therefore: TENANT_SCOPED, with
 
 ---
 
+## Kasse's Responsibility — Idempotency Key Generation
+
+REYNA_PAY_API_SPEC.md (Tier 1 — IDEMPOTENCY section) defines the engine's idempotency contract: every POST and PATCH to Reyna Pay MUST include an `Idempotency-Key` header, and the engine caches responses keyed by that header value (scoped per API key, 7-day TTL).
+
+The engine's contract describes what the engine does. It says nothing about how Kasse generates the keys. Key generation strategy is Kasse's responsibility, and it's the single most important factor in whether idempotency actually protects merchants from duplicate charges and duplicate operations.
+
+### Kasse's key-generation strategy
+
+1. **For user-initiated charges** (clicking Pay in the checkout flow): generate the idempotency key when the user first clicks Pay, BEFORE the HTTP call to Reyna Pay. Persist the key in the React component state (or session storage if the user might refresh). Every retry — whether due to network failure, timeout, or user re-click — uses the same key. The key is discarded only after the engine returns a terminal response (success or final failure).
+
+2. **For background jobs** (refund processing, payout initiation, scheduled charges): the database row representing the job MUST contain an `idempotency_key` column. The job's first action is to generate and persist the key. Retries read the persisted key from the row.
+
+3. **For webhook-triggered operations** (Kasse responding to a Reyna Pay webhook by performing a derivative action): derive the idempotency key from a stable property of the triggering event. Recommended: `sha256(webhook_event_id + ":" + kasse_operation_name)`. This ensures replay of the same webhook produces the same key and idempotency naturally short-circuits.
+
+4. **For onboarding submissions** (the `POST /v1/merchants` boarding call, Phase 0.6 Category 4): generate the key when the merchant clicks "Submit Application" in the onboarding wizard. Persist on the Organization row in a new `boardingIdempotencyKey` column. Retries read from the column.
+
+### Anti-patterns Kasse MUST avoid
+
+- Generating a new UUID inside a retry loop (defeats idempotency entirely — every retry looks like a new operation to the engine)
+- Using a request hash as the key (subtle bug: if the request body legitimately changes between retries — e.g., a timestamp regenerated — the hash changes and the key changes)
+- Using the user's session token as the key (multiple operations in one session would collide)
+- Reusing the same key for different operations (the engine rejects with 409 IDEMPOTENCY_KEY_REUSED, but the bug is on Kasse's side)
+
+### Implementation requirements for any PR adding a Reyna Pay API call
+
+Any PR in Kasse that adds a new call to a Reyna Pay endpoint (POST or PATCH) MUST:
+1. Document the key-generation strategy in the route or function header comment
+2. Implement the key generation BEFORE the HTTP call, not inside the retry loop
+3. Persist the key if the operation may be retried across sessions or processes (database row column, Redis, etc.)
+4. Cite this section in the PR description
+
+Reviewers should flag any PR adding a Reyna Pay call without these elements.
+
+---
+
 ## WHAT KASSE NEVER DOES
 
 Hard rules. Any PR that proposes any of the below is wrong by construction.
