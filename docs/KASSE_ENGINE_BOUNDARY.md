@@ -37,6 +37,45 @@ The Kasse Engine Boundary is the contract between Layer 1 (Kasse) and Layer 0 (R
 
 ---
 
+## ENGINE IDENTITY: REYNA PAY VS SALONTRANSACT
+
+Kasse's engine counterparty is **Reyna Pay**, owned by Reyna Pay LLC (Wyoming). The Reyna Pay engine is the payment rails described by the API contract in `docs/REYNA_PAY_API_SPEC.md`.
+
+Currently, the Reyna Pay engine is hosted at `app.salontransact.com/api/v1` because the SalonTransact domain is already provisioned and live. This is a brand-vs-engine distinction that matters during the migration window:
+
+- **Engine (technology):** Reyna Pay. Owned by Reyna Pay LLC. Source of truth for payment processing, tokenization, payouts, disputes, merchant boarding.
+- **SalonTransact:** The consumer-facing brand for the salon vertical. It's the merchant portal at `app.salontransact.com`, the marketing site, the Slack channel with Payroc — but underneath, it consumes the Reyna Pay engine.
+
+### Current state (as of Phase 0.9-a)
+
+- Reyna Pay engine reachable at: `https://app.salontransact.com/api/v1`
+- Kasse env var: `SALONTRANSACT_API_URL=https://app.salontransact.com/api/v1`
+- Kasse env var: `SALONTRANSACT_API_KEY=<value>`
+
+Kasse calls the engine through the env vars above. The vars are NAMED for SalonTransact because that's the current URL, but POINT to the Reyna Pay engine.
+
+### Target state (post-migration, target 2026-Q4)
+
+- Reyna Pay engine reachable at: `https://api.reynapay.com/v1`
+- Kasse env var: `REYNA_PAY_API_URL=https://api.reynapay.com/v1`
+- Kasse env var: `REYNA_PAY_API_KEY=<value>`
+- Backward-compatible: `SALONTRANSACT_API_URL` and `SALONTRANSACT_API_KEY` fall back as aliases for at least one Kasse release after the migration
+
+### Migration implication for Kasse PRs
+
+Until the migration completes:
+- New code calling the engine SHOULD reference `process.env.SALONTRANSACT_API_URL` (the active env var)
+- New code SHOULD NOT use `process.env.REYNA_PAY_API_URL` until the migration is staged
+- When the migration is staged, a single Kasse PR will rename the env var with a backward-compatible read pattern. All call sites will pick up the new name through the existing helper module (`lib/engine/config.ts` if it exists, or wherever the env var is centralized).
+
+For documentation, use "Reyna Pay engine" as the canonical name. Phrases like "the SalonTransact API" should be avoided in code comments and PR descriptions — they reinforce the legacy framing. The engine is Reyna Pay; SalonTransact is the consumer brand wrapper.
+
+### Why this matters for the engine boundary
+
+This doc (KASSE_ENGINE_BOUNDARY.md) is the authoritative source on Kasse's engine counterparty. Saying "Kasse calls SalonTransact" reinforces a confusion where SalonTransact appears to be a separate engine — it's not. There is exactly one payment engine in the 36 West Holdings ecosystem and it's Reyna Pay. SalonTransact is a brand wrapper, currently hosting the engine at a SalonTransact domain.
+
+---
+
 ## THE FIVE CATEGORIES OF PAYMENT OPERATIONS
 
 Every payment-adjacent operation falls into one of five categories. The rule for each is fixed:
@@ -148,6 +187,41 @@ The required pattern for this webhook handler:
 Do NOT use `prismaAdmin` for the webhook's data writes (transaction creation, payout updates, dispute records). `prismaAdmin` is locked to auth and superadmin routes per the system's locked architecture. A webhook resolving a specific organizationId from a verified payload has tenant context — that context just arrived from a signed external source instead of a NextAuth session. The correct expression of "external-but-authenticated tenant context" is `withTenantScope`, not `withSuperadminScope`.
 
 The RLS_AUDIT.md classification for this route is therefore: TENANT_SCOPED, with the unusual property that tenant context is established via HMAC signature verification on the webhook payload rather than via NextAuth session. The PR author must document this in the route's header comment AND in RLS_AUDIT.md so future reviewers understand why this route uses tenant scope without a session.
+
+---
+
+## Kasse's Responsibility — Idempotency Key Generation
+
+REYNA_PAY_API_SPEC.md (Tier 1 — IDEMPOTENCY section) defines the engine's idempotency contract: every POST and PATCH to Reyna Pay MUST include an `Idempotency-Key` header, and the engine caches responses keyed by that header value (scoped per API key, 7-day TTL).
+
+The engine's contract describes what the engine does. It says nothing about how Kasse generates the keys. Key generation strategy is Kasse's responsibility, and it's the single most important factor in whether idempotency actually protects merchants from duplicate charges and duplicate operations.
+
+### Kasse's key-generation strategy
+
+1. **For user-initiated charges** (clicking Pay in the checkout flow): generate the idempotency key when the user first clicks Pay, BEFORE the HTTP call to Reyna Pay. Persist the key in the React component state (or session storage if the user might refresh). Every retry — whether due to network failure, timeout, or user re-click — uses the same key. The key is discarded only after the engine returns a terminal response (success or final failure).
+
+2. **For background jobs** (refund processing, payout initiation, scheduled charges): the database row representing the job MUST contain an `idempotency_key` column. The job's first action is to generate and persist the key. Retries read the persisted key from the row.
+
+3. **For webhook-triggered operations** (Kasse responding to a Reyna Pay webhook by performing a derivative action): derive the idempotency key from a stable property of the triggering event. Recommended: `sha256(webhook_event_id + ":" + kasse_operation_name)`. This ensures replay of the same webhook produces the same key and idempotency naturally short-circuits.
+
+4. **For onboarding submissions** (the `POST /v1/merchants` boarding call, Phase 0.6 Category 4): generate the key when the merchant clicks "Submit Application" in the onboarding wizard. Persist on the Organization row in a new `boardingIdempotencyKey` column. Retries read from the column.
+
+### Anti-patterns Kasse MUST avoid
+
+- Generating a new UUID inside a retry loop (defeats idempotency entirely — every retry looks like a new operation to the engine)
+- Using a request hash as the key (subtle bug: if the request body legitimately changes between retries — e.g., a timestamp regenerated — the hash changes and the key changes)
+- Using the user's session token as the key (multiple operations in one session would collide)
+- Reusing the same key for different operations (the engine rejects with 409 IDEMPOTENCY_KEY_REUSED, but the bug is on Kasse's side)
+
+### Implementation requirements for any PR adding a Reyna Pay API call
+
+Any PR in Kasse that adds a new call to a Reyna Pay endpoint (POST or PATCH) MUST:
+1. Document the key-generation strategy in the route or function header comment
+2. Implement the key generation BEFORE the HTTP call, not inside the retry loop
+3. Persist the key if the operation may be retried across sessions or processes (database row column, Redis, etc.)
+4. Cite this section in the PR description
+
+Reviewers should flag any PR adding a Reyna Pay call without these elements.
 
 ---
 

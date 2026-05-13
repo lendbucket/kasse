@@ -520,3 +520,17 @@ This phase addresses encryption-at-rest and email-redaction for banking and KYC 
 | Sub-phase | Change |
 |-----------|--------|
 | 0.6-a | Created lib/redact.ts with masking utilities. Modified app/api/onboarding/complete/route.ts to redact routing number, EIN, and account holder name in application submission email. Added PII-redacted notice block to email body. No database schema changes. No change to data stored on Organization table. |
+
+---
+
+## Pending Classifications for Future Routes
+
+### Reyna Pay engine routes (Phase 0.9 / Tier 2 of REYNA_PAY_API_SPEC.md)
+
+Tier 2 of `docs/REYNA_PAY_API_SPEC.md` will define resource endpoints for the Reyna Pay engine: charges, refunds, voids, bank tokens, payouts, customers, merchants, disputes, checkout sessions, transactions, reports. These endpoints will be implemented in the SalonTransact codebase (separate repo, lendbucket/salontransact), NOT in this Kasse repo.
+
+However, Kasse will add corresponding consumer-side handlers and clients in `lib/engine/*` and potentially in `app/api/webhooks/reyna-pay/route.ts` to call those engine endpoints. Each such consumer-side route or handler added to the Kasse codebase MUST be classified in this RLS_AUDIT.md document at the time the PR creating it merges.
+
+When Tier 2 of REYNA_PAY_API_SPEC.md publishes, this section should be expanded to list each anticipated Kasse-side consumer route with its planned classification, so PRs that add the routes can reference the pre-planned classification rather than deriving it under deadline pressure.
+
+For now: no Kasse-side consumer routes for Reyna Pay engine endpoints exist. This forward-note tracks the gap.
