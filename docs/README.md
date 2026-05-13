@@ -16,6 +16,7 @@
 | [KASSE_ARCHITECTURE.md](./KASSE_ARCHITECTURE.md) | Repos, Vercel setup, database, third-party APIs | LIVING |
 | [KASSE_STRATEGIC_DECISIONS.md](./KASSE_STRATEGIC_DECISIONS.md) | SD-K-001 through SD-K-015 — locked decisions, no revisiting without CEO | LOCKED |
 | [KASSE_ENGINE_BOUNDARY.md](./KASSE_ENGINE_BOUNDARY.md) | Layer 1 (Kasse) to Layer 0 (Reyna Pay) API contract. Read before any payment-adjacent PR. | LOCKED |
+| [KASSE_SIDEBAR_GAP.md](./KASSE_SIDEBAR_GAP.md) | Audit of current Sidebar.tsx vs locked KASSE_PORTAL_ARCHITECTURE.md spec. Gap-closure roadmap for Phase 0.8-c onward. | LIVING |
 | [KASSE_OPEN_QUESTIONS.md](./KASSE_OPEN_QUESTIONS.md) | OQ-001 through OQ-012 — decisions needed before shipping | LIVING |
 | [KASSE_EXIT_THESIS.md](./KASSE_EXIT_THESIS.md) | Acquirer analysis, moat analysis, 5-year exit plan | LIVING |
 | [KASSE_UI_PRINCIPLES.md](./KASSE_UI_PRINCIPLES.md) | Design system, typography, colors, component standards | LOCKED |
