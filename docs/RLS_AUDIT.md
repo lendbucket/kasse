@@ -216,7 +216,7 @@ AuditLog — SELECT only. Writes go through app_audit_trigger (SECURITY DEFINER)
 
 - **Organization** — protected by app logic, not by RLS. Every tenant-scoped route in `app/api/*` derives `organizationId` from `requireTenantContext(req)` which reads from the validated session JWT — never from client-supplied parameters. This means a request like `GET /api/some-route?orgId=other-tenant-id` cannot succeed because the route ignores the query param and uses session.organizationId. **This is load-bearing app logic.** If any future route ever accepts an `organizationId` from a request body or query string without validating it equals `ctx.organizationId`, the database provides zero backstop for Organization-row access. The rls-verify.ts harness in 0.5.3b-3b MUST include an explicit test that confirms no Kasse route reads Organization with a client-supplied orgId without session validation.
 
-User, Account, Session, VerificationToken — auth tables, accessed via prismaAdmin
+User (role: Role enum @default(STAFF) — P0.A.1), Account, Session, VerificationToken — auth tables, accessed via prismaAdmin
 Child tables without organizationId (e.g. AppointmentAddon, TransactionItem,
 GiftCardRedemption, LoyaltyEvent, ClientMembership, CampaignRecipient,
 FormSubmission, ClockEvent, PerformanceStat, Notification, FamilyMember)
@@ -534,3 +534,22 @@ However, Kasse will add corresponding consumer-side handlers and clients in `lib
 When Tier 2 of REYNA_PAY_API_SPEC.md publishes, this section should be expanded to list each anticipated Kasse-side consumer route with its planned classification, so PRs that add the routes can reference the pre-planned classification rather than deriving it under deadline pressure.
 
 For now: no Kasse-side consumer routes for Reyna Pay engine endpoints exist. This forward-note tracks the gap.
+
+---
+
+## P0.A.1 Deployment Notes
+
+The 20260513204427_add_role_enum migration was applied to production
+Supabase project nknuonxznhshrgfseeqc via the Supabase MCP, bypassing
+the Prisma CLI. As a result, the migration is not yet recorded in the
+_prisma_migrations table.
+
+Before running `npx prisma migrate deploy` in any environment that
+was migrated this way, the migration row must be manually inserted:
+
+    INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count)
+    VALUES (gen_random_uuid()::text, '<sha256-of-migration-sql>', NOW(), '20260513204427_add_role_enum', NOW(), 1);
+
+All P0 migrations must be applied via the postgres superuser role
+(DDL operations require CREATE TYPE / ALTER TABLE privileges that
+the application runtime role does not have).
