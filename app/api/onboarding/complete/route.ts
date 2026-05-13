@@ -12,6 +12,7 @@ import {
 } from "@/lib/tenant/allowlists";
 import { Resend } from "resend";
 import crypto from "crypto";
+import { redactRoutingNumber, redactEIN, redactName } from "@/lib/redact";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Legal Name</td><td style="padding:6px 0;color:white;font-size:14px;font-weight:500;text-align:right">${data.legalName}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">DBA</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.dbaName || "\u2014"}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Type</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${bizType}</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">EIN</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.ein}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">EIN</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactEIN(data.ein)}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Phone</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.phone}</td></tr>
       </table>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Owner</h3>
@@ -158,8 +159,8 @@ export async function POST(request: NextRequest) {
       <p style="color:white;font-size:14px;margin:0 0 24px">${data.address}, ${data.city}, ${data.state} ${data.zip}</p>
       <h3 style="color:rgba(255,255,255,0.4);font-size:11px;text-transform:uppercase;letter-spacing:0.1em;margin:0 0 12px">Banking</h3>
       <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Account Holder</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.bankHolder}</td></tr>
-        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Routing</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.routing}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Account Holder</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactName(data.bankHolder)}</td></tr>
+        <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Routing</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${redactRoutingNumber(data.routing)}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Type</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.accountType}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Funding</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.fundingSpeed?.replace("_", " ")}</td></tr>
       </table>
@@ -169,6 +170,12 @@ export async function POST(request: NextRequest) {
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Avg Transaction</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${data.avgTx}</td></tr>
         <tr><td style="padding:6px 0;color:rgba(255,255,255,0.4);font-size:13px">Methods</td><td style="padding:6px 0;color:white;font-size:14px;text-align:right">${paymentMethodLabels}</td></tr>
       </table>
+      <div style="margin-top:24px;padding:16px;background:rgba(217,119,6,0.08);border:1px solid rgba(217,119,6,0.2);border-radius:6px">
+        <p style="margin:0;font-size:12px;color:rgba(255,255,255,0.7);line-height:1.5">
+          <strong style="color:#fbbf24">PII Redacted</strong><br/>
+          Full banking and KYC details (routing number, account number, EIN, owner DOB, SSN-last-4) are stored in the production database. To view, use Supabase SQL Editor or wait for the admin Application Detail view (Phase 0.6-e). Plaintext PII has been redacted from this email per Phase 0.6-a.
+        </p>
+      </div>
     </div>
   </div>
 </body></html>`,
