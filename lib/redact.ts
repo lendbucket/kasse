@@ -67,14 +67,26 @@ export function redactBankAccount(account: string | null | undefined): string {
 
 /**
  * Redact an EIN (Employer Identification Number, format XX-XXXXXXX) to
- * show only last 4.
- * Example: "42-1815436" → "•••••5436"
+ * show only last 4 digits while preserving the standard EIN hyphen format
+ * so the visual is recognizable as an EIN.
+ *
+ * Examples:
+ *   - "42-1815436" → "\u2022\u2022-\u2022\u2022\u20225436"
+ *   - "421815436"  → "\u2022\u2022-\u2022\u2022\u20225436"  (input without hyphen normalized)
+ *   - "12345"      → "(invalid: 5 chars)" (too short — not a valid EIN)
+ *   - null         → "\u2014"
+ *
+ * The hyphen position is preserved at index 2 of the formatted output
+ * so the recipient can visually identify the field as an EIN at a glance,
+ * not confuse it with a routing number or other 9-digit identifier.
  */
 export function redactEIN(ein: string | null | undefined): string {
   if (!ein) return "\u2014";
-  // Strip any non-digit characters for consistent masking, then re-format
   const digits = ein.replace(/[^0-9]/g, "");
-  return maskExceptLast(digits, 4);
+  if (digits.length === 0) return "\u2014";
+  if (digits.length < 9) return `(invalid: ${digits.length} chars)`;
+  // EINs are always 9 digits. Mask first 5, show last 4, keep hyphen at position 2.
+  return `\u2022\u2022-\u2022\u2022\u2022${digits.slice(-4)}`;
 }
 
 /**

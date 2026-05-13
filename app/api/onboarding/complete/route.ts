@@ -126,23 +126,38 @@ export async function POST(request: NextRequest) {
     const bizType = data.businessType?.replace(/_/g, " ") || "Unknown";
     const paymentMethodLabels = (data.paymentMethods || []).join(", ");
 
-    // EMAIL CONTENT AUDIT (Phase 0.6-a):
-    // Banking-related fields shown in this email:
-    //   - Account Holder (redacted via redactName)
-    //   - Routing Number (redacted via redactRoutingNumber, last 4 only)
-    //   - Account Type (e.g., "checking" — not sensitive)
-    //   - Funding Speed (e.g., "next_business_day" — not sensitive)
+    // EMAIL CONTENT AUDIT (Phase 0.6-a, last updated Phase 0.6-a-fix2):
     //
-    // Fields EXPLICITLY NOT included in this email:
-    //   - Account Number (data.account / data.bankAccount) — NEVER sent via email
-    //   - SSN-last-4 (data.ssnLast4) — NEVER sent via email
-    //   - Owner DOB (data.dob*) — NEVER sent via email
+    // Banking PII fields — REDACTED in this email:
+    //   - Account Holder (via redactName, shows first-char-per-word)
+    //   - Routing Number (via redactRoutingNumber, shows last 4 digits)
+    //   - EIN            (via redactEIN, shows last 4 digits with EIN hyphen format)
     //
-    // If a future PR introduces ANY of these fields into the email template,
-    // it MUST also apply the corresponding redaction helper from lib/redact.ts
-    // OR remove them entirely. The PII-redacted notice block at the bottom of
-    // the email body references these fields by name to make this contract
-    // explicit to reviewers.
+    // Banking/KYC fields — NEVER included in this email at all:
+    //   - Account Number (data.account / data.bankAccount)
+    //   - SSN-last-4     (data.ssnLast4)
+    //   - Owner DOB      (data.dob*)
+    //   - Owner SSN      (data.ssn — never collected anyway)
+    //
+    // Non-banking fields — DELIBERATELY UNREDACTED in this email:
+    //   - Legal Name     (data.legalName) — business legal name is public information
+    //                    (registered with state, appears in DBA filings, etc.)
+    //                    Not classified as PII under SD-K-008's scope.
+    //   - Phone Number   (data.phone) — business phone number, listed publicly on
+    //                    Google/Yelp/website. Used to call the merchant if their
+    //                    application needs follow-up. Not classified as personal PII.
+    //   - Business Type, DBA, Address, City/State/Zip, Owner Name (first/last),
+    //     Owner Title, Ownership %, Account Type, Funding Speed, Volume, Avg Tx,
+    //     Payment Methods — all business/non-sensitive context for application review.
+    //
+    // If a future PR introduces ANY field from the "NEVER included" list into the
+    // email template, it MUST apply the corresponding redaction helper from
+    // lib/redact.ts OR remove the field entirely. Same goes for re-classifying any
+    // field from the "DELIBERATELY UNREDACTED" list as sensitive — update both
+    // SD-K-008 (KASSE_STRATEGIC_DECISIONS.md) and this audit comment in lockstep.
+    //
+    // The PII-redacted notice block at the bottom of the email body references
+    // these fields by name to make this contract explicit to email recipients.
     await resend.emails.send({
       from: "Kasse System <onboarding@kasseapp.com>",
       to: "ceo@36west.org",
