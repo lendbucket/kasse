@@ -397,6 +397,9 @@ Engine / integration:
 - `PAYROC_TIMEOUT` — Payroc did not respond within timeout window
 - `MAINTENANCE_MODE` — engine is in scheduled maintenance
 
+Production safety:
+- `INVALID_PARAMETER_IN_PRODUCTION` — production request included a `simulate` parameter (or other sandbox-only parameter). Returned BEFORE any payment-network action; no charge is created, no idempotency record is written, no rate limit consumed.
+
 Resource-specific error codes are defined in Part II under each resource's "Special considerations" section and consolidated below.
 
 ### Resource-specific error codes (Tier 2)
@@ -1786,8 +1789,6 @@ Webhook event for rotation:
 
 ---
 
----
-
 # PART III — NON-FUNCTIONAL REQUIREMENTS
 
 Part III of this specification (Tier 3 of the iterative-delivery sequence). Defines what the engine guarantees in production beyond the API surface itself: uptime, latency, data residency, compliance posture, sandbox/test environment, deprecation policy, monitoring, and SDKs.
@@ -2006,7 +2007,24 @@ Sandbox supports query parameter overrides to simulate edge cases:
 - `?simulate=payroc_outage` — returns 502 PAYROC_UPSTREAM_ERROR
 - `?simulate=maintenance` — returns 503 MAINTENANCE_MODE
 
-These overrides are sandbox-only. In production, the `simulate` query parameter is silently stripped from the request before processing — the request is then processed normally as if the parameter had never been sent. The charge (or other operation) executes against real card networks and real money. This means a developer who accidentally hits production with a `?simulate=internal_error` query parameter still processes a real charge. There is no warning, no rejection, and no logging of the stripped parameter. Developers SHOULD distinguish production and sandbox by base URL (`api.reynapay.com` vs `api-sandbox.reynapay.com`) and by token prefix (`rpsk_live_` vs `rpsk_test_`), NOT by the presence or absence of simulate parameters.
+These overrides are sandbox-only. In production, the engine REJECTS any request containing a `simulate` query parameter with a `400 Bad Request` response BEFORE touching the underlying payment network:
+
+    HTTP/1.1 400 Bad Request
+    Content-Type: application/json
+
+    {
+      "error": {
+        "code": "INVALID_PARAMETER_IN_PRODUCTION",
+        "message": "The 'simulate' parameter is only valid in sandbox. Production requests must not include it. Verify your base URL and credentials are correctly targeting the intended environment.",
+        "type": "invalid_request_error",
+        "param": "simulate",
+        "request_id": "req_..."
+      }
+    }
+
+Rationale: a developer who fat-fingers production credentials against the production base URL while testing simulated failure modes would otherwise have their test request silently processed against real card networks and real money. Fail-loud is safer than silent-proceed for payment infrastructure. The cost of one rejected request is trivial; the cost of an inadvertent real charge is not.
+
+Developers SHOULD distinguish production and sandbox by base URL (`api.reynapay.com` vs `api-sandbox.reynapay.com`) and by token prefix (`rpsk_live_` vs `rpsk_test_`). The `simulate` rejection is a defense-in-depth measure, not a primary environment-distinction mechanism.
 
 ### Sandbox lifecycle
 
@@ -2204,23 +2222,33 @@ When an agent does something a human disagrees with, "the agent decided to refun
 
 ### PCI scope guardrail
 
-The agent audit log retention of full request and response bodies creates a potential PCI scope expansion if not handled carefully. Card vaulting endpoints (`POST /v1/cards`, `POST /v1/checkout-sessions`, anything that involves Payroc Hosted Fields tokenization) and bank account vaulting (`POST /v1/bank-tokens`) MAY have request bodies that include cardholder-facing or account-holder-facing field values (billing address, name on card, account holder name).
+The agent audit log retention of full request and response bodies creates a potential PCI scope expansion if not handled carefully. The following endpoints are CLASSIFIED for the PCI scope guardrail. The engine's audit-log writer MUST consult this allowlist at log-write time and apply the restricted logging pattern for any matching endpoint:
 
-To preserve the engine's PCI SAQ A-EP scope (Tier 3), the agent audit log for these endpoints SHALL log ONLY:
+| Endpoint | Reason for classification |
+|----------|---------------------------|
+| `POST /v1/cards` | Body may include billing address, name on card, ZIP — payment-instrument-adjacent data |
+| `POST /v1/checkout-sessions` | Body may include customer email/phone bound to a payment session; response includes Hosted Fields session token |
+| `POST /v1/bank-tokens` | Body includes account holder name, bank name; response includes the bank token reference |
+| `GET /v1/cards/:id` | Response includes brand, last4, exp, billing address — payment-instrument-adjacent data |
+| `GET /v1/bank-tokens/:id` | Response includes account holder name, routing/account last4 — payment-instrument-adjacent data |
+| `DELETE /v1/cards/:id` | Card deletion may surface card metadata in audit response |
+| `DELETE /v1/bank-tokens/:id` | Bank-token deletion may surface account metadata in audit response |
+
+This is the initial allowlist as of Tier 3+4 publication. Any new endpoint added to `app/api/cards/*`, `app/api/checkout-sessions/*`, or `app/api/bank-tokens/*` (engine-side, in the SalonTransact repo) MUST be added to this allowlist in the same PR. Reviewer guidance: PRs adding routes in those paths without updating this allowlist are foundation regressions.
+
+To preserve the engine's PCI SAQ A-EP scope (Part III), the agent audit log for allowlisted endpoints SHALL log ONLY:
 
 - The endpoint called and HTTP method
 - The resulting token reference (e.g., `card_abc123`, `bt_xyz789`)
 - The HTTP status code and response timestamps
 - The agent_type and agent context headers (X-Agent-Context, X-Agent-Reasoning)
 
-The agent audit log for these endpoints SHALL NOT log:
+The agent audit log for allowlisted endpoints SHALL NOT log:
 
 - The plaintext request body (any field values)
 - The plaintext response body beyond the token reference (e.g., do not log billing_address even if Payroc returns it)
 
-Non-card-vaulting endpoints (charges, refunds, voids, payouts, disputes, etc.) log full request and response bodies per the standard agent audit log pattern. The card/bank-token guardrail applies ONLY to the specific endpoints that touch cardholder or account-holder data.
-
-Implementation requirement: the engine MUST identify card and bank-token creation endpoints by an explicit allowlist at audit-log-write time. New endpoints added to those resource categories MUST be added to the allowlist before the endpoint goes live. Reviewer guidance: any PR adding a route to `app/api/cards/*`, `app/api/checkout-sessions/*`, or `app/api/bank-tokens/*` (engine-side) MUST update the audit-log endpoint allowlist in the same PR.
+Endpoints NOT in the allowlist (charges, refunds, voids, payouts, disputes, merchants, customers, transactions, reports, api-keys, webhooks) log full request and response bodies per the standard agent audit log pattern.
 
 ---
 
@@ -2249,7 +2277,7 @@ A merchant can request elevated agent rate limits by contacting Reyna Pay suppor
 
 ## SEMANTIC ENHANCEMENTS BEYOND HATEOAS
 
-Tier 1 introduced HATEOAS `_links`. Tier 4 extends this with additional semantic affordances designed for agent consumption.
+Part I (Tier 1 of the delivery sequence) introduced HATEOAS `_links`. Part IV (Tier 4) extends this with additional semantic affordances designed for agent consumption.
 
 ### Action descriptions in _links
 
@@ -2384,6 +2412,18 @@ The optional `endpoint_allowlist` further restricts the agent to specific endpoi
 ### Agent revocation
 
 When an agent misbehaves, revoke the API key immediately via `DELETE /v1/api-keys/:id`. The token is invalidated at the next auth-cache refresh (under 60 seconds). All in-flight requests with that token continue to completion; new requests fail with `TOKEN_REVOKED`.
+
+### Disclosure requirements for agent-originated flows
+
+Kasse and other downstream consumers are required (per SD-K-010 in the Kasse strategic decisions record) to display a "Powered by SalonTransact" label on consumer-facing surfaces involving payment: checkout pages, payment-method-management screens, refund confirmation flows, customer receipts, dispute notifications.
+
+This requirement applies regardless of whether the action that triggered the surface was initiated by a human user or by an AI agent. Examples:
+
+- An AI booking agent creates a charge on behalf of a customer. The customer's resulting receipt email (sent by the consumer's transactional email system, not by the engine) MUST display the "Powered by SalonTransact" label.
+- A dispute-response agent submits evidence on behalf of a merchant. The merchant's portal view of the dispute timeline MUST display the label on the action entry.
+- An agent does NOT itself need to render the label (agents have no UI). The label requirement attaches to whatever consumer-facing surface the agent's action eventually produces.
+
+Reviewer guidance: any Kasse PR that adds a new consumer-facing surface displaying payment-related actions MUST include the "Powered by SalonTransact" label regardless of whether the action originator is a human or an agent. The disclosure requirement is not about who initiated the action; it is about the surface displaying it.
 
 ---
 
