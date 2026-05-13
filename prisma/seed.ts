@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 const prisma = new PrismaClient({
@@ -103,10 +103,10 @@ async function main() {
 
   for (const o of orgs) {
     const firstUser = o.users[0];
-    if (firstUser && firstUser.role !== "OWNER") {
+    if (firstUser && firstUser.role !== Role.OWNER) {
       await prisma.user.update({
         where: { id: firstUser.id },
-        data: { role: "OWNER" },
+        data: { role: Role.OWNER },
       });
       console.log(`P0.A.1: Promoted ${firstUser.email} to OWNER for org ${o.id}`);
     }

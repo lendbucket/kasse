@@ -17,7 +17,7 @@
  *   Refuses to run if NODE_ENV=production unless --force is passed.
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
@@ -83,7 +83,7 @@ async function main() {
     update: {
       password: hash,
       organizationId: org.id,
-      role: "OWNER",
+      role: Role.OWNER,
       isActive: true,
       emailVerified: new Date(),
     },
@@ -91,7 +91,7 @@ async function main() {
       email: RLS_USER_EMAIL,
       name: "RLS Test User 2",
       password: hash,
-      role: "OWNER",
+      role: Role.OWNER,
       organizationId: org.id,
       emailVerified: new Date(),
       isActive: true,

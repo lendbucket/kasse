@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client"
+import { PrismaClient, Role } from "@prisma/client"
 import { PrismaPg } from "@prisma/adapter-pg"
 import bcrypt from "bcryptjs"
 
@@ -13,12 +13,12 @@ async function main() {
 
   const admin = await prisma.user.upsert({
     where: { email: "ceo@36west.org" },
-    update: { role: "SUPERADMIN", password },
+    update: { role: Role.SUPERADMIN, password },
     create: {
       email: "ceo@36west.org",
       name: "Robert Reyna",
       password,
-      role: "SUPERADMIN",
+      role: Role.SUPERADMIN,
       emailVerified: new Date(),
       isActive: true,
     },
