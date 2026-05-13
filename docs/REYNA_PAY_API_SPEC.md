@@ -1203,7 +1203,7 @@ A charge is a payment processed through Reyna Pay. This is the core payment-proc
 | `id` | string | no | server-assigned | Format `ch_<base62>` |
 | `merchant_id` | string | no | server-assigned | |
 | `customer_id` | string | yes | yes | If charging a saved customer |
-| `amount` | integer | no | yes | Amount in cents |
+| `amount` | integer | no | yes | The total amount charged to the cardholder's payment method, in integer cents. This is the gross amount Payroc receives. If `tip_amount` is provided, it is ALREADY INCLUDED in `amount` — `amount` is the post-tip total, not the base service fee. Consumer responsibility: compute `amount = base_service_amount + tip_amount + tax_amount` on the consumer side before submitting the charge. The engine does not derive `amount` from other fields. |
 | `currency` | string | no | yes | ISO 4217 lowercase (default: merchant's default currency) |
 | `status` | enum | no | server-managed | `pending`, `succeeded`, `failed`, `refunded`, `partially_refunded`, `disputed` |
 | `payment_method` | enum | no | yes | `card`, `ach`, `cash` |
@@ -1213,7 +1213,7 @@ A charge is a payment processed through Reyna Pay. This is the core payment-proc
 | `description` | string | yes | yes | Internal description |
 | `statement_descriptor` | string | yes | yes | What appears on cardholder's statement (max 22 chars) |
 | `application_fee` | integer | yes | yes | Engine-charged fee in cents (for platform tokens taking a cut) |
-| `tip_amount` | integer | yes | yes | Tip in cents |
+| `tip_amount` | integer | yes | yes | The tip portion already included in `amount`, in integer cents. Documentary only — used for reporting and commission calculations (e.g., stylists earn commission on services but not tips). The engine does NOT add this to `amount` at processing time; it is already part of `amount`. If `tip_amount` is null or absent, the engine assumes the charge has no tip component. |
 | `receipt_email` | string | yes | yes | Email to send receipt to |
 | `receipt_phone` | string | yes | yes | Phone to send receipt SMS to |
 | `capture` | boolean | no | yes | Default `true`. Set `false` for authorize-only. |
@@ -1270,8 +1270,9 @@ Status `refunded`: `self`, `customer`, `refunds` (GET)
 
 ### Special considerations
 
+- **Amount and tip semantics:** The `amount` field is the gross total charged to the cardholder. The `tip_amount` field is the tip portion ALREADY INCLUDED in `amount`. Consumers are responsible for computing the total before submitting — the engine does NOT compute `amount = base + tip + tax` from constituent fields. This convention matches Stripe and Square: `amount` is what the cardholder is charged, `tip_amount` is metadata identifying which portion of that total was a tip. If `tip_amount` exceeds `amount` (i.e., the tip is larger than the total), the engine returns `400 Bad Request` with error code `INVALID_FIELD_VALUE` and `param: "tip_amount"`.
 - **Throughput:** Charges are the highest-volume resource. The idempotency store, rate limiter, and webhook delivery infrastructure must handle this resource's throughput.
-- **Auth-and-capture:** Charges support `capture: false` for authorize-without-capture flows. The authorization holds funds for up to 7 days. After 7 days, uncaptured authorizations expire and the hold is released. The engine fires `charge.authorization_expired` when an uncaptured authorization reaches its expiration window (typically 7 days, configurable per merchant). Consumers SHOULD subscribe to this event for any merchant using auth-only charges. If a consumer fails to capture before expiration, the held funds are released by the cardholder's issuing bank — this represents lost revenue and should not happen silently.
+- **Authorization hold window:** The authorization hold window is issuer-set, not engine-set: typically 7 days for card-present transactions, up to 30 days for card-not-present, varying by card brand (Visa, Mastercard, Amex, Discover) and issuing bank policy. The engine cannot extend the hold beyond what the issuer permits. Per-merchant configuration of the hold window is NOT guaranteed by Payroc's underlying API — consumers should treat 7 days as the safe upper bound for planning purposes and capture authorizations as quickly as practical. The engine fires `charge.authorization_expired` when an uncaptured authorization reaches its actual expiration, regardless of the nominal window. Consumers running auth-and-capture flows (e.g., salon pre-auth holds for chemical services) SHOULD subscribe to this event and implement a capture-deadline reminder in their consumer-side scheduling system rather than relying solely on the webhook.
 - **Auto void vs refund:** The engine SHOULD detect when a refund is requested against an unsettled charge and execute as void instead (faster, lower fee). From the consumer's perspective, they always POST to /refunds — the engine decides the optimal mechanism.
 - **Consumer-layer metadata convention (informational):** The engine's `metadata` field is a free-form key/value object. Consumers MAY use it to tag charges with consumer-domain context that the engine does not understand or enforce. Kasse, as the salon-vertical consumer, MUST include the following keys in `metadata` on every charge it creates:
     - `kasse.booking_id` — the Kasse Appointment ID this charge corresponds to (or null for walk-in / non-appointment charges)
