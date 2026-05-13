@@ -1,3 +1,23 @@
+/**
+ * Sidebar — desktop merchant portal navigation
+ *
+ * Visual spec: docs/KASSE_UI_PRINCIPLES.md → "Sidebar Navigation (Desktop)"
+ *   - Width: 220px (Square-standard)
+ *   - Background: white (#ffffff)
+ *   - Border-right: 1px solid #e5e7eb (no boxShadow)
+ *   - Active state: bg rgba(96,110,116,0.08), color #606E74, weight 600
+ *   - Section labels: 11px uppercase, color #9ca3af, letter-spacing 0.10em
+ *   - Icons: lucide-react, 16px in this component, strokeWidth 1.75 (tighter than the docs' default 1.5 to compensate for the small 16px size)
+ *
+ * If any color literal in this file is changed, verify against
+ * docs/KASSE_UI_PRINCIPLES.md COLOR SYSTEM section first. Color constants
+ * are defined at the top of the function for easy reference. Do not
+ * introduce new color literals inline — extend the constants block instead.
+ *
+ * Phase 0.7-a brought this file from a dark-theme (#2f5061) styling
+ * (which predated the locked design system) into compliance with
+ * KASSE_UI_PRINCIPLES.md.
+ */
 "use client"
 
 import { usePathname } from "next/navigation"
@@ -18,15 +38,16 @@ interface SidebarProps {
   }
 }
 
-const SIDEBAR_BG = "#2f5061"
-const SIDEBAR_BG_HOVER = "rgba(255,255,255,0.06)"
-const SIDEBAR_BG_ACTIVE = "rgba(255,255,255,0.10)"
-const TEXT_ACTIVE = "#ffffff"
-const TEXT_INACTIVE = "rgba(255,255,255,0.70)"
-const TEXT_LABEL = "rgba(255,255,255,0.45)"
-const TEXT_ICON_INACTIVE = "rgba(255,255,255,0.55)"
-const BORDER_SUBTLE = "rgba(255,255,255,0.08)"
-const BLUSH = "#e57f84"
+// Color tokens — match docs/KASSE_UI_PRINCIPLES.md "Sidebar Navigation (Desktop)" + "COLOR SYSTEM"
+const SIDEBAR_BG = "#ffffff"                       // Page-level white surface
+const SIDEBAR_BG_HOVER = "#f9fafb"                 // Subtle hover tint (matches table row hover)
+const SIDEBAR_BG_ACTIVE = "rgba(96,110,116,0.08)"  // Brand-tint background for active item
+const TEXT_ACTIVE = "#606E74"                      // Brand primary for active label
+const TEXT_INACTIVE = "#374151"                    // Body-text secondary (one tier darker than muted; reads clearly on white)
+const TEXT_LABEL = "#9ca3af"                       // Section labels (e.g. "OPERATIONS") — muted gray
+const TEXT_ICON_INACTIVE = "#9ca3af"               // Inactive icon color, matches label
+const BORDER_SUBTLE = "#e5e7eb"                    // One border color for everything per spec
+const BRAND = "#606E74"                            // Kasse slate teal — was BLUSH in prior version
 
 export default function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname()
@@ -35,7 +56,7 @@ export default function Sidebar({ user }: SidebarProps) {
     <aside style={{
       width: 220, minHeight: "100vh", background: SIDEBAR_BG,
       display: "flex", flexDirection: "column",
-      boxShadow: "2px 0 8px rgba(15,30,40,0.08)",
+      borderRight: `1px solid ${BORDER_SUBTLE}`,
       position: "relative", zIndex: 40,
     }}>
       {/* Header — kasse. wordmark as text */}
@@ -44,10 +65,10 @@ export default function Sidebar({ user }: SidebarProps) {
         borderBottom: `1px solid ${BORDER_SUBTLE}`,
       }}>
         <span style={{
-          fontFamily: "inherit", fontSize: 20, fontWeight: 800, color: "#ffffff",
+          fontFamily: "inherit", fontSize: 20, fontWeight: 800, color: "#111827",
           letterSpacing: "-0.5px", lineHeight: 1, userSelect: "none",
         }}>
-          kasse<span style={{ color: BLUSH }}>.</span>
+          kasse<span style={{ color: BRAND }}>.</span>
         </span>
       </div>
 
@@ -55,14 +76,14 @@ export default function Sidebar({ user }: SidebarProps) {
       <div style={{ padding: "12px 12px 8px", position: "relative" }}>
         <Search size={14} strokeWidth={1.75} style={{
           position: "absolute", left: 22, top: "50%", transform: "translateY(-30%)",
-          color: "rgba(255,255,255,0.50)", pointerEvents: "none",
+          color: "#9ca3af", pointerEvents: "none",
         }} />
         <input type="text" placeholder="Search" style={{
           width: "100%", height: 32,
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.10)",
+          background: "#ffffff",
+          border: "1px solid #e5e7eb",
           borderRadius: 6, padding: "0 10px 0 30px",
-          fontSize: 13, color: "#ffffff", outline: "none",
+          fontSize: 13, color: "#111827", outline: "none",
         }} />
       </div>
 
@@ -87,7 +108,7 @@ export default function Sidebar({ user }: SidebarProps) {
                   fontWeight: active ? 600 : 500,
                   color: active ? TEXT_ACTIVE : TEXT_INACTIVE,
                   background: active ? SIDEBAR_BG_ACTIVE : "transparent",
-                  borderLeft: active ? `3px solid ${BLUSH}` : "3px solid transparent",
+                  borderLeft: active ? `3px solid ${BRAND}` : "3px solid transparent",
                   transition: "background 120ms, color 120ms",
                 }}>
                   <Icon size={16} strokeWidth={1.75} style={{
@@ -114,7 +135,7 @@ export default function Sidebar({ user }: SidebarProps) {
               fontWeight: pathname.startsWith("/admin") ? 600 : 500,
               color: pathname.startsWith("/admin") ? TEXT_ACTIVE : TEXT_INACTIVE,
               background: pathname.startsWith("/admin") ? SIDEBAR_BG_ACTIVE : "transparent",
-              borderLeft: pathname.startsWith("/admin") ? `3px solid ${BLUSH}` : "3px solid transparent",
+              borderLeft: pathname.startsWith("/admin") ? `3px solid ${BRAND}` : "3px solid transparent",
               transition: "background 120ms, color 120ms",
             }}>
               <Shield size={16} strokeWidth={1.75} style={{
@@ -134,7 +155,7 @@ export default function Sidebar({ user }: SidebarProps) {
       }}>
         <a href="/dashboard/pos" style={{
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          width: "100%", height: 38, background: BLUSH, color: "white",
+          width: "100%", height: 38, background: BRAND, color: "white",
           borderRadius: 6, fontSize: 13, fontWeight: 600,
           textDecoration: "none", cursor: "pointer",
           transition: "background 120ms",
