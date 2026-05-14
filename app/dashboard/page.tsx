@@ -2,6 +2,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getLandingForRole } from "@/lib/permissions/role-landing";
+import { Role } from "@prisma/client";
 import DashboardClock from "./DashboardClock";
 import {
   TrendingDown,
@@ -17,6 +19,18 @@ import {
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
+
+  // P0.A.8: redirect users whose role has a more specific landing page
+  const userRole = session.user.role as Role;
+  const fullDashboardRoles: Role[] = [
+    Role.OWNER,
+    Role.FRANCHISE_OWNER,
+    Role.MANAGER,
+    Role.BUSINESS_PARTNER,
+  ];
+  if (!fullDashboardRoles.includes(userRole)) {
+    redirect(getLandingForRole(userRole));
+  }
 
   let todayRevenue = 0;
   let transactionCount = 0;
