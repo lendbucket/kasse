@@ -89,8 +89,10 @@ export function usePermissions(): PermissionsAPI {
     const role = (session?.user as { role?: Role } | undefined)?.role ?? null;
     const organizationId = (session?.user as { organizationId?: string | null } | undefined)?.organizationId ?? null;
     const staffId = (session?.user as { staffId?: string | null } | undefined)?.staffId ?? null;
+    const customRolePermissions = (session?.user as { customRolePermissions?: PermissionKey[] } | undefined)?.customRolePermissions;
 
-    const permissions: PermissionKey[] = role ? roleDefaults[role] ?? [] : [];
+    // P0.A.11: customRolePermissions (from User.customRoleId → PermissionSet) override roleDefaults
+    const permissions: PermissionKey[] = customRolePermissions ?? (role ? roleDefaults[role] ?? [] : []);
 
     const can = (action: PermissionKey, resource?: UIResourceContext): boolean => {
       if (!isAuthenticated) return false;

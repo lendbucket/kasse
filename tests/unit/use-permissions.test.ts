@@ -91,4 +91,24 @@ describe("usePermissions — checkPermission() logic (P0.A.9)", () => {
     assert.equal(isAuth("authenticated", undefined), false);
     assert.equal(isAuth("authenticated", { id: "1" }), true);
   });
+
+  it("(k) customRolePermissions overrides roleDefaults in checkPermission", () => {
+    // STAFF normally can't access FINANCIAL.VIEW_REVENUE
+    const staffPerms = roleDefaults[Role.STAFF];
+    assert.equal(checkPermission(Role.STAFF, "s1", staffPerms, P.FINANCIAL.VIEW_REVENUE), false);
+
+    // But with customRolePermissions, it can
+    const customPerms: PermissionKey[] = [P.FINANCIAL.VIEW_REVENUE];
+    assert.equal(checkPermission(Role.STAFF, "s1", customPerms, P.FINANCIAL.VIEW_REVENUE), true);
+  });
+
+  it("(l) customRolePermissions replaces (not unions) roleDefaults", () => {
+    // STAFF normally has APPOINTMENTS.VIEW_OWN
+    const staffPerms = roleDefaults[Role.STAFF];
+    assert.equal(checkPermission(Role.STAFF, "s1", staffPerms, P.APPOINTMENTS.VIEW_OWN), true);
+
+    // Custom role without that permission → false
+    const customPerms: PermissionKey[] = [P.FINANCIAL.VIEW_REVENUE];
+    assert.equal(checkPermission(Role.STAFF, "s1", customPerms, P.APPOINTMENTS.VIEW_OWN), false);
+  });
 });

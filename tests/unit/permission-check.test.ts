@@ -162,4 +162,20 @@ describe("Permission check engine (P0.A.4)", () => {
     const result = can(session, Permissions.APPOINTMENTS.EDIT_OWN, { organizationId: "org-1" });
     assert.equal(result, false);
   });
+
+  it("(l) customRolePermissions overrides roleDefaults — grants permission STAFF normally lacks", () => {
+    // STAFF normally can't access FINANCIAL.VIEW_REVENUE, but a custom role grants it
+    const session = makeSession(Role.STAFF, {
+      customRolePermissions: [Permissions.FINANCIAL.VIEW_REVENUE],
+    });
+    assert.equal(can(session, Permissions.FINANCIAL.VIEW_REVENUE), true);
+  });
+
+  it("(m) customRolePermissions replaces (not unions) roleDefaults", () => {
+    // STAFF normally has APPOINTMENTS.VIEW_OWN, but custom role doesn't include it
+    const session = makeSession(Role.STAFF, {
+      customRolePermissions: [Permissions.FINANCIAL.VIEW_REVENUE],
+    });
+    assert.equal(can(session, Permissions.APPOINTMENTS.VIEW_OWN), false);
+  });
 });

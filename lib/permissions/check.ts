@@ -19,6 +19,7 @@ export type PermissionSession = {
     role: Role;
     organizationId: string;
     staffId?: string;
+    customRolePermissions?: PermissionKey[];  // P0.A.11: resolved from User.customRoleId at session time
   };
 };
 
@@ -122,9 +123,9 @@ export function can(
   // Step 1: SUPERADMIN bypass
   if (session.user.role === Role.SUPERADMIN) return true;
 
-  // Step 4: Check role defaults
-  const defaults = roleDefaults[session.user.role] ?? [];
-  if (!defaults.includes(action)) return false;
+  // Step 4: Check permissions — customRolePermissions (from PermissionSet) override roleDefaults
+  const permissions = session.user.customRolePermissions ?? roleDefaults[session.user.role] ?? [];
+  if (!permissions.includes(action)) return false;
 
   // Step 5: Resource constraints — actions ending in "_own" require staffId match
   if (action.endsWith("_own")) {
