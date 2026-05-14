@@ -27,13 +27,14 @@ import { NAV_SECTIONS } from "./nav-items"
 import {
   Search, CreditCard, Bell, FileText, HelpCircle, LogOut, Shield,
 } from "lucide-react"
+import { Role } from "@prisma/client"
 
 interface SidebarProps {
   user: {
     name?: string | null
     email?: string | null
     image?: string | null
-    role?: string
+    role?: Role
     organizationId?: string | null
   }
 }
@@ -122,7 +123,7 @@ export default function Sidebar({ user }: SidebarProps) {
           </div>
         ))}
 
-        {user.role === "superadmin" && (
+        {user.role === Role.SUPERADMIN && (
           <div>
             <p style={{
               padding: "12px 20px 4px", fontSize: 10, fontWeight: 700,

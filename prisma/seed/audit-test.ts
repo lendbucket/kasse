@@ -16,7 +16,7 @@
  *   Don't pass --force in production. This fixture is a local-dev-only contract.
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Role } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 
@@ -82,7 +82,7 @@ async function main() {
     update: {
       password: hash,
       organizationId: org.id,
-      role: "owner",
+      role: Role.OWNER,
       isActive: true,
       emailVerified: new Date(),
     },
@@ -90,7 +90,7 @@ async function main() {
       email: AUDIT_USER_EMAIL,
       name: "Audit Test User",
       password: hash,
-      role: "owner",
+      role: Role.OWNER,
       organizationId: org.id,
       emailVerified: new Date(),
       isActive: true,

@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
+import { Role } from "@prisma/client"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -58,7 +59,13 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
-        session.user.role = token.role as string
+        // Validate role against current Role enum — defensive against stale JWTs
+        // minted before P0.A.1 (which had lowercase string roles).
+        const rawRole = token.role as string | undefined;
+        const validRole = rawRole && Object.values(Role).includes(rawRole as Role)
+          ? (rawRole as Role)
+          : Role.STAFF;
+        session.user.role = validRole
         session.user.organizationId = token.organizationId as string
         session.user.locationId = token.locationId as string | null
       }
@@ -78,7 +85,7 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       image?: string | null
-      role: string
+      role: Role
       organizationId?: string | null
       locationId?: string | null
     }

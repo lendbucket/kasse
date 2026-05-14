@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Role } from "@prisma/client"
 import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { Resend } from "resend"
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
         name,
         email: email.toLowerCase(),
         password: hashedPassword,
-        role: "owner",
+        role: Role.OWNER,
         organizationId: org.id,
         emailVerifyToken: verifyToken,
         emailVerifyExp: verifyExp,

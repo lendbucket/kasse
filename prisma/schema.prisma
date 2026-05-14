@@ -8,6 +8,22 @@ datasource db {
 }
 
 // ═══════════════════════════════════════════
+// ROLE ENUM (ABO-002: database-level role enforcement)
+// ═══════════════════════════════════════════
+
+enum Role {
+  SUPERADMIN
+  OWNER
+  MANAGER
+  STAFF
+  STAFF_VIEW_ONLY
+  CLIENT
+  FRANCHISE_OWNER
+  ACCOUNTANT
+  BUSINESS_PARTNER
+}
+
+// ═══════════════════════════════════════════
 // ORGANIZATIONS & FRANCHISING
 // ═══════════════════════════════════════════
 
@@ -109,7 +125,7 @@ model User {
   emailVerifyExp   DateTime?
   password         String?
   image            String?
-  role             String    @default("staff")
+  role             Role      @default(STAFF)
   organizationId   String?
   organization     Organization? @relation(fields: [organizationId], references: [id])
   locationId       String?

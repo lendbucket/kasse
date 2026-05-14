@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Role } from "@prisma/client";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import {
   requireSuperadminContext,
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     return tx.organization.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        users: { take: 1, where: { role: "owner" }, select: { email: true, name: true } },
+        users: { take: 1, where: { role: Role.OWNER }, select: { email: true, name: true } },
         _count: { select: { locations: true, users: true } },
       },
     });
