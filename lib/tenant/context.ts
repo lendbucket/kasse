@@ -14,6 +14,7 @@ export interface TenantContext {
   organizationId: string;
   locationId: string | null;
   isSuperadmin: boolean;
+  customRolePermissions?: string[];  // P0.A.11: from User.customRoleId → PermissionSet
   request?: {
     ip?: string;
     userAgent?: string;
@@ -77,6 +78,7 @@ export async function getTenantContext(req?: NextRequest): Promise<TenantContext
   if (!session.user.organizationId && !isSuperadmin) return null;
 
   const request = extractRequestContext(req);
+  const customRolePermissions = (session.user as { customRolePermissions?: string[] }).customRolePermissions;
   return {
     userId: session.user.id,
     email: session.user.email ?? "",
@@ -85,6 +87,7 @@ export async function getTenantContext(req?: NextRequest): Promise<TenantContext
     organizationId: session.user.organizationId ?? "",
     locationId: session.user.locationId ?? null,
     isSuperadmin,
+    ...(customRolePermissions ? { customRolePermissions } : {}),
     ...(request ? { request } : {}),
   };
 }

@@ -68,6 +68,37 @@ export const authOptions: NextAuthOptions = {
         session.user.role = validRole
         session.user.organizationId = token.organizationId as string
         session.user.locationId = token.locationId as string | null
+
+        // P0.A.11: re-read customRoleId FROM DB on every session lookup,
+        // so admin assignment changes (assign/unassign/edit) are reflected
+        // immediately without users needing to log out and back in.
+        // Two DB reads per authenticated request — acceptable cost for
+        // correctness.
+        try {
+          const userRow = await prismaAdmin.user.findUnique({
+            where: { id: token.id as string },
+            select: { customRoleId: true },
+          })
+          if (userRow?.customRoleId) {
+            const customRole = await prismaAdmin.permissionSet.findUnique({
+              where: { id: userRow.customRoleId },
+              select: { permissions: true },
+            })
+            if (customRole) {
+              session.user.customRolePermissions = customRole.permissions as string[]
+            } else {
+              // The custom role was deleted between login and now; fall back
+              // to roleDefaults by clearing the override.
+              session.user.customRolePermissions = undefined
+            }
+          } else {
+            // The user's customRoleId was removed; clear the override.
+            session.user.customRolePermissions = undefined
+          }
+        } catch (e) {
+          console.error("[auth] failed to re-load customRolePermissions in session — failing closed (clearing custom permissions to fall back to roleDefaults for this request)", e)
+          session.user.customRolePermissions = undefined
+        }
       }
       return session
     },
@@ -92,6 +123,7 @@ declare module "next-auth" {
       role: Role
       organizationId?: string | null
       locationId?: string | null
+      customRolePermissions?: string[]
     }
   }
 }

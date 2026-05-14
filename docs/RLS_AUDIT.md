@@ -72,6 +72,8 @@ table is a foundation regression and should be flagged in code review.
 | `/api/settings/import` | GET, POST | CSV bulk import with ImportJob audit trail (tenant-scoped); row inserts use raw prisma intentionally (see architectural note in file) |
 | `/api/clients/[id]` | GET, PATCH | Reads client + appointments + totalSpent; patches profile fields — all scoped by organizationId (migrated 0.5.3b-1b) |
 | `/api/staff/[id]` | PATCH, DELETE | Updates staff fields (with locationId validation) or soft-deletes — all scoped by organizationId (migrated 0.5.3b-1b) |
+| `/api/permission-sets` | GET, POST | Lists/creates custom PermissionSets scoped to tenant org; validates name uniqueness + permission keys on POST (P0.A.11) |
+| `/api/permission-sets/[id]` | GET, PATCH, DELETE | Reads/updates/deletes a custom PermissionSet; org-scoped with defense-in-depth org match checks (P0.A.11) |
 
 ### BYPASS_NEEDED — PRE_SESSION (public, no session required)
 
@@ -109,14 +111,14 @@ table is a foundation regression and should be flagged in code review.
 
 ## Summary
 
-- TENANT_SCOPED: **20**
+- TENANT_SCOPED: **22**
 - BYPASS_NEEDED: **10**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **5** (admin portal operations)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 31**
+**Total routes: 33**
 
 ## What happens next
 

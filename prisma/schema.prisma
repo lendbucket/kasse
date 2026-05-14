@@ -129,6 +129,8 @@ model User {
   organizationId     String?
   organization       Organization?  @relation(fields: [organizationId], references: [id])
   locationId         String?
+  customRoleId       String?
+  customRole         PermissionSet? @relation("UserCustomRole", fields: [customRoleId], references: [id], onDelete: SetNull)
   isActive           Boolean        @default(true)
   lastLoginAt        DateTime?
   passwordResetToken String?
@@ -142,6 +144,8 @@ model User {
   auditLogs          AuditLog[]
   notifications      Notification[]
   staff              Staff?         @relation("UserStaff")
+
+  @@index([customRoleId])
 }
 
 model Account {
@@ -687,6 +691,7 @@ model PermissionSet {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users          User[]        @relation("UserCustomRole")
 
   @@unique([organizationId, name])
   @@index([organizationId])
