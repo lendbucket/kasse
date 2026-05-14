@@ -59,7 +59,13 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
-        session.user.role = token.role as Role
+        // Validate role against current Role enum — defensive against stale JWTs
+        // minted before P0.A.1 (which had lowercase string roles).
+        const rawRole = token.role as string | undefined;
+        const validRole = rawRole && Object.values(Role).includes(rawRole as Role)
+          ? (rawRole as Role)
+          : Role.STAFF;
+        session.user.role = validRole
         session.user.organizationId = token.organizationId as string
         session.user.locationId = token.locationId as string | null
       }

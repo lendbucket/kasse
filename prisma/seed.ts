@@ -85,17 +85,20 @@ async function main() {
 
   console.log("Seeded organization + location + services + staff");
 
-  // P0.A.1: Ensure first user of each Organization is OWNER (idempotent)
-  // This handles legacy data where the org-creator may not have OWNER role.
-  //
-  // CROSS-ORG SUPERUSER SCOPE: This block reads all organizations and may
-  // update users across tenant boundaries. This is safe because:
-  //   1. Seed scripts run as the postgres superuser via DATABASE_URL
-  //   2. Seed scripts are NOT the runtime app — they run in an operator context
-  //   3. The app's prismaAdmin (lib/prismaAdmin.ts) is for runtime superadmin
-  //      paths; seed scripts create their own PrismaClient with direct connection
-  // TODO: remove after P0.A.7 ships (all orgs will have OWNER set at registration)
+  await backfillP0A1OwnerRoles(prisma);
+}
 
+// P0.A.1: Ensure first user of each Organization is OWNER (idempotent)
+// This handles legacy data where the org-creator may not have OWNER role.
+//
+// CROSS-ORG SUPERUSER SCOPE: This block reads all organizations and may
+// update users across tenant boundaries. This is safe because:
+//   1. Seed scripts run as the postgres superuser via DATABASE_URL
+//   2. Seed scripts are NOT the runtime app — they run in an operator context
+//   3. The app's prismaAdmin (lib/prismaAdmin.ts) is for runtime superadmin
+//      paths; seed scripts create their own PrismaClient with direct connection
+// TODO: remove after P0.A.7 ships (all orgs will have OWNER set at registration)
+async function backfillP0A1OwnerRoles(prisma: PrismaClient) {
   // P0.A.1 backfill — superuser/operator context only.
   // Mirrors the guard in seed-admin.ts and seed/audit-test.ts.
   if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== '1') {

@@ -123,7 +123,7 @@ export default function Sidebar({ user }: SidebarProps) {
           </div>
         ))}
 
-        {user.role === "SUPERADMIN" && (
+        {user.role === Role.SUPERADMIN && (
           <div>
             <p style={{
               padding: "12px 20px 4px", fontSize: 10, fontWeight: 700,
