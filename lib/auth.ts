@@ -72,7 +72,11 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async redirect({ url, baseUrl }) {
-      if (url.startsWith(baseUrl)) return url
+      // Allow explicit callback URLs that point inside the app
+      // (e.g. ?callbackUrl=/dashboard/staff from a middleware redirect).
+      if (url.startsWith(baseUrl) && !url.endsWith("/login")) return url
+      // Otherwise, fall back to /dashboard. Role-based routing happens
+      // server-side in app/dashboard/page.tsx (P0.A.8).
       return baseUrl + "/dashboard"
     },
   },
