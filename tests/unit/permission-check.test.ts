@@ -45,26 +45,20 @@ describe("Permission check engine (P0.A.4)", () => {
     assert.equal(can(session, Permissions.PAYROLL.RUN_PAYROLL), true);
   });
 
-  it("non-SUPERADMIN roles return false (stub state)", () => {
-    const roles = [
-      Role.OWNER,
-      Role.MANAGER,
-      Role.STAFF,
-      Role.STAFF_VIEW_ONLY,
-      Role.CLIENT,
-      Role.FRANCHISE_OWNER,
-      Role.ACCOUNTANT,
-      Role.BUSINESS_PARTNER,
-    ];
-
-    for (const role of roles) {
-      const session = makeSession(role);
-      assert.equal(
-        can(session, Permissions.POS.OPEN_CHECKOUT),
-        false,
-        `Expected can() to return false for ${role} (stub state)`,
-      );
-    }
+  it("non-SUPERADMIN roles return correct results based on roleDefaults", () => {
+    // OWNER has POS.OPEN_CHECKOUT
+    assert.equal(can(makeSession(Role.OWNER), Permissions.POS.OPEN_CHECKOUT), true);
+    // OWNER does NOT have ADMIN.IMPERSONATE
+    assert.equal(can(makeSession(Role.OWNER), Permissions.ADMIN.IMPERSONATE), false);
+    // MANAGER has POS.OPEN_CHECKOUT
+    assert.equal(can(makeSession(Role.MANAGER), Permissions.POS.OPEN_CHECKOUT), true);
+    // MANAGER does NOT have FINANCIAL.VIEW_REVENUE
+    assert.equal(can(makeSession(Role.MANAGER), Permissions.FINANCIAL.VIEW_REVENUE), false);
+    // STAFF has POS.OPEN_CHECKOUT but not POS.OVERRIDE_PRICE
+    assert.equal(can(makeSession(Role.STAFF), Permissions.POS.OPEN_CHECKOUT), true);
+    assert.equal(can(makeSession(Role.STAFF), Permissions.POS.OVERRIDE_PRICE), false);
+    // CLIENT has nothing
+    assert.equal(can(makeSession(Role.CLIENT), Permissions.POS.OPEN_CHECKOUT), false);
   });
 
   it("requireRole throws PermissionError when role mismatched", () => {
@@ -131,33 +125,41 @@ describe("Permission check engine (P0.A.4)", () => {
     );
   });
 
-  it("resource context parameter accepted but not yet enforced (passes through cleanly)", () => {
-    const session = makeSession(Role.SUPERADMIN);
-    const resource = {
-      ownerId: "user-123",
-      organizationId: "org-456",
-      staffId: "staff-789",
-      locationId: "loc-abc",
-    };
+  it("resource context enforces _own staffId constraint", () => {
+    const ownResource = { staffId: "staff-A" };
+    const otherResource = { staffId: "staff-B" };
 
-    // Should not throw — SUPERADMIN bypasses, resource is accepted but ignored
-    assert.equal(can(session, Permissions.APPOINTMENTS.VIEW_OWN, resource), true);
-    assert.doesNotThrow(() =>
-      requirePermission(session, Permissions.APPOINTMENTS.VIEW_OWN, resource),
-    );
+    // SUPERADMIN bypasses resource constraints
+    const admin = makeSession(Role.SUPERADMIN);
+    assert.equal(can(admin, Permissions.APPOINTMENTS.VIEW_OWN, otherResource), true);
 
-    // Non-SUPERADMIN with resource — still false in stub, but no crash
-    const staff = makeSession(Role.STAFF, { staffId: "staff-789" });
-    assert.equal(can(staff, Permissions.APPOINTMENTS.VIEW_OWN, resource), false);
+    // STAFF with matching staffId → allowed
+    const staffA = makeSession(Role.STAFF, { staffId: "staff-A" });
+    assert.equal(can(staffA, Permissions.APPOINTMENTS.VIEW_OWN, ownResource), true);
+    assert.equal(can(staffA, Permissions.APPOINTMENTS.EDIT_OWN, ownResource), true);
 
-    // requirePermission captures resource in the error
+    // STAFF with mismatched staffId → denied
+    assert.equal(can(staffA, Permissions.APPOINTMENTS.VIEW_OWN, otherResource), false);
+    assert.equal(can(staffA, Permissions.APPOINTMENTS.EDIT_OWN, otherResource), false);
+
+    // No resource context → allowed (no constraint to apply)
+    assert.equal(can(staffA, Permissions.APPOINTMENTS.VIEW_OWN), true);
+
+    // requirePermission throws with resource in error
     assert.throws(
-      () => requirePermission(staff, Permissions.APPOINTMENTS.VIEW_OWN, resource),
+      () => requirePermission(staffA, Permissions.APPOINTMENTS.EDIT_OWN, otherResource),
       (err: unknown) => {
         assert.ok(err instanceof PermissionError);
-        assert.deepEqual(err.resource, resource);
+        assert.deepEqual(err.resource, otherResource);
         return true;
       },
     );
+  });
+
+  it("_own constraint fails closed when partial resource is passed without staffId", () => {
+    const session = makeSession(Role.STAFF, { staffId: "staff-A" });
+    // Passing resource without staffId — should return false (fail closed)
+    const result = can(session, Permissions.APPOINTMENTS.EDIT_OWN, { organizationId: "org-1" });
+    assert.equal(result, false);
   });
 });
