@@ -74,6 +74,8 @@ table is a foundation regression and should be flagged in code review.
 | `/api/staff/[id]` | PATCH, DELETE | Updates staff fields (with locationId validation) or soft-deletes — all scoped by organizationId (migrated 0.5.3b-1b) |
 | `/api/permission-sets` | GET, POST | Lists/creates custom PermissionSets scoped to tenant org; validates name uniqueness + permission keys on POST (P0.A.11) |
 | `/api/permission-sets/[id]` | GET, PATCH, DELETE | Reads/updates/deletes a custom PermissionSet; org-scoped with defense-in-depth org match checks (P0.A.11) |
+| `/api/users` | GET | Lists org users for role assignment UI; scoped by organizationId (P0.A.12) |
+| `/api/users/[id]` | PATCH | Updates user's customRoleId; validates target PermissionSet belongs to same org (P0.A.12) |
 
 ### BYPASS_NEEDED — PRE_SESSION (public, no session required)
 
@@ -111,14 +113,14 @@ table is a foundation regression and should be flagged in code review.
 
 ## Summary
 
-- TENANT_SCOPED: **22**
+- TENANT_SCOPED: **24**
 - BYPASS_NEEDED: **10**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **5** (admin portal operations)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 33**
+**Total routes: 35**
 
 ## What happens next
 

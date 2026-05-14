@@ -78,6 +78,9 @@ export const routeMap: Record<string, RouteGuard> = {
   "/api/ai-receptionist": { type: "permission", permission: Permissions.AI.VIEW_RECEPTIONIST },
   "/api/permission-sets": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
   "/api/permission-sets/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
+  "/api/users": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
+  "/api/users/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
+  "/dashboard/settings/roles/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
 };
 
 /**
