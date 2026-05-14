@@ -17,7 +17,8 @@
     "audit:seed": "dotenv -e .env.local -- tsx prisma/seed/audit-test.ts",
     "rls:seed": "dotenv -e .env.local -- tsx prisma/seed/rls-test.ts",
     "rls:verify": "dotenv -e .env.local -- tsx scripts/rls-verify.ts",
-    "preflight:cutover": "dotenv -e .env.local -- tsx scripts/preflight-rls-cutover.ts"
+    "preflight:cutover": "dotenv -e .env.local -- tsx scripts/preflight-rls-cutover.ts",
+    "backfill:org-owners": "dotenv -e .env.local -- tsx scripts/backfill-org-owners.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
