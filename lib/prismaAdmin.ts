@@ -91,13 +91,37 @@ const _prismaAdmin = new PrismaClient({ adapter });
 // raw SQL call in an auth/admin/onboarding route, it MUST be wrapped in an
 // explicit prismaAdmin.$transaction(...) with its own SET LOCAL prelude.
 // See docs/RLS_AUDIT.md "Known limitations" for the standing record.
+//
+// Every prismaAdmin operation runs inside a BATCH transaction so the
+// SET LOCAL and the actual query run on the same connection in the same
+// transaction. Earlier interactive-transaction form was broken:
+//
+//   await _prismaAdmin.$transaction(async (tx) => {
+//     await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
+//     return query(args);  // ← BUG: ran on _prismaAdmin, not tx
+//   });
+//
+// query(args) executes against the outer _prismaAdmin instance, which picks
+// up a different pooled connection that doesn't have the session variable
+// set. RLS policies that check current_setting('app.is_superadmin') see
+// nothing → query returns empty → silent denial.
+//
+// The batch-array form below sends both operations as a single Prisma
+// transaction batch, guaranteeing they run on the same connection.
+//
+// Reference: https://www.prisma.io/docs/orm/prisma-client/client-extensions/query
+//   (section "Wrap a query into a batch transaction")
+//
+// SET LOCAL is scoped to the transaction; when it commits, the variable
+// clears, and the pooled connection returns clean for subsequent requests.
 export const prismaAdmin = _prismaAdmin.$extends({
   query: {
     $allOperations: async ({ args, query }) => {
-      return await _prismaAdmin.$transaction(async (tx) => {
-        await tx.$executeRaw`SET LOCAL app.is_superadmin = 'true'`;
-        return query(args);
-      });
+      const [, result] = await _prismaAdmin.$transaction([
+        _prismaAdmin.$executeRaw`SET LOCAL app.is_superadmin = 'true'`,
+        query(args),
+      ]);
+      return result;
     },
   },
 });
