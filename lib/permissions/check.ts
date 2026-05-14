@@ -1,18 +1,14 @@
 /**
- * Permission check engine (P0.A.4).
+ * Permission check engine (P0.A.4, wired in P0.A.5).
  *
  * Runtime helpers used by every API route and UI gate to enforce
  * role-based and permission-based access control.
  *
- * STUB STATE: In this PR, can() returns true for SUPERADMIN and false
- * for all other roles. The full role-to-permission mapping lands in
- * P0.A.5 (lib/permissions/defaults.ts). This intentional split keeps
- * PRs atomic.
- *
- * Refs: docs/build-order/PHASE_0_FOUNDATION.md P0.A.4
+ * Refs: docs/build-order/PHASE_0_FOUNDATION.md P0.A.4, P0.A.5
  */
 import { Role } from "@prisma/client";
 import type { PermissionKey } from "@/lib/permissions/types";
+import { roleDefaults } from "@/lib/permissions/defaults";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -62,8 +58,13 @@ export class PermissionError extends Error {
 // ── Role guards ──────────────────────────────────────────────────────────
 
 /**
- * Throws PermissionError if the session user's role does not match
- * the required role exactly.
+ * IDENTITY CHECK: Throws PermissionError if the session user's role
+ * does not match the required role exactly.
+ *
+ * This is an identity check ("is the user this exact role?"), NOT a
+ * capability check ("can the user do X?"). For capability checks,
+ * use can() or requirePermission() which consult the role-to-permission
+ * mapping and apply resource constraints.
  */
 export function requireRole(
   session: PermissionSession,
@@ -78,8 +79,11 @@ export function requireRole(
 }
 
 /**
- * Throws PermissionError if the session user's role is not in the
- * provided array.
+ * IDENTITY CHECK: Throws PermissionError if the session user's role
+ * is not in the provided array.
+ *
+ * Same identity-vs-capability distinction as requireRole() above.
+ * Use requirePermission() for capability checks.
  */
 export function requireAnyRole(
   session: PermissionSession,
@@ -96,29 +100,48 @@ export function requireAnyRole(
 // ── Permission checks ────────────────────────────────────────────────────
 
 /**
- * Pure permission check — returns boolean, never throws.
+ * CAPABILITY CHECK: Pure permission check — returns boolean, never throws.
  *
- * Evaluation order (per P0.A.4 spec):
+ * Evaluation order:
  *   1. SUPERADMIN → always true
- *   2. Check denyList on user       (P0.A.5+)
- *   3. Check user-level grant       (P0.A.5+)
- *   4. Check role default           (P0.A.5 — STUBBED false here)
- *   5. Apply resource constraints   (P0.A.5+)
+ *   2. Check denyList on user       (future — per-user deny overrides)
+ *   3. Check user-level grant       (future — per-user grant overrides)
+ *   4. Check role default from roleDefaults map
+ *   5. Apply resource constraints (actions ending in '_own' require
+ *      resource.staffId === session.user.staffId)
  *   6. Return false
  *
- * STUB: Steps 2-5 are not yet implemented. Only SUPERADMIN bypass
- * is active. Full mapping ships in P0.A.5.
+ * Steps 2-3 (per-user deny/grant) are not yet implemented — they land
+ * when CustomRole (P0.A.11) ships. Steps 1, 4, 5 are active.
  */
 export function can(
   session: PermissionSession,
   action: PermissionKey,
-  _resource?: ResourceContext,
+  resource?: ResourceContext,
 ): boolean {
   // Step 1: SUPERADMIN bypass
   if (session.user.role === Role.SUPERADMIN) return true;
 
-  // Steps 2-5: STUBBED — P0.A.5 will wire role defaults here
-  return false;
+  // Step 4: Check role defaults
+  const defaults = roleDefaults[session.user.role] ?? [];
+  if (!defaults.includes(action)) return false;
+
+  // Step 5: Resource constraints — actions ending in "_own" require staffId match
+  if (action.endsWith("_own")) {
+    // _own actions require a resource with staffId. Partial resources
+    // (resource provided without staffId) are treated as a constraint
+    // violation — fail closed to prevent privilege escalation when
+    // callers forget to pass staffId. Callers that genuinely need to
+    // bypass the constraint should pass no resource at all (signals
+    // "permission-level check only, no resource scoping").
+    if (resource !== undefined) {
+      if (!resource.staffId) return false;
+      if (session.user.staffId !== resource.staffId) return false;
+    }
+    // No resource passed → permission-level check only, role default applies
+  }
+
+  return true;
 }
 
 /**
