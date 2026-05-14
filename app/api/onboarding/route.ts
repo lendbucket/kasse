@@ -227,21 +227,11 @@ export async function POST(request: NextRequest) {
           const existingPerms = await tx.permissionSet.count({
             where: { organizationId: ctx.organizationId },
           });
-          if (existingPerms === 0) {
-            const defaults = [
-              { name: "Owner", permissions: { dashboard: true, reports: true, staff: true, clients: true, services: true, appointments: true, pos: true, settings: true, billing: true }, isDefault: true },
-              { name: "Manager", permissions: { dashboard: true, reports: true, staff: true, clients: true, services: true, appointments: true, pos: true, settings: false, billing: false }, isDefault: true },
-              { name: "Stylist", permissions: { dashboard: true, reports: false, staff: false, clients: true, services: false, appointments: true, pos: true, settings: false, billing: false }, isDefault: true },
-              { name: "Front Desk", permissions: { dashboard: true, reports: false, staff: false, clients: true, services: false, appointments: true, pos: true, settings: false, billing: false }, isDefault: true },
-              { name: "Read Only", permissions: { dashboard: true, reports: true, staff: false, clients: false, services: false, appointments: false, pos: false, settings: false, billing: false }, isDefault: true },
-            ];
-            await tx.permissionSet.createMany({
-              data: defaults.map((perm) => ({
-                organizationId: ctx.organizationId,
-                ...perm,
-              })),
-            });
-          }
+          // P0.A.6: Org-scoped permission sets removed from onboarding.
+          // System defaults (organizationId: null) are seeded via
+          // prisma/seed-permission-sets.ts. Custom per-org sets land in P0.A.11.
+          // Legacy existingPerms count check retained as no-op until then.
+          void existingPerms;
           await tx.organization.update({
             where: { id: ctx.organizationId },
             data: { onboardingStep: 9, onboardingCompleted: true },
