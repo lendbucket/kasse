@@ -21,61 +21,20 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        console.log("[AUTH-DIAG] authorize called", {
-          hasEmail: !!credentials?.email,
-          hasPassword: !!credentials?.password,
-        });
-        if (!credentials?.email || !credentials?.password) {
-          console.log("[AUTH-DIAG] FAIL: missing credentials");
-          return null;
-        }
-        let user;
-        try {
-          user = await prismaAdmin.user.findUnique({
-            where: { email: credentials.email.toLowerCase() },
-            include: { organization: true },
-          });
-        } catch (e) {
-          console.error("[AUTH-DIAG] FAIL: prismaAdmin.user.findUnique threw", e);
-          return null;
-        }
-        console.log("[AUTH-DIAG] user lookup result", {
-          found: !!user,
-          email: user?.email,
-          hasPassword: !!user?.password,
-          emailVerified: !!user?.emailVerified,
-          isActive: !!user?.isActive,
-          role: user?.role,
-        });
-        if (!user || !user.password) {
-          console.log("[AUTH-DIAG] FAIL: user not found OR has no password");
-          return null;
-        }
-        if (!user.emailVerified) {
-          console.log("[AUTH-DIAG] FAIL: emailVerified is null");
-          throw new Error("EMAIL_NOT_VERIFIED");
-        }
-        if (!user.isActive) {
-          console.log("[AUTH-DIAG] FAIL: isActive is false");
-          throw new Error("ACCOUNT_DISABLED");
-        }
-        let valid;
-        try {
-          valid = await bcrypt.compare(credentials.password, user.password);
-        } catch (e) {
-          console.error("[AUTH-DIAG] FAIL: bcrypt.compare threw", e);
-          return null;
-        }
-        console.log("[AUTH-DIAG] bcrypt result", { valid });
-        if (!valid) {
-          console.log("[AUTH-DIAG] FAIL: bcrypt returned false");
-          return null;
-        }
-        console.log("[AUTH-DIAG] SUCCESS: returning user");
+        if (!credentials?.email || !credentials?.password) return null
+        const user = await prismaAdmin.user.findUnique({
+          where: { email: credentials.email.toLowerCase() },
+          include: { organization: true },
+        })
+        if (!user || !user.password) return null
+        if (!user.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
+        if (!user.isActive) throw new Error("ACCOUNT_DISABLED")
+        const valid = await bcrypt.compare(credentials.password, user.password)
+        if (!valid) return null
         await prismaAdmin.user.update({
           where: { id: user.id },
           data: { lastLoginAt: new Date() },
-        });
+        })
         return {
           id: user.id,
           email: user.email,
@@ -83,7 +42,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           organizationId: user.organizationId,
           locationId: user.locationId,
-        };
+        }
       },
     }),
   ],
