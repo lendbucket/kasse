@@ -81,6 +81,10 @@ export const routeMap: Record<string, RouteGuard> = {
   "/api/users": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
   "/api/users/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
   "/dashboard/settings/roles/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_ROLES },
+
+  // ── P0.A.13: Organization group hierarchy ──────────────────────────────
+  "/api/organization-groups": { type: "permission", permission: Permissions.SETTINGS.EDIT_LOCATIONS },
+  "/api/organization-groups/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_LOCATIONS },
 };
 
 /**

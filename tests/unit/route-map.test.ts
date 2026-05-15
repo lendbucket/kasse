@@ -53,11 +53,11 @@ describe("Route map (P0.A.7)", () => {
     assert.equal(guard.type, "public");
   });
 
-  it("routeMap has at least 33 entries (floor — grows as routes are added)", () => {
+  it("routeMap has at least 35 entries (floor — grows as routes are added)", () => {
     const count = Object.keys(routeMap).length;
     assert.ok(
-      count >= 33,
-      `Expected at least 33 entries in routeMap, got ${count}`,
+      count >= 35,
+      `Expected at least 35 entries in routeMap, got ${count}`,
     );
   });
 

@@ -51,3 +51,46 @@ export async function requirePermissionSetAccess(
 
   return ctx;
 }
+
+/**
+ * Shared helper for organization-group API routes (P0.A.13).
+ *
+ * Validates tenant context + SETTINGS.EDIT_LOCATIONS permission in one call.
+ * Returns the TenantContext on success, or a NextResponse error on failure.
+ */
+export async function requireOrgGroupAccess(
+  request: NextRequest,
+): Promise<TenantContext | Response> {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
+
+  if (!ctx.organizationId) {
+    return NextResponse.json({ error: "ORG_CONTEXT_REQUIRED" }, { status: 400 });
+  }
+
+  const ps: PermissionSession = {
+    user: {
+      id: ctx.userId,
+      role: ctx.role,
+      organizationId: ctx.organizationId,
+      customRolePermissions: ctx.customRolePermissions as PermissionKey[] | undefined,
+    },
+  };
+
+  try {
+    requirePermission(ps, Permissions.SETTINGS.EDIT_LOCATIONS);
+  } catch (e) {
+    if (e instanceof PermissionError) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+    throw e;
+  }
+
+  return ctx;
+}
