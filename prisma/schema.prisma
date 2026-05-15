@@ -24,6 +24,41 @@ enum Role {
 }
 
 // ═══════════════════════════════════════════
+// GROUP LEVEL ENUM (P0.A.13: organization hierarchy)
+// ═══════════════════════════════════════════
+
+enum GroupLevel {
+  REGION
+  BRAND
+  CONCEPT
+}
+
+// ═══════════════════════════════════════════
+// ORGANIZATION GROUPS (P0.A.13: multi-level hierarchy)
+// ═══════════════════════════════════════════
+
+model OrganizationGroup {
+  id              String              @id @default(cuid())
+  name            String
+  level           GroupLevel
+  parentGroupId   String?
+  parentGroup     OrganizationGroup?  @relation("GroupHierarchy", fields: [parentGroupId], references: [id], onDelete: SetNull)
+  childGroups     OrganizationGroup[] @relation("GroupHierarchy")
+  permissionSetId String?
+  permissionSet   PermissionSet?      @relation("GroupPermissionSet", fields: [permissionSetId], references: [id], onDelete: SetNull)
+  organizationId  String
+  organization    Organization        @relation("OrgGroups", fields: [organizationId], references: [id], onDelete: Cascade)
+  locations       Location[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([parentGroupId])
+  @@index([level])
+  @@index([permissionSetId])
+  @@index([organizationId])
+}
+
+// ═══════════════════════════════════════════
 // ORGANIZATIONS & FRANCHISING
 // ═══════════════════════════════════════════
 
@@ -110,6 +145,7 @@ model Organization {
   businessSettings       BusinessSettings?
   aiReceptionistConfig   AiReceptionistConfig?
   messages               Message[]
+  organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
 }
 
 // ═══════════════════════════════════════════
@@ -187,9 +223,9 @@ model VerificationToken {
 // ═══════════════════════════════════════════
 
 model Location {
-  id                      String          @id @default(cuid())
+  id                      String             @id @default(cuid())
   organizationId          String
-  organization            Organization    @relation(fields: [organizationId], references: [id])
+  organization            Organization       @relation(fields: [organizationId], references: [id])
   name                    String
   address                 String?
   city                    String?
@@ -197,17 +233,19 @@ model Location {
   zip                     String?
   phone                   String?
   email                   String?
-  timezone                String          @default("America/Chicago")
-  isActive                Boolean         @default(true)
-  taxRate                 Float           @default(8.25)
+  timezone                String             @default("America/Chicago")
+  isActive                Boolean            @default(true)
+  taxRate                 Float              @default(8.25)
   logoUrl                 String?
   coverImageUrl           String?
   lat                     Float?
   lng                     Float?
-  geofenceRadius          Int             @default(500)
+  geofenceRadius          Int                @default(500)
   businessHours           Json?
+  groupId                 String?
+  group                   OrganizationGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   salonTransactLocationId String?
-  createdAt               DateTime        @default(now())
+  createdAt               DateTime           @default(now())
   staff                   Staff[]
   clients                 Client[]
   services                Service[]
@@ -215,6 +253,8 @@ model Location {
   transactions            Transaction[]
   devices                 Device[]
   waitlistEntries         WaitlistEntry[]
+
+  @@index([groupId])
 }
 
 // ═══════════════════════════════════════════
@@ -683,15 +723,16 @@ model FormSubmission {
 // ═══════════════════════════════════════════
 
 model PermissionSet {
-  id             String        @id @default(cuid())
-  organizationId String?
-  name           String
-  permissions    String[]
-  isSystem       Boolean       @default(false)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  users          User[]        @relation("UserCustomRole")
+  id                 String              @id @default(cuid())
+  organizationId     String?
+  name               String
+  permissions        String[]
+  isSystem           Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users              User[]              @relation("UserCustomRole")
+  groupsUsingThisSet OrganizationGroup[] @relation("GroupPermissionSet")
 
   @@unique([organizationId, name])
   @@index([organizationId])

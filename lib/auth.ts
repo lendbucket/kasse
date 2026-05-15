@@ -4,6 +4,8 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
 import { Role } from "@prisma/client"
+import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
+import { roleDefaults } from "@/lib/permissions/defaults"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -69,35 +71,31 @@ export const authOptions: NextAuthOptions = {
         session.user.organizationId = token.organizationId as string
         session.user.locationId = token.locationId as string | null
 
-        // P0.A.11: re-read customRoleId FROM DB on every session lookup,
-        // so admin assignment changes (assign/unassign/edit) are reflected
-        // immediately without users needing to log out and back in.
-        // Two DB reads per authenticated request — acceptable cost for
-        // correctness.
+        // P0.A.13: resolve effective permissions through the hierarchy chain.
+        // Walks User.customRoleId → Location.group → parent groups → role defaults.
         try {
-          const userRow = await prismaAdmin.user.findUnique({
-            where: { id: token.id as string },
-            select: { customRoleId: true },
-          })
-          if (userRow?.customRoleId) {
-            const customRole = await prismaAdmin.permissionSet.findUnique({
-              where: { id: userRow.customRoleId },
-              select: { permissions: true },
-            })
-            if (customRole) {
-              session.user.customRolePermissions = customRole.permissions as string[]
-            } else {
-              // The custom role was deleted between login and now; fall back
-              // to roleDefaults by clearing the override.
-              session.user.customRolePermissions = undefined
-            }
-          } else {
-            // The user's customRoleId was removed; clear the override.
-            session.user.customRolePermissions = undefined
-          }
+          const effective = await resolveEffectivePermissions({
+            userId: token.id as string,
+            role: validRole,
+            organizationId: token.organizationId as string,
+            locationId: token.locationId as string | null,
+          });
+          // Only set customRolePermissions if the resolved set DIFFERS from
+          // roleDefaults — otherwise leave undefined so can() falls back naturally
+          // (saves a serialization pass through the JWT and an unnecessary array
+          // comparison in checkPermission).
+          const defaults = roleDefaults[validRole] ?? [];
+          const effectiveSet = new Set(effective);
+          const defaultsSet = new Set(defaults);
+          // Set equality: same size AND every element of effective is in defaults
+          // implies the symmetric (defaults ⊆ effective) because |A| == |B|
+          // and A ⊆ B implies A = B. Single-direction check is sufficient.
+          const isOverride = effectiveSet.size !== defaultsSet.size
+            || [...effectiveSet].some(p => !defaultsSet.has(p));
+          session.user.customRolePermissions = isOverride ? (effective as string[]) : undefined;
         } catch (e) {
-          console.error("[auth] failed to re-load customRolePermissions in session — failing closed (clearing custom permissions to fall back to roleDefaults for this request)", e)
-          session.user.customRolePermissions = undefined
+          console.error("[auth] failed to resolve effective permissions — failing closed to roleDefaults", e);
+          session.user.customRolePermissions = undefined;
         }
       }
       return session

@@ -76,6 +76,8 @@ table is a foundation regression and should be flagged in code review.
 | `/api/permission-sets/[id]` | GET, PATCH, DELETE | Reads/updates/deletes a custom PermissionSet; org-scoped with defense-in-depth org match checks (P0.A.11) |
 | `/api/users` | GET | Lists org users for role assignment UI; scoped by organizationId (P0.A.12) |
 | `/api/users/[id]` | PATCH | Updates user's customRoleId; validates target PermissionSet belongs to same org (P0.A.12) |
+| `/api/organization-groups` | GET, POST | Lists/creates OrganizationGroups; tenant-scoped via org membership filter + withTenantScope; validates parent/permissionSet in tenant context on POST (P0.A.13) |
+| `/api/organization-groups/[id]` | GET, PATCH, DELETE | Reads/updates/deletes OrganizationGroup; tenant-scoped via org membership filter; PATCH includes cycle detection on parentGroupId changes (P0.A.13) |
 
 ### BYPASS_NEEDED — PRE_SESSION (public, no session required)
 
@@ -113,14 +115,14 @@ table is a foundation regression and should be flagged in code review.
 
 ## Summary
 
-- TENANT_SCOPED: **24**
+- TENANT_SCOPED: **26**
 - BYPASS_NEEDED: **10**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **5** (admin portal operations)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 35**
+**Total routes: 37**
 
 ## What happens next
 
@@ -540,6 +542,28 @@ When Tier 2 of REYNA_PAY_API_SPEC.md publishes, this section should be expanded 
 For now: no Kasse-side consumer routes for Reyna Pay engine endpoints exist. This forward-note tracks the gap.
 
 ---
+
+## P0.A.13 Deployment Notes — Organization Group Hierarchy
+
+The P0.A.13 schema migrations (OrganizationGroup table + Location.groupId +
+organizationId column + RLS policies) were applied to production via
+Supabase MCP across multiple sessions. The rollup file at
+prisma/migrations/20260514220000_p0_a_13_organization_group_hierarchy/
+reflects the final production state.
+
+On the next clean environment (e.g., a new staging instance), run:
+
+    npx prisma migrate resolve --applied 20260514220000_p0_a_13_organization_group_hierarchy
+
+to mark the migration as already-applied without re-running it. This
+prevents the next `prisma migrate deploy` from attempting to re-create
+the type/table/RLS policies and failing with "already exists" errors.
+
+The _prisma_migrations table in production has three pre-rollup entries
+(20260514220000_..., 20260514230000_..., 20260515000000_...) with empty
+checksums. These are technical debt to clean up in a future housekeeping
+PR — they don't block deploys, but the names don't match any file in
+prisma/migrations/. The new rollup file's name matches the first entry.
 
 ## P0.A.1 Deployment Notes
 
