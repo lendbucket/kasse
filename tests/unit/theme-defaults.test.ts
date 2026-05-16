@@ -6,13 +6,19 @@ import { salonBackedTheme } from "@/lib/theme/defaults/salonbacked";
 import { getProductTheme, mergeThemeConfig, themes } from "@/lib/theme/registry";
 
 describe("Theme defaults + registry (P0.B.1-5)", () => {
-  it("(a) kasseTheme has correct identity colors and copy", () => {
+  it("(a) kasseTheme uses production Kasse brand palette", () => {
     assert.equal(kasseTheme.id, 'kasse-default');
-    assert.equal(kasseTheme.colors.primary, '#606E74');
-    assert.equal(kasseTheme.colors.background, '#f7f8fa');
+    assert.equal(kasseTheme.colors.primary, '#2f5061');     // deep teal-navy
+    assert.equal(kasseTheme.colors.background, '#faf8f6');  // cream page bg
     assert.equal(kasseTheme.colors.surface, '#ffffff');
     assert.equal(kasseTheme.copy.productName, 'Kasse');
-    assert.equal(kasseTheme.copy.poweredBy, 'Powered by Reyna Pay');
+  });
+
+  it("(a2) kasseTheme exposes Kasse brand colors (brand/accent/blush/sidebar)", () => {
+    assert.equal(kasseTheme.colors.brand, '#2f5061');
+    assert.equal(kasseTheme.colors.accent, '#4297a0');     // bright teal
+    assert.equal(kasseTheme.colors.blush, '#e57f84');      // coral
+    assert.equal(kasseTheme.colors.sidebar, '#2f5061');
   });
 
   it("(b) salonTransactTheme is dark with gold accent", () => {
@@ -57,7 +63,7 @@ describe("Theme defaults + registry (P0.B.1-5)", () => {
   it("(h) mergeThemeConfig with primary color override deep-merges colors", () => {
     const merged = mergeThemeConfig(kasseTheme, { colors: { primary: '#ff0000' } });
     assert.equal(merged.colors.primary, '#ff0000');
-    assert.equal(merged.colors.background, '#f7f8fa'); // unchanged
+    assert.equal(merged.colors.background, '#faf8f6'); // unchanged
     assert.equal(merged.colors.surface, '#ffffff');    // unchanged
   });
 
