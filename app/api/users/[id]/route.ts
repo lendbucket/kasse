@@ -8,6 +8,7 @@ import {
   tenantErrorResponse,
   type TenantContext,
 } from "@/lib/tenant/context";
+import { writeAuditLog, AuditAction } from "@/lib/audit/write";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -60,7 +61,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     // Verify target user belongs to this org
     const user = await tx.user.findUnique({
       where: { id },
-      select: { id: true, organizationId: true },
+      select: { id: true, organizationId: true, customRoleId: true },
     });
     if (!user || user.organizationId !== ctx.organizationId) {
       return { error: "USER_NOT_FOUND" as const };
@@ -77,17 +78,60 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
+    const oldCustomRoleId = user.customRoleId;
     const updated = await tx.user.update({
       where: { id },
       data: { customRoleId },
       select: { id: true, name: true, email: true, role: true, customRoleId: true },
     });
-    return { ok: true as const, user: updated };
+    return { ok: true as const, user: updated, oldCustomRoleId };
   });
 
   if ("error" in result) {
     const status = result.error === "USER_NOT_FOUND" ? 404 : 400;
     return NextResponse.json({ error: result.error }, { status });
+  }
+
+  const oldCustomRoleId = result.oldCustomRoleId;
+  const newCustomRoleId = customRoleId;
+  if (oldCustomRoleId === null && newCustomRoleId !== null) {
+    await writeAuditLog({
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      action: AuditAction.USER_CUSTOM_ROLE_ASSIGN,
+      entity: "User",
+      entityId: id,
+      after: { customRoleId: newCustomRoleId },
+      metadata: { targetUserId: id, customRoleId: newCustomRoleId },
+      route: `/api/users/${id}`,
+      request,
+    });
+  } else if (oldCustomRoleId !== null && newCustomRoleId === null) {
+    await writeAuditLog({
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      action: AuditAction.USER_CUSTOM_ROLE_UNASSIGN,
+      entity: "User",
+      entityId: id,
+      before: { customRoleId: oldCustomRoleId },
+      metadata: { targetUserId: id, previousCustomRoleId: oldCustomRoleId },
+      route: `/api/users/${id}`,
+      request,
+    });
+  } else if (oldCustomRoleId !== newCustomRoleId) {
+    await writeAuditLog({
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      action: AuditAction.USER_CUSTOM_ROLE_ASSIGN,
+      entity: "User",
+      entityId: id,
+      before: { customRoleId: oldCustomRoleId },
+      after: { customRoleId: newCustomRoleId },
+      changedFields: ["customRoleId"],
+      metadata: { targetUserId: id },
+      route: `/api/users/${id}`,
+      request,
+    });
   }
 
   return NextResponse.json(result.user);

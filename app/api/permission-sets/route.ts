@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { requirePermissionSetAccess } from "@/lib/permissions/api-helpers";
 import { validatePermissionSetInput } from "@/lib/permissions/validate-permission-set";
+import { writeAuditLog, AuditAction } from "@/lib/audit/write";
 
 /**
  * GET /api/permission-sets — list current org's custom PermissionSets.
@@ -64,6 +65,17 @@ export async function POST(request: NextRequest) {
       { status: 409 },
     );
   }
+
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.PERMISSION_SET_CREATE,
+    entity: "PermissionSet",
+    entityId: result.created.id,
+    after: { name: result.created.name, permissions: result.created.permissions, organizationId: result.created.organizationId },
+    route: "/api/permission-sets",
+    request,
+  });
 
   return NextResponse.json(result.created, { status: 201 });
 }

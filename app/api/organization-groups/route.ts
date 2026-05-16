@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { requireOrgGroupAccess } from "@/lib/permissions/api-helpers";
 import { validateOrganizationGroupInput } from "@/lib/permissions/validate-organization-group";
+import { writeAuditLog, AuditAction } from "@/lib/audit/write";
 
 /**
  * GET /api/organization-groups — list all groups visible to the current tenant.
@@ -99,6 +100,23 @@ export async function POST(request: NextRequest) {
     const errCode = result.error as string;
     return NextResponse.json({ error: errCode }, { status: statusMap[errCode] ?? 400 });
   }
+
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.ORGANIZATION_GROUP_CREATE,
+    entity: "OrganizationGroup",
+    entityId: result.created.id,
+    after: {
+      name: result.created.name,
+      level: result.created.level,
+      parentGroupId: result.created.parentGroupId,
+      permissionSetId: result.created.permissionSetId,
+      organizationId: result.created.organizationId,
+    },
+    route: "/api/organization-groups",
+    request,
+  });
 
   return NextResponse.json(result.created, { status: 201 });
 }

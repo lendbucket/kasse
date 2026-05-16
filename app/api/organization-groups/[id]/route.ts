@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { requireOrgGroupAccess } from "@/lib/permissions/api-helpers";
+import { writeAuditLog, AuditAction, diffChangedFields } from "@/lib/audit/write";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -154,7 +155,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
-    return tx.organizationGroup.update({ where: { id }, data: updateData });
+    const updated = await tx.organizationGroup.update({ where: { id }, data: updateData });
+    return { ok: true as const, existing, updated };
   });
 
   if ("error" in result) {
@@ -172,7 +174,32 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: result.error }, { status: statusMap[result.error as string] ?? 400 });
   }
 
-  return NextResponse.json(result);
+  const beforeSnapshot = {
+    name: result.existing.name,
+    level: result.existing.level,
+    parentGroupId: result.existing.parentGroupId,
+    permissionSetId: result.existing.permissionSetId,
+  };
+  const afterSnapshot = {
+    name: result.updated.name,
+    level: result.updated.level,
+    parentGroupId: result.updated.parentGroupId,
+    permissionSetId: result.updated.permissionSetId,
+  };
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.ORGANIZATION_GROUP_UPDATE,
+    entity: "OrganizationGroup",
+    entityId: id,
+    before: beforeSnapshot,
+    after: afterSnapshot,
+    changedFields: diffChangedFields(beforeSnapshot, afterSnapshot),
+    route: `/api/organization-groups/${id}`,
+    request,
+  });
+
+  return NextResponse.json(result.updated);
 }
 
 /**
@@ -197,12 +224,28 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!existing) return { error: "NOT_FOUND" as const };
 
     await tx.organizationGroup.delete({ where: { id } });
-    return { ok: true as const };
+    return { ok: true as const, existing };
   });
 
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: 404 });
   }
+
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.ORGANIZATION_GROUP_DELETE,
+    entity: "OrganizationGroup",
+    entityId: id,
+    before: {
+      name: result.existing.name,
+      level: result.existing.level,
+      parentGroupId: result.existing.parentGroupId,
+      permissionSetId: result.existing.permissionSetId,
+    },
+    route: `/api/organization-groups/${id}`,
+    request,
+  });
 
   return NextResponse.json({ ok: true });
 }
