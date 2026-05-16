@@ -34,6 +34,49 @@ enum GroupLevel {
 }
 
 // ═══════════════════════════════════════════
+// VERTICAL ID ENUM (P0.C.1: vertical configuration system)
+// ═══════════════════════════════════════════
+
+enum VerticalId {
+  salon
+  barbershop
+  nail_salon
+  restaurant
+  bar
+  gym
+  yoga_studio
+  pilates_studio
+  massage
+  med_spa
+  auto_detailing
+  auto_repair
+  pet_grooming
+  veterinary
+  tattoo
+  retail
+  food_truck
+  cafe
+  bakery
+  catering
+  cleaning
+  photography
+  tutoring
+  childcare
+  coworking
+  sports_training
+  beauty_school
+  brow_studio
+  lash_studio
+  tanning_studio
+  dance_studio
+  martial_arts
+  crossfit
+  chiropractic
+  physical_therapy
+  general
+}
+
+// ═══════════════════════════════════════════
 // ORGANIZATION GROUPS (P0.A.13: multi-level hierarchy)
 // ═══════════════════════════════════════════
 
@@ -123,6 +166,8 @@ model Organization {
   applicationSubmittedAt DateTime?
   onboardingStep         Int                   @default(0)
   onboardingCompleted    Boolean               @default(false)
+  verticalId             VerticalId            @default(salon)
+  verticalConfigOverride Json?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   locations              Location[]
@@ -146,6 +191,8 @@ model Organization {
   aiReceptionistConfig   AiReceptionistConfig?
   messages               Message[]
   organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
+
+  @@index([verticalId])
 }
 
 // ═══════════════════════════════════════════
