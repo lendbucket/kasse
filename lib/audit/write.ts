@@ -35,6 +35,11 @@ export type AuditInput = {
 
 export async function writeAuditLog(input: AuditInput): Promise<void> {
   try {
+    // x-forwarded-for is reliable in production because Vercel Edge sets it
+    // before invoking the function. In other environments (self-hosted, local
+    // dev) the header is client-controlled and shouldn't be trusted for
+    // forensic IP attribution. If we ever move off Vercel, replace this with
+    // the platform's documented client-IP header.
     const ipAddress = input.request?.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
     const userAgent = input.request?.headers.get("user-agent") ?? null;
     const requestId = input.request?.headers.get("x-vercel-id") ?? null;
