@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { requirePermissionSetAccess } from "@/lib/permissions/api-helpers";
 import { validatePermissionSetInput } from "@/lib/permissions/validate-permission-set";
+import { writeAuditLog, AuditAction, diffChangedFields } from "@/lib/audit/write";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -86,7 +87,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       updateData.permissions = permissions as string[];
     }
 
-    return tx.permissionSet.update({ where: { id }, data: updateData });
+    const updated = await tx.permissionSet.update({ where: { id }, data: updateData });
+    return { ok: true as const, existing, updated };
   });
 
   if ("error" in result) {
@@ -98,14 +100,29 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       DUPLICATE_NAME: 409,
       INVALID_PERMISSIONS: 400,
     };
-    const status = statusMap[result.error] ?? 400;
+    const status = statusMap[result.error as string] ?? 400;
     return NextResponse.json(
       { error: result.error, ...("message" in result ? { message: result.message } : {}) },
       { status },
     );
   }
 
-  return NextResponse.json(result);
+  const beforeSnapshot = { name: result.existing.name, permissions: result.existing.permissions };
+  const afterSnapshot = { name: result.updated.name, permissions: result.updated.permissions };
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.PERMISSION_SET_UPDATE,
+    entity: "PermissionSet",
+    entityId: id,
+    before: beforeSnapshot,
+    after: afterSnapshot,
+    changedFields: diffChangedFields(beforeSnapshot, afterSnapshot),
+    route: `/api/permission-sets/${id}`,
+    request,
+  });
+
+  return NextResponse.json(result.updated);
 }
 
 /**
@@ -131,13 +148,24 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     }
 
     await tx.permissionSet.delete({ where: { id } });
-    return { ok: true as const };
+    return { ok: true as const, existing };
   });
 
   if ("error" in result) {
     const status = result.error === "NOT_FOUND" ? 404 : 403;
     return NextResponse.json({ error: result.error }, { status });
   }
+
+  await writeAuditLog({
+    userId: ctx.userId,
+    organizationId: ctx.organizationId,
+    action: AuditAction.PERMISSION_SET_DELETE,
+    entity: "PermissionSet",
+    entityId: id,
+    before: { name: result.existing.name, permissions: result.existing.permissions },
+    route: `/api/permission-sets/${id}`,
+    request,
+  });
 
   return NextResponse.json({ ok: true });
 }

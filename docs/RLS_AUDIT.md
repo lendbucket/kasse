@@ -565,6 +565,30 @@ checksums. These are technical debt to clean up in a future housekeeping
 PR — they don't block deploys, but the names don't match any file in
 prisma/migrations/. The new rollup file's name matches the first entry.
 
+## P0.A.14 — Audit Log Writes via prismaAdmin
+
+The `writeAuditLog` helper in `lib/audit/write.ts` uses `prismaAdmin` (RLS bypass)
+to insert audit records. This is the same cross-cutting infrastructure pattern as
+the NextAuth session-callback write path — audit logging is platform-wide and must
+succeed regardless of whether the caller's session has tenant context.
+
+The helper is fail-soft: errors are caught and logged to console but never thrown.
+An audit-write failure does NOT block or roll back the main mutation. Writes happen
+AFTER the main mutation succeeds, outside any transaction.
+
+Routes that call `writeAuditLog` (P0.A.14):
+- `POST /api/permission-sets` — permission_set.create
+- `PATCH /api/permission-sets/[id]` — permission_set.update
+- `DELETE /api/permission-sets/[id]` — permission_set.delete
+- `PATCH /api/users/[id]` — user.custom_role.assign / unassign
+- `POST /api/organization-groups` — organization_group.create
+- `PATCH /api/organization-groups/[id]` — organization_group.update
+- `DELETE /api/organization-groups/[id]` — organization_group.delete
+
+These routes remain classified as TENANT_SCOPED in the route table above — the
+main mutation still uses `withTenantScope(prisma, ...)`. Only the audit side-write
+uses `prismaAdmin`.
+
 ## P0.A.1 Deployment Notes
 
 The 20260513204427_add_role_enum migration was applied to production
