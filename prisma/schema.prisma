@@ -168,6 +168,7 @@ model Organization {
   onboardingCompleted    Boolean               @default(false)
   verticalId             VerticalId            @default(salon)
   verticalConfigOverride Json?
+  themeOverride          Json?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   locations              Location[]
