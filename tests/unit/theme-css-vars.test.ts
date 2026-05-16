@@ -6,9 +6,27 @@ import { salonTransactTheme } from "@/lib/theme/defaults/salontransact";
 import { salonBackedTheme } from "@/lib/theme/defaults/salonbacked";
 
 describe("buildThemeCssVars (P0.B.6-7)", () => {
-  it("(a) emits --color-primary with kasse value", () => {
+  it("(a) emits --color-primary with corrected kasse value", () => {
     const css = buildThemeCssVars(kasseTheme);
-    assert.ok(css.includes("--color-primary: #606E74;"), `expected --color-primary: #606E74 in:\n${css}`);
+    assert.ok(css.includes("--color-primary: #2f5061;"), `expected --color-primary: #2f5061 in:\n${css}`);
+  });
+
+  it("(a2) emits legacy --brand variable in addition to --color-primary", () => {
+    const css = buildThemeCssVars(kasseTheme);
+    assert.ok(css.includes("--brand: #2f5061;"), `expected legacy --brand alias in:\n${css}`);
+    assert.ok(css.includes("--bg-page: #faf8f6;"), `expected legacy --bg-page alias in:\n${css}`);
+    assert.ok(css.includes("--bg-sidebar: #2f5061;"), `expected --bg-sidebar in:\n${css}`);
+    assert.ok(css.includes("--accent: #4297a0;"), `expected --accent in:\n${css}`);
+    assert.ok(css.includes("--blush: #e57f84;"), `expected --blush in:\n${css}`);
+  });
+
+  it("(a3) modern --color-primary and legacy --brand emit the SAME value", () => {
+    const css = buildThemeCssVars(kasseTheme);
+    const primaryMatch = css.match(/--color-primary:\s*(#[0-9a-f]+);/i);
+    const brandMatch = css.match(/--brand:\s*(#[0-9a-f]+);/i);
+    assert.ok(primaryMatch, 'must emit --color-primary');
+    assert.ok(brandMatch, 'must emit --brand');
+    assert.equal(primaryMatch![1], brandMatch![1], '--color-primary and --brand must have same value');
   });
 
   it("(b) camelCase keys become kebab-case CSS vars", () => {

@@ -36,6 +36,22 @@ export interface ThemeConfig {
     danger: string;
     /** Info state (blue) */
     info: string;
+    /** Optional brand-specific accent — different from primary. Salon-aware. */
+    brand?: string;
+    /** Optional hover state for brand */
+    brandHover?: string;
+    /** Optional secondary accent — used for highlights, links */
+    accent?: string;
+    /** Optional hover state for accent */
+    accentHover?: string;
+    /** Optional tertiary accent — used for badges, callouts (e.g., coral blush) */
+    blush?: string;
+    /** Optional hover state for blush */
+    blushHover?: string;
+    /** Optional sidebar background (for dark sidebars over light page bg) */
+    sidebar?: string;
+    /** Optional cream / soft surface tone (e.g., for warm hover states) */
+    cream?: string;
   };
   /** Font family stacks */
   fonts: {
