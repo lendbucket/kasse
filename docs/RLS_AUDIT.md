@@ -605,3 +605,15 @@ was migrated this way, the migration row must be manually inserted:
 All P0 migrations must be applied via the postgres superuser role
 (DDL operations require CREATE TYPE / ALTER TABLE privileges that
 the application runtime role does not have).
+
+## Security advisor pass — 2026-05-16
+
+Initial Supabase security advisor audit on the tenant/audit helper functions
+found 19 WARN-level findings, all addressed in migration
+`20260516180000_p0_security_lock_search_path_and_revoke_public`:
+
+- **9 mutable search_path warnings** — fixed by `SET search_path = ''` on every helper function. Prevents function-name-resolution attacks where a privileged caller could resolve `app_*` references to attacker-supplied tables in their own search_path.
+- **10 SECURITY DEFINER callable-by-PUBLIC warnings** — fixed by `REVOKE EXECUTE ... FROM PUBLIC` on the 5 mutating functions (app_set_tenant, app_clear_tenant, app_set_actor, app_clear_actor, app_audit_trigger). Without this, a malicious user could call `/rest/v1/rpc/app_set_tenant('victim-org-id', true)` to elevate themselves to superadmin in another tenant's RLS context.
+- The read-only helpers (app_current_org_id, app_is_superadmin, app_actor_user_id, app_request_id) keep PUBLIC EXECUTE since they only return the caller's own session variables.
+- The `kasse_app` Prisma connection role keeps EXECUTE on all mutating functions via explicit GRANT — app code unaffected.
+- Post-migration: `get_advisors(type='security')` returns ZERO findings.
