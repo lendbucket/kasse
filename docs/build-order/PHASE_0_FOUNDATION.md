@@ -9,9 +9,11 @@ This is the foundation that the next 5,055 PRs depend on. Every architectural de
 
 ---
 
-## P0.A — Role + Permission System (15 PRs)
+## P0.A — Role + Permission System (15 PRs) ✅ COMPLETE
 
 **Goal:** Replace `User.role` string with a `Role` enum at the database level. Build the 200+ permission key infrastructure that all subsequent role-gated UI and API will use. Enable custom roles, multi-location hierarchy, and per-resource permission overrides.
+
+**Status:** All 15 PRs shipped (P0.A.1–P0.A.15). Permission engine is fully operational: Role enum, 200+ permission keys, check engine, role defaults, PermissionSet CRUD, middleware route guards, login redirect, usePermissions hook, PermissionGate component, custom role builder UI, multi-level organization hierarchy, audit log infrastructure, and cleanup.
 
 **Reference docs:** KASSE_PORTALS.md (4-portal architecture), KASSE_PORTAL_ARCHITECTURE.md (role hierarchy), KASSE_STRATEGIC_DECISIONS.md SD-K-001 (multi-tenant security).
 
@@ -367,13 +369,15 @@ Any change to: User.role, User.customRoleId, CustomRole.permissions, PermissionS
 
 Acceptance: Change a user's role, see AuditLog entry in admin viewer.
 
-### P0.A.15 — Cleanup: remove FINANCIAL string-filter (replaces PR #40)
+### P0.A.15 — Cleanup: final PR of P0.A ✅ Shipped
 
-Files: `components/layout/Sidebar.tsx`, `components/layout/nav-items.ts` (or replacement)
+Delivered:
+- Legacy hardcoded role matrix on /dashboard/settings → CTA pointing at /dashboard/settings/roles
+- x-forwarded-for trust-assumption comment in lib/audit/write.ts
+- P0.A marked complete in this document
+- FINANCIAL string-filter: not found in codebase (no legacy role === 'FINANCIAL' pattern exists; FINANCIAL is used correctly as a permission category throughout the permission engine)
 
-If PR #40 already merged: refactor to use `can('financial.view_revenue')` instead of string role check. If PR #40 not merged: close it, this PR replaces it.
-
-Acceptance: FINANCIAL section visibility now driven by permission check, not role string.
+Acceptance: P0.A sub-phase fully closed. Next: P0.B (Theme System) or P0.C (Vertical Configs).
 
 ---
 

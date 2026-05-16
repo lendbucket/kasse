@@ -298,33 +298,31 @@ export default function SettingsPage() {
       </div>)
 
       case "permissions": return (<div>
-        <SH title="Permissions & roles" sub="Control what each role can access." />
-        <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e5e7eb" }}>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: 600, color: "#374151" }}>Feature</th>
-                {["Owner", "Manager", "Stylist", "Front Desk", "Read Only"].map((r) => (
-                  <th key={r} style={{ padding: "12px 8px", textAlign: "center", fontWeight: 600 }}>
-                    <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, background: "rgba(96,110,116,0.08)", color: "#606E74" }}>{r}</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {["Dashboard", "Reports", "POS Terminal", "Appointments", "Clients", "Staff", "Services", "Marketing", "Reputation", "Loyalty", "Settings", "Billing", "Data import", "API access"].map((feat, fi) => (
-                <tr key={feat} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                  <td style={{ padding: "10px 16px", color: "#374151", fontWeight: 500 }}>{feat}</td>
-                  {[true, fi < 10, fi < 6, fi < 5, fi < 2].map((on, ri) => (
-                    <td key={ri} style={{ padding: "10px 8px", textAlign: "center" }}>
-                      {on ? <Check size={16} style={{ color: "#16a34a" }} strokeWidth={2} /> : <span style={{ color: "#d1d5db" }}>&mdash;</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SH title="Permissions & roles" sub="Manage custom roles and assign them to staff." />
+        <Card>
+          <div style={{ padding: "32px 24px", textAlign: "center" }}>
+            <Shield size={40} style={{ color: "#606E74", marginBottom: 16 }} strokeWidth={1.5} />
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: "0 0 8px" }}>Custom roles & permissions</h3>
+            <p style={{ fontSize: 14, color: "#6b7280", margin: "0 0 24px", maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>
+              Create custom roles for your team, set granular permissions across 14 categories, and assign users to roles tailored for your salon's workflow.
+            </p>
+            <a href="/dashboard/settings/roles" style={{
+              display: "inline-block",
+              height: 40,
+              lineHeight: "40px",
+              padding: "0 24px",
+              background: "#606E74",
+              color: "white",
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "none",
+              fontFamily: "inherit",
+            }}>
+              Manage roles →
+            </a>
+          </div>
+        </Card>
       </div>)
 
       case "loyalty": return (<div>
