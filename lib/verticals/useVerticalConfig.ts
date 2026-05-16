@@ -22,7 +22,11 @@ import { getVerticalConfig, mergeVerticalConfig, generalConfig } from "./registr
  * the permission and tenant systems are layered separately.
  */
 export function useVerticalConfig(): VerticalConfig {
-  const { data: session } = useSession();
+  // useSession() returns undefined during Next.js static prerender when
+  // no SessionProvider exists in the tree. Guard the destructure with ?.
+  // before we touch any field — generalConfig is the correct fallback.
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
 
   return useMemo(() => {
     const verticalId = (session?.user as { verticalId?: VerticalId } | undefined)?.verticalId;

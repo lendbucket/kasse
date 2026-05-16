@@ -20,7 +20,11 @@ import { mergeThemeConfig } from "./registry";
  * they would use a similar hook with their respective product default.
  */
 export function useTheme(): ThemeConfig {
-  const { data: session } = useSession();
+  // useSession() returns undefined during Next.js static prerender when
+  // no SessionProvider exists in the tree. Guard the destructure with ?.
+  // before we touch any field — kasseTheme is the correct fallback.
+  const sessionResult = useSession();
+  const session = sessionResult?.data ?? null;
 
   return useMemo(() => {
     const override = (session?.user as { themeOverride?: ThemeOverride | null } | undefined)?.themeOverride;
