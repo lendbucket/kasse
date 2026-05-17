@@ -49,6 +49,14 @@ For every new API route added after this audit, the author MUST update this
 document with the route's classification. A new route with no entry in this
 table is a foundation regression and should be flagged in code review.
 
+## Server-side helpers requiring withTenantScope
+
+These library helpers must be called inside a `withTenantScope` block — they accept a scoped `tx` argument from the callback. They do NOT manage their own connection or scope.
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `getServerPlanContext(tx, organizationId)` | `lib/plans/api-helpers` | Returns the authoritative plan tier + location count + enabled addons for an org. Used before `assertCanAddLocation`/`assertCanAddStaff`. |
+
 ## Routes
 
 ### TENANT_SCOPED — Uses `requireTenantContext` + `withTenantScope`
