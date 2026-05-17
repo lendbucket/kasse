@@ -4,6 +4,47 @@
 
 ---
 
+## V1 SCOPE NOTE
+
+**Authority:** SD-K-019 (HCM foundations v1, payroll v2), SD-K-038 (PDF generation v1, e-filing v2)
+
+This document describes the full HCM + payroll + bill pay vision. The v1 launch covers HCM foundations only:
+
+**v1 (ships at launch):**
+- HCM data collection: W-4, I-9, direct deposit account setup, license verification (TDLR for TX + state equivalents), background check (Checkr integration)
+- Time clock with geolocation enforcement (SD-K-030)
+- PTO/sick request workflow with manager approval
+- Employment agreement templates + custom upload + e-signature
+- Multi-compensation models per stylist (salary + commission, hourly + commission, per-service commission, booth rental classification, hybrid)
+- Tip split configurations
+- 1099-NEC PDF generation
+- W-2 PDF generation
+
+**v1 does NOT include:**
+- Direct deposit disbursement (no money movement from Kasse)
+- Tax withholding calculation
+- Quarterly tax filing (941, etc.)
+- E-filing 1099/W-2 with IRS
+- Banking (Kasse Banking, Kasse Business Debit Card)
+- Bill Pay
+- Vendor management
+
+**v2 (12-18 months post-launch):**
+- Full payroll processing (disbursement via Wise or equivalent)
+- Tax withholding + quarterly filing + e-filing
+- Banking (Column Bank BaaS partnership)
+- Bill Pay (vendor management + ACH outbound)
+- TurboTax-like in-Kasse tax filing experience
+
+**SalonBacked layer (separate product):**
+- SalonBacked handles HR/insurance/benefits/payroll services that go beyond Kasse's HCM foundations (SD-K-015)
+- Kasse v1 sends data to SalonBacked via API for payroll services
+- SalonBacked is its own product brand + subscription
+
+**CORRECTION:** The Wise API mention in this document is v2 only. v1 generates 1099/W-2 PDFs but does NOT disburse payroll. Merchant runs payroll externally (Gusto/Check/ADP) using Kasse-exported data.
+
+---
+
 ## STRATEGIC PURPOSE
 
 Kasse is not just a booking and POS tool. It is the financial operating system for service businesses. The moment a merchant runs payroll through Kasse and pays their vendors through Kasse, switching costs become insurmountable. This is the QuickBooks + Gusto + Venmo for small service businesses — but built into the same platform they use for appointments.

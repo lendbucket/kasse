@@ -108,6 +108,97 @@ After selection:
 
 ---
 
+## ONBOARDING ARCHITECTURE
+
+**Authority:** SD-K-003 (vertical-aware), SD-K-019 (HCM foundations v1)
+
+### Branched wizard with save+resume
+
+The wizard branches based on business type and team size. A solo operator sees a condensed 5-step flow; a 10-stylist salon sees the full 8-step path with team onboarding inline.
+
+**State persistence:** Every wizard step saves to `OnboardingSession.stepData` JSONB column. Merchant can leave at any step and resume via emailed `resumeToken` link. Sessions never expire — merchant can return weeks later.
+
+**Branching logic:**
+
+- **Solo (0 staff):** Skip Step 3 (Team) inline; offer in Day-7 email
+- **Multi-location:** Step 4 (First Location) becomes "Locations" — add multiple inline
+- **Franchise:** Special path with FDD builder + territory + brand standards (ENTERPRISE only)
+
+### Concierge fallback (ENTERPRISE)
+
+ENTERPRISE merchants who haven't completed onboarding within 7 days get an automatic trigger: a dedicated onboarding specialist reaches out via phone + email. Concierge can:
+
+- Complete wizard steps on behalf of the merchant (with audit log)
+- Schedule white-glove training sessions
+- Hand off to Customer Success Manager once setup complete
+
+Concierge is an ENTERPRISE-tier feature only. PLUS and PREMIUM merchants get self-serve email nudges.
+
+### Payroc KYC — NOT in initial onboarding
+
+**Critical:** Reyna Pay KYC (merchant boarding for Payroc) lives in **Settings → Payments**, NOT in the initial onboarding wizard.
+
+**Reasons:**
+- KYC requires sensitive financial documents (EIN, bank account, SSN, voided check or Plaid)
+- Many merchants want to evaluate Kasse before committing to payment processing
+- KYC review takes 1-3 business days; we don't want onboarding blocked on it
+- Cash-only operations are valid until Reyna Pay is activated
+
+The Step 4 in the original wizard ("Take Your First Payment") is preserved but modified: It introduces the option, sets up the basic merchant profile, and links out to Settings → Payments for full KYC submission.
+
+---
+
+## EMPLOYMENT AGREEMENT COLLECTION
+
+**Authority:** SD-K-019 (HCM foundations v1)
+
+When inviting a staff member during onboarding (Step 3 or later via Staff → Add Team Member):
+
+### Template library
+
+Kasse provides pre-built employment agreement templates by state and role:
+
+- **Texas** — Commission Stylist (default for TX salons)
+- **Texas** — Booth Rental Agreement
+- **California** — Commission Stylist (compliant with AB 5 + AB 2257)
+- **New York** — Commission Stylist
+- **Florida** — Commission Stylist
+- **Illinois** — Commission Stylist
+- Generic templates for non-priority states (states 6-50, rolling out before v2)
+
+Each template covers:
+- Compensation structure (commission %, tip handling, retail commission)
+- Hours and scheduling expectations
+- Booth rent terms (if applicable)
+- Non-compete clauses (where legally enforceable)
+- Tools/products provided vs. employee-supplied
+- Termination conditions
+- At-will employment notice (where applicable)
+
+### Custom upload
+
+Merchants can upload their own employment agreement PDF or DOCX. Kasse:
+- Stores the document securely (S3 + encryption at rest)
+- Sends to staff member for e-signature
+- Tracks signature status (sent / viewed / signed / declined)
+- Stores signed copy + audit log permanently
+
+### E-signature component
+
+**Authority:** SD-K-019
+
+Kasse-built e-signature (not DocuSign or HelloSign). Components:
+- HTML canvas signature pad (react-signature-canvas)
+- Typed name fallback
+- Timestamp + IP address + user agent captured
+- Signed document hash stored for tamper detection
+- PDF generation with signature embedded
+- Audit log entry on every signature event
+
+Legally compliant for non-IRS/non-court employment contracts. Uses ESIGN Act + UETA standards.
+
+---
+
 ## THE 8-STEP ONBOARDING WIZARD
 
 The wizard is a separate full-screen experience (not the main portal). Progress is saved after every step so merchants can stop and come back. Email sent if they leave mid-wizard: "Your Kasse setup is waiting — pick up where you left off."
@@ -645,3 +736,13 @@ If any step falls below target → UX investigation + A/B test improvement.
 *Document version 1.0 — For internal use only. Last updated: May 2026.*
 *Owner: Robert Reyna, CEO, 36 West Holdings*
 *Next review: Phase 0 kickoff (onboarding is day-one work)*
+
+---
+
+## REFERENCES
+
+- **Strategic decisions:** SD-K-003 (vertical-aware), SD-K-019 (HCM foundations), SD-K-032 (Spanish customer surfaces)
+- **HCM details:** docs/KASSE_HCM.md (new — created in this PR)
+- **State compliance priority:** docs/KASSE_COMPLIANCE.md (new — created in this PR)
+- **Schema:** OnboardingSession table (P0.G), Organization.onboardingCompleted field
+- **Build phase:** P1 (Phase 1 of build-order)

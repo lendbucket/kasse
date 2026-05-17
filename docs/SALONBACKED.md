@@ -5,6 +5,32 @@
 
 ---
 
+## STATE COMPLIANCE PRIORITY (SD-K-021)
+
+SalonBacked is a separate product (SD-K-015) handling extended HR, payroll, insurance, and benefits beyond Kasse's HCM foundations.
+
+**State rollout priority for SalonBacked features:**
+
+**Priority 1 (v1 launch):**
+- Texas (TX) — home state, primary launch market
+- California (CA) — largest salon market, strict regulations
+- Florida (FL) — significant salon density
+- New York (NY) — high-revenue salon market
+- Illinois (IL) — Midwest anchor
+
+**Priority 2 (v1.x, within 6 months of launch):**
+- States 6-15: NJ, MA, WA, PA, GA, NC, VA, OH, MI, AZ
+
+**Priority 3 (v1.x, within 12 months):**
+- Remaining 35 states rolled out in priority order based on Kasse merchant concentration
+
+**Kasse v1 vs SalonBacked v1:**
+- Kasse v1 provides HCM foundations (data collection, time clock, document storage) across all 50 states from day one (SD-K-019)
+- SalonBacked v1 adds the payroll-processing layer for priority 1 states only
+- Merchants in priority 2-3 states use Kasse HCM + external payroll provider (Gusto/ADP) until SalonBacked rolls out to their state
+
+---
+
 ## WHAT SALONBACKED IS
 
 SalonBacked is the financial and human infrastructure backbone for the independent beauty professional and salon business. It is the HCM (Human Capital Management) layer that sits alongside Kasse, connected by the Reyna Pay engine.
