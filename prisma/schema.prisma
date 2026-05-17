@@ -77,6 +77,17 @@ enum VerticalId {
 }
 
 // ═══════════════════════════════════════════
+// PLAN TIER ENUM (P0.D.1: plan tier system)
+// ═══════════════════════════════════════════
+
+enum PlanTier {
+  FREE
+  PLUS
+  PREMIUM
+  ENTERPRISE
+}
+
+// ═══════════════════════════════════════════
 // ORGANIZATION GROUPS (P0.A.13: multi-level hierarchy)
 // ═══════════════════════════════════════════
 
@@ -169,6 +180,9 @@ model Organization {
   verticalId             VerticalId            @default(salon)
   verticalConfigOverride Json?
   themeOverride          Json?
+  planTier               PlanTier              @default(FREE)
+  enabledAddons          String[]              @default([])
+  planEffectiveAt        DateTime?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   locations              Location[]
@@ -194,6 +208,7 @@ model Organization {
   organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
 
   @@index([verticalId])
+  @@index([planTier])
 }
 
 // ═══════════════════════════════════════════
