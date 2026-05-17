@@ -4,6 +4,14 @@
 
 ---
 
+## TIER NAMES — UPDATED 2026-05-17
+
+This document was originally written against the 5-tier per-merchant pricing model (Free/Starter/Growth/Pro/Enterprise). It has been updated to reflect the v1 per-location pricing model (FREE/PLUS/PREMIUM/ENTERPRISE) per SD-K-020.
+
+Note: Marketing copy still needs full rewrite for v1 launch. This is a holding update to remove obvious contradictions; full marketing copy work happens closer to v1 public launch (PR TBD in P22 — Public v1 Launch).
+
+---
+
 ## STRATEGIC PURPOSE
 
 The marketing site has one job: convert a service business owner who has never heard of Kasse into someone who either signs up for a trial or applies for the incubator program. Every page, every section, every word is evaluated against this standard.
@@ -211,7 +219,7 @@ That's $2,200 I would have missed."
 **Pricing Preview:**
 
 ```
-Plans from $49/month. Free 14-day trial, no credit card required.
+Plans from $29/month per location. Free tier available, no credit card required.
 [See Pricing →]
 ```
 
@@ -245,23 +253,22 @@ AI Receptionist  Contact          Agreement       LinkedIn
 **Plan Cards (5 cards, horizontal on desktop, stacked on mobile):**
 
 ```
-FREE               STARTER          GROWTH           PRO             ENTERPRISE
-$0/mo              $49/mo           $99/mo           $179/mo         $349/mo
-1 location         1 location       3 locations      5 locations     Unlimited
-1 staff            5 staff          15 staff         30 staff        Unlimited
-100 transactions   Unlimited        Unlimited        Unlimited       Unlimited
-Online booking     Online booking   Online booking   Online booking  Online booking
-Basic POS          Full POS         Full POS         Full POS        Full POS
-                   Email/SMS        Email/SMS        Email/SMS       Dedicated CSM
-                                    Campaigns        Campaigns       Custom terms
-                                    Reports          AI Receptionist Priority support
-                                                    (200 calls)     Franchise tools
-                                                    Payroll         API access
+FREE               PLUS             PREMIUM          ENTERPRISE
+$0/mo              $29/mo/location  $69/mo/location  Custom pricing
+1 location         Unlimited locs   Unlimited locs   Unlimited
+3 staff            10 staff/loc     30 staff/loc     Unlimited
+100 transactions   Unlimited        Unlimited        Unlimited
+Basic booking      Online booking   Online booking   Online booking
+Basic POS          Full POS         Full POS         Full POS
+                   Card processing  Marketing auto   Dedicated CSM
+                   SMS reminders    AI Receptionist  Franchise tools
+                                    HCM foundations  API access
+                                    Reports suite    White-label
 
-[Start Free]     [Start Trial]    [Start Trial]    [Start Trial]   [Contact Sales]
+[Start Free]     [Start Trial]    [Start Trial]    [Contact Sales]
 ```
 
-**The most popular badge:** On Growth plan
+**The most popular badge:** On PREMIUM plan
 
 **Feature comparison table** (expandable — "See full comparison"):
 Full matrix with checkmarks per plan for every feature
@@ -345,7 +352,7 @@ THIS IS NOT A GRANT. THIS IS A CAREER-CHANGING PARTNERSHIP.
 - 12 weeks of live, vertical-specific sessions
 - Cohort community of 24 peer operators
 - Capital line access at graduation (qualifying participants)
-- Kasse Growth plan free for life (worth $1,188/year)
+- Kasse PREMIUM plan free for life (worth $828/year)
 - Processing rate reduction (lifetime)
 - Alumni network access (monthly calls, annual event)
 
@@ -460,7 +467,7 @@ Real testimonials from salon owners. Not stock photos.
 | Walk-in queue | ✗ | ✓ |
 | Incubator program | ✗ | ✓ |
 | Processing fee | 2.6% + $0.10 | 2.9% + $0.30 |
-| Software cost | $0-$60/month | $49-$349/month |
+| Software cost | $0-$60/month | $0-$69/month per location |
 
 **Note on processing fees:** "Kasse's software includes features Square charges separately for or doesn't offer at all. Most salons save $150+/month on total platform cost when switching."
 

@@ -4,6 +4,41 @@
 
 ---
 
+## V1 SCOPE NOTE
+
+**Authority:** SD-K-024 (royalty model owner's choice), SD-K-040 (multi-location hierarchy)
+
+This document describes the full Franchise Edition vision. For v1 launch, Kasse ships the foundation only:
+
+**v1 (ships at launch):**
+- Sub-tenant hierarchy schema (OrganizationGroup model — already in P0.A.13)
+- Franchise role permissions (FRANCHISE_OWNER role — already in P0.A.1)
+- Royalty calculation engine (data layer)
+- Brand standards enforcement at API level (locked fields, validation rules)
+- Franchisee onboarding flow (special path in main onboarding wizard)
+
+**v1.x or v2 (post-launch):**
+- FDD builder UI
+- Territory mapping tool
+- Franchisee application portal (public-facing)
+- Brand standards UI editor (for franchisors to configure visually)
+- Marketing co-op fund accounting UI
+- Renewal / termination / transfer workflows
+
+The data layer (schema, API endpoints, calculation engines) ships in v1 so the v1.x/v2 UI work has a foundation to build on. Franchisors using v1 can configure their system via API or with concierge assistance.
+
+### Royalty Model — Franchisor's Choice (SD-K-024)
+
+The original SD-K-011 specified auto-deduct via SalonTransact as the only path. SD-K-024 amends this: franchisors can choose any of three models:
+
+1. **Auto-deduct via SalonTransact** (default, recommended) — calculated daily, deducted from franchisee payout automatically
+2. **Periodic reconciliation** — calculated weekly or monthly, ACH-pushed from franchisee bank to franchisor bank
+3. **Manual invoicing** — Kasse generates invoice, franchisee pays via any method
+
+The model is configured per franchise system at setup time. Different franchisors may prefer different models based on existing contracts and accounting practices.
+
+---
+
 ## STRATEGIC CONTEXT
 
 The Franchise Creator is the single highest-value feature Kasse can build. Here's why:

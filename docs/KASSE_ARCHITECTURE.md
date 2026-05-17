@@ -41,7 +41,7 @@ lendbucket/
 │   │   └── ai/                    # AI utility functions
 │   └── prisma/                    # Schema + seed files
 │
-├── kasse-native/                  # React Native (iPad + iPhone) — Phase 2
+├── kasse-native/                  # React Native (iPad + iPhone) — v2
 │   ├── apps/
 │   │   ├── kasse-ipad/            # Front-of-house POS
 │   │   └── kasse-iphone/          # Stylist app
@@ -52,6 +52,12 @@ lendbucket/
 │
 └── salontransact/                 # The Reyna Pay engine (separate repo)
 ```
+
+**Note on kasse-native:** Originally planned as React Native (SD-K-013), now superseded by SD-K-018. v1 ships via Capacitor in the main `lendbucket/kasse` repo. The `kasse-native` repo will be created for v2 React Native rewrite.
+
+**Mobile (v1):** Capacitor wrapping the Next.js portal, deployed to iOS App Store and Google Play Store. Single codebase with the web portal.
+
+**Mobile (v2):** React Native rewrite (post-launch initiative, see SD-K-018).
 
 ---
 
@@ -295,3 +301,38 @@ All database queries scoped by `organizationId`. Supabase RLS policies enforce t
 
 ### Audit Everything
 Every significant action logged to AuditLog with userId, orgId, action, before/after state, IP, timestamp. Non-deletable. Required for franchise compliance and dispute resolution.
+
+---
+
+## INFRASTRUCTURE
+
+**Authority:** SD-K-022 (single-region nationwide), SD-K-034 (scale targets)
+
+### v1 Architecture
+
+- **Web hosting:** Vercel (us-east-2 region)
+- **Database:** Supabase PostgreSQL (us-east-2)
+- **Mobile:** Capacitor (iOS + Android wrapping Next.js portal)
+- **Voice:** Twilio (US)
+- **AI:** Anthropic Claude API + OpenAI Realtime API
+- **Email:** Resend
+- **Payments:** Reyna Pay / Payroc
+
+**Availability:** Nationwide US (single-region deployment, no geographic restrictions)
+
+**Scale targets:**
+- v1 ceiling: 20,000 merchants (no architectural changes needed)
+- Long-term target: 100,000 merchants over 3-5 years (read replicas, sharding, archival cold storage added progressively)
+
+**SLA:**
+- 99.9% uptime all tiers
+- 99.95% ENTERPRISE
+- 99.99% target not committed (would require multi-region)
+
+### v2 Architecture (planned)
+
+- Multi-region deployment (us-east + us-west minimum) — SD-K-022 deferred
+- Postgres read replicas across regions
+- Edge functions for low-latency reads
+- Managed PCI compliance Level 1 certification (SD-K-023)
+- True data residency for ENTERPRISE merchants requesting it

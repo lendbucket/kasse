@@ -267,3 +267,129 @@ For this to work, our API needs:
 - Proprietary model trained on Kasse-specific data (formula AI, churn AI)
 - Kasse Professional Score (proprietary creditworthiness for beauty professionals)
 - Intelligence subscription product (sell benchmarks via API)
+
+---
+
+## GUARDRAILS & LIMITATIONS
+
+**Authority:** SD-K-026 (AI agent scope and guardrails)
+
+Every AI agent in Kasse operates under explicit guardrails. The guardrails are enforced at the API layer (not just prompted), so prompt-injection cannot bypass them.
+
+### Help Center AI
+
+**Can:**
+- Read merchant's own data (clients, appointments, transactions, staff, services)
+- Modify merchant's own settings (business hours, services, pricing, branding)
+- Issue refunds up to $50 autonomously with full audit log
+- Propose refunds above $50 — human must confirm in UI before processing
+- Update appointment status (cancel, no-show, reschedule)
+- Generate marketing content (must follow content tone rules below)
+
+**Cannot:**
+- See or modify any other merchant's data
+- Deploy code or run database migrations
+- Modify platform-level configuration (only Command Center AI can)
+- Suspend or unsuspend merchants
+- Modify billing or plan tier
+- Modify permissions or roles
+- Modify audit log entries
+
+**Audit:** Every action logged with: agent identity, merchant context, before/after state, timestamp, IP, and the natural-language instruction that triggered the action.
+
+### Command Center AI (CEO-side)
+
+**Can (v1):**
+- Read all merchant data across the platform
+- Modify any merchant's data, config, or settings
+- Issue platform-wide announcements
+- Suspend or unsuspend merchants
+- Apply credits or comp services
+- Toggle feature flags per merchant
+- Modify platform pricing (PlanTier/Addon catalog)
+- Run reports across all merchants
+
+**Cannot (v1):**
+- Deploy code (deploys still happen via Vercel CLI / GitHub Actions)
+- Run database migrations (DDL operations stay in proper engineering tooling)
+- Modify own audit log
+
+**v2 additions:**
+- Code modification via Claude Code MCP integration
+- Migration execution (with required approval flow)
+
+### Booking AI (customer-facing)
+
+**Can:**
+- Browse merchant's services + availability
+- Create appointments
+- Reschedule existing appointments (within merchant's cancellation policy)
+- Suggest add-ons during booking flow
+- Collect customer info for new client registration
+- Send confirmation SMS/email
+
+**Cannot:**
+- Modify pricing
+- Override availability constraints
+- Access other customers' data
+- Process refunds or store credits
+- See or modify merchant settings
+
+### Voice Receptionist AI
+
+Same scope as Booking AI but operating over Twilio voice channel. Additional capabilities:
+- Recognize urgency / frustration → transfer to human
+- Handle Spanish-language calls natively (SD-K-032)
+- Log full call transcript
+
+### Bug Detection AI
+
+**v1 — Reactive:**
+- User reports a bug via Help Center
+- AI inspects Vercel logs, Sentry errors, recent deploys for the affected merchant
+- Diagnoses root cause and surfaces summary to engineering
+- Suggests fix if pattern-matchable
+
+**v2 — Proactive:**
+- 24/7 monitoring of error rates via Sentry
+- Threshold-based alerting (error spike, p99 latency degradation, deploy regression)
+- Auto-creates issue with diagnosis attached
+
+---
+
+## CONTENT GENERATION GUIDELINES
+
+**Authority:** SD-K-026
+
+All AI-generated content (marketing emails, SMS messages, review responses, social media posts, booking confirmations, formulaic templates) must follow these rules:
+
+### Tone
+
+- Human-like. Reads as if the salon owner or front desk wrote it.
+- No AI tone. Avoid corporate-speak, marketing jargon, or "AI assistant" language.
+- No dashes (—). Em-dashes signal AI authorship; use commas, periods, or short sentences instead.
+- No bullet-heavy responses unless explicitly requested.
+- Conversational, not formal. Match the salon's brand voice (configured per merchant).
+
+### Style
+
+- Active voice over passive
+- Specific over vague ("Hey Sarah, your color looks great" beats "We hope you enjoyed your recent service")
+- Sentence variety (mix short and long)
+- Natural contractions ("we're" not "we are")
+
+### Examples
+
+**Bad (AI tone):**
+"Dear Sarah, we hope this message finds you well. We wanted to thank you for your recent appointment and remind you that our team is here to help with all your beauty needs."
+
+**Good (human tone):**
+"Hey Sarah, hope you're loving the balayage! Time for a touch-up. Book your next appointment in 4-6 weeks and we'll keep that color fresh."
+
+### Personalization
+
+AI content uses merchant data for personalization tokens:
+- `{client_first_name}`, `{stylist_name}`, `{last_service}`, `{salon_name}`
+- `{days_since_last_visit}`, `{loyalty_points}`, `{favorite_service}`
+
+Personalization is always grounded in real data — no hallucinated facts.

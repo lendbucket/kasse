@@ -52,6 +52,11 @@
 - "Powered by SalonTransact" (non-removable)
 - Auto-send on checkout (configurable)
 
+### Phone Booking Card Capture
+- SMS/email card-capture portal for phone bookings (SD-K-029) — for phone-only bookings, send client a secure link to enter card via Payroc Hosted Fields. Card held for no-show protection per cancellation policy.
+- Geolocation-enforced checkouts — POS terminal verifies device location is within configured radius of salon (default 100ft per SD-K-030). Soft warn + audit log on out-of-geofence.
+- Owner remote checkout — owners/managers can process payments from any device using Payroc Hosted Fields, bypassing iPad pairing requirement.
+
 ---
 
 ## 2. BOOKING & SCHEDULING
@@ -68,6 +73,10 @@
 - Multi-stylist appointment (two stylists, one client)
 - Service duration buffers
 - Mobile stylist travel time
+- 15-minute slot granularity — booking slots align to 15-minute increments
+- Per-stylist buffer time override — service has default buffer, stylist can override for their bookings
+- AI schedule builder from photo — upload photo of handwritten weekly schedule, AI extracts and creates digital schedule (PREMIUM+ only)
+- Recurring appointment series with seriesId — link recurring appointments for "edit all future" operations
 
 ### Online Booking Widget
 - Embeddable on any website (single script tag)
@@ -169,6 +178,10 @@
 - W-9 status, payout method
 - Custom color on calendar
 - Client-facing profile for marketplace
+- Multiple compensation models per stylist — single stylist can have salary + commission, hourly + commission, per-service commission, booth rental classification, or any hybrid
+- Traveling stylists — primary location designation + ability to work at other org locations
+- Geofenced time clock — iPad in-salon + geofenced mobile (Capacitor), 100ft radius, jailbreak detection, IP triangulation (SD-K-030)
+- Profitability calculator — what-if scenarios for switching commission models, showing financial impact per stylist
 
 ### Performance Tracking
 - Revenue generated
@@ -192,15 +205,26 @@
 - Overtime alerts
 - Auto-schedule suggestion (AI fills based on demand)
 
-### Commission Engine
-- Flat percentage
-- Tiered (30% → 40% → 50% at revenue thresholds)
-- By service category
-- Individual overrides
-- Booth rental deduction
-- Product commission
-- Tip handling (full pass-through or salon takes %)
-- Commission report for payroll export
+### Commission Engine (SD-K-026, SD-K-019)
+
+Every compensation model is configurable per-stylist:
+- **Flat commission percentage** — same % across all services
+- **Per-service commission** — different % per service category
+- **Tiered commission** — % increases at revenue thresholds (e.g., 30% → 40% → 50%)
+- **Hourly + commission** — base hourly + commission on services performed
+- **Salary + commission** — base salary + commission on services performed
+- **Booth rental classification** — stylist pays rent, runs own POS (v1 — true sub-merchant v2)
+- **Hybrid** — any combination of above models for a single stylist
+
+**Tip splits** — configurable per salon:
+- Primary-only (all tip to lead stylist)
+- Time-based (split by time on service)
+- Revenue-ratio (split by revenue contribution)
+- Explicit percentages (manually set per stylist)
+
+**Profitability calculator** — what-if analysis: "If I switch Jane from 50% flat to tiered 40/50/60, here's the projected impact on her take-home and salon margin."
+
+**Payroll export** — CSV/PDF export for Gusto/ADP/manual processing. v1 does not disburse payroll directly (SD-K-019).
 
 ---
 
@@ -510,3 +534,57 @@ At onboarding, business selects their type. Kasse reconfigures itself:
 | Restaurant | Table management, menu-based POS, reservation + walk-in queue |
 | Auto Service | Vehicle record (VIN, make/model), bay assignment, service advisor |
 | General Business | Full suite, no vertical config — configure your own categories |
+
+---
+
+## 18. PROFITABILITY INSIGHTS
+
+**Authority:** SD-K-026 (AI scope), conversation addition
+
+### What-If Calculator
+
+Owner inputs scenarios; system projects impact:
+- Switch stylist commission model → estimated change in take-home and salon margin
+- Change service price → projected revenue and demand impact
+- Add a new service → estimated revenue ramp
+- Adjust booth rent → impact on operator margin and stylist economics
+
+### AI Recommendations
+
+PREMIUM+ feature. Weekly AI analysis surfaces:
+- "Your Saturday demand for color is 40% higher than capacity. Consider adding a colorist or extending hours."
+- "Stylist A's rebook rate dropped 15% this quarter. Top reason from review analysis: wait time complaints."
+- "Service X has 35% margin vs 50% target. Recommended price: $185 (currently $165)."
+
+### Static Reports
+
+- Service profitability table (margin %, profit per hour, cost to deliver)
+- Income target dashboard (revenue needed to hit owner's personal + business goals)
+- Three-tier financial reporting (Simple / Intermediate / Advanced)
+- Per-location vs aggregate views
+
+---
+
+## 19. CARD-CAPTURE PORTAL FOR PHONE BOOKINGS
+
+**Authority:** SD-K-029
+
+Unique to Kasse. No competitor has this pattern.
+
+### Flow
+
+1. Front desk receives phone booking call
+2. Receptionist creates appointment in Kasse with client phone number
+3. Kasse generates secure short URL + SMS link sent to client phone
+4. Client clicks link → mobile-optimized page with appointment details + Payroc Hosted Fields form
+5. Client enters card → Payroc tokenizes → token stored on Client record
+6. Card held for no-show protection per cancellation policy
+7. Receptionist gets real-time notification when card is added
+8. Booking confirmed once card is on file
+
+### Why It Matters
+
+- Eliminates PCI risk of taking card numbers over the phone
+- Supports no-show fee enforcement for phone bookings (a major revenue protection)
+- Better client UX than reading 16 digits over a noisy phone line
+- Required for any salon enforcing cancellation policies on phone bookings

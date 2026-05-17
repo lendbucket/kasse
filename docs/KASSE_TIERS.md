@@ -1,420 +1,308 @@
-# KASSE_TIERS.md
-## Pricing Architecture — Complete Specification
-### Version 1.0 | Kasse Platform | 36 West Holdings
+# KASSE TIERS
+## Pricing Architecture — Per-Location, Square-Aligned
+
+**Version:** 2.0 | **Status:** LIVING | **Last Updated:** 2026-05-17
+**Authority:** SD-K-020 (locked) — see KASSE_STRATEGIC_DECISIONS.md
 
 ---
 
-## PRICING PHILOSOPHY
+## PRICING MODEL
 
-Kasse's pricing strategy is designed around one number: **$250 average revenue per paying merchant per month.** At 10,000 merchants paying $250/month, that's $30M ARR. At 100,000 merchants, $300M ARR. This is the target that makes Kasse a unicorn-path SaaS business.
+Kasse uses **per-location pricing** aligned with Square's salon model. Salon owners are familiar with this structure. Pricing scales linearly with locations — no surprises for multi-location operators.
 
-To hit $250/month average, the base plan economics look like this:
-- Most merchants start on Growth ($99/month) or Pro ($179/month)
-- Average base plan: ~$140/month
-- Average addon attach: ~$110/month (2-3 addons per paid merchant)
-- Combined average: $250/month
-
-The addon strategy is critical. Every addon solves a real problem for a specific merchant type. We never force merchants to pay for features they don't use. But we make the addons so valuable that merchants happily pay for them.
-
-**Processing margin:** On top of subscription, Kasse earns processing margin on every payment through Reyna Pay. At $23,950/month average merchant revenue, 0.30% net margin = $71.85/month per merchant in processing income. This is revenue that doesn't appear in subscription ARR but materially affects unit economics.
-
-**Build Phase:** Core tier structure live at Phase 0 (with limited features). Full feature gates applied progressively as features ship.
+**Locked decisions:**
+- SD-K-020 — Per-location 4-tier pricing, Square-aligned
+- SD-K-022 — Single-region nationwide (no geographic price differentiation)
+- SD-K-027 — Inventory partnership with Salon Centric (addon, not base tier)
 
 ---
 
-## THE FIVE TIERS
+## THE FOUR TIERS
 
 ### Tier 0 — FREE
 
-**Price:** $0/month  
-**Revenue model:** Processing margin only (~$45/month at average merchant volume)  
-**Target:** New businesses, side hustles, ultra-small operations  
-**Capacity:** 100 transactions/month, 1 staff, 1 location
+**Price:** $0/month
+**Locations:** 1
+**Staff:** Up to 3
+**Target:** New solo operators, side hustles, evaluating Kasse
 
-**What's included:**
-- Kasse POS (basic — no inventory, no gift cards)
-- Online booking page (Kasse URL — cannot use custom domain)
-- Up to 1 staff member
-- Up to 100 transactions/month (hard cap — merchant prompted to upgrade at 80%)
-- Client list (unlimited)
-- Basic appointment history
-- Email support only (72hr SLA)
-- Kasse branding on all customer-facing pages ("Powered by Kasse")
+**Included:**
+- Booking page on `kasseapp.com/book/[slug]`
+- Up to 100 transactions/month
+- Up to 3 staff members
+- 1 location
+- Basic client management
+- Service catalog
+- Cash + manual payment recording
+- Email support (72hr SLA)
+- "Powered by Kasse" branding on customer-facing pages
 
-**What's NOT included:**
-- Staff management
-- Marketing automations
-- AI receptionist
-- Reports (beyond basic daily total)
-- Integrations (Google, Instagram, etc.)
-- Kasse Color
-- Gift cards
-- Memberships
+**Excluded:**
+- Card payment processing (requires Reyna Pay activation, included on paid tiers)
+- Marketing automation
+- AI features
 - API access
-- Custom domain for booking page
+- Custom domain
+- Multi-location
 
-**Free tier strategy:**
-Free is not a charity — it's a top-of-funnel acquisition engine. Every free merchant is a warm lead. They're using Kasse, their clients are used to booking on Kasse, their data is in Kasse. Upgrading is one click. The conversion funnel from Free → Starter should be 60%+ within 90 days for merchants who are genuinely growing.
-
-**Free tier upgrade prompts:**
-- At 80 transactions (of 100 limit): "You're almost at your limit — upgrade to Starter for unlimited transactions"
-- When trying to invite a 2nd staff member: "Starter plan required to add more staff"
-- When trying to use marketing features: "Upgrade to Growth for automated marketing"
-- Monthly email: "Here's what you could do with a Growth plan" (personalized to their vertical)
+**Hard limit enforcement:** PR #72 returns 402 PAYMENT_REQUIRED with structured upgrade body when limit is hit.
 
 ---
 
-### Tier 1 — STARTER
+### Tier 1 — PLUS
 
-**Price:** $49/month (annual: $39/month = $468/year)  
-**Revenue model:** Subscription + processing margin  
-**Target:** Established solo operators, new small teams (1-5 staff)  
-**Capacity:** Unlimited transactions, 5 staff, 1 location
+**Price:** $29/month per location (annual: $24/month/loc, saves 17%)
+**Locations:** Unlimited (billed per location)
+**Staff:** Up to 10 per location
+**Target:** Established solo or small team salons
 
-**Included features:**
-- Everything in Free, plus:
+**Included (everything in FREE plus):**
 - Unlimited transactions
-- Up to 5 staff members
-- Staff scheduling and availability management
-- Online booking with custom domain ($19 addon to use own domain without custom site)
-- Client management (full profiles, notes, history)
-- Service catalog (unlimited services)
-- Basic reports (daily, weekly, monthly revenue)
-- Gift cards (sell and redeem)
-- SMS appointment reminders (Twilio — 200 SMS/month included, $0.015 per SMS after)
-- Basic marketing: 1 automation (e.g., birthday SMS)
-- Product inventory (up to 50 SKUs)
-- Email support (24hr SLA) + chat support (business hours)
-- "Powered by Kasse" on booking page (removable for $9/month)
-- Kasse branding on receipts (removable for $9/month)
+- Up to 10 staff per location
+- Multi-location support (each location billed separately)
+- Card payment processing via Reyna Pay
+- Card-on-file (Payroc Secure Tokens)
+- Pre-auth holds at booking
+- SMS card-capture portal for phone bookings (SD-K-029)
+- Manual card entry via Hosted Fields
+- Apple Pay + Google Pay
+- Online booking with real availability
+- Recurring appointment series
+- Cancellation policies (custom amount + window per service)
+- Customer profiles with structured allergies + formula history
+- Marketing consent tracking
+- Basic email + SMS appointment reminders (500 SMS/month/location included)
+- Basic reports (revenue, appointments, staff performance)
+- Gift cards (sell + redeem)
+- Membership management
+- Email + chat support (24hr SLA)
 
-**Starter upgrade prompts:**
-- At 5 staff: "Need more staff? Pro plan supports 30+"
-- When trying to use marketing automations (beyond 1): "Upgrade to Growth"
-- When trying to use AI features: "Upgrade to Pro for AI receptionist"
-- When trying to add second location: "Multi-location available on Pro"
-
----
-
-### Tier 2 — GROWTH
-
-**Price:** $99/month (annual: $79/month = $948/year)  
-**Revenue model:** Subscription + processing margin  
-**Target:** Established small-medium teams, growing businesses  
-**Capacity:** Unlimited transactions, 15 staff, 1 location
-
-**Included features:**
-- Everything in Starter, plus:
-- Up to 15 staff members
-- Full staff management (roles, permissions, commission schedules)
-- Full client intelligence (relationship scores, visit patterns, LTV)
-- Unlimited marketing automations (win-back, rebooking, lapsed, birthday, review requests)
-- Review request automation
-- Reputation dashboard (Google, Yelp, Facebook review aggregation)
-- Full reports suite (revenue by staff, by service, by client, cohort analysis)
-- Inventory management (unlimited SKUs, reorder alerts, purchase orders)
-- Basic integrations (Google Business Profile sync, review monitoring)
-- AI-powered client win-back campaign suggestions
-- Email support (8hr SLA) + chat support (extended hours)
-- Kasse branding removable (included)
-- SMS 500/month included
-
-**Who should be on Growth:**
-- Salons with 5-15 stylists
-- Restaurants with 1 location
-- Gyms with under 200 members
-- Any business prioritizing marketing and retention
+**Excluded:**
+- Marketing automation beyond reminders
+- AI features
+- Multi-location service catalog sync
+- Custom roles
+- API access
+- White-label
 
 ---
 
-### Tier 3 — PRO
+### Tier 2 — PREMIUM
 
-**Price:** $179/month (annual: $149/month = $1,788/year)  
-**Revenue model:** Subscription + processing margin  
-**Target:** High-volume single locations, multi-location operators  
-**Capacity:** Unlimited transactions, 30 staff, 3 locations
+**Price:** $69/month per location (annual: $57/month/loc, saves 17%)
+**Locations:** Unlimited (billed per location)
+**Staff:** Up to 30 per location
+**Target:** Mid-sized salons and multi-location operators
 
-**Included features:**
-- Everything in Growth, plus:
-- Up to 30 staff
-- Up to 3 locations (unified dashboard, consolidated reports)
-- AI Receptionist (200 calls/month included)
-- Multi-location client profiles (client visible across all your locations)
-- Advanced analytics (demand forecasting, cohort retention, revenue prediction)
-- API access (1,000 requests/hour)
-- Webhook support
-- Membership management (recurring billing for classes, memberships)
-- Class and event management
-- Instagram and Facebook booking integrations
-- Google Reserve integration
-- Priority email + chat support (4hr SLA)
-- Phone callback support
-- SMS 1,000/month included
+**Included (everything in PLUS plus):**
+- Up to 30 staff per location
+- Full marketing automation (drips, win-back, birthday, anniversary, abandoned-booking — SD-K-036)
+- AI Receptionist (200 voice calls/month/location included, SD-K-026)
+- AI content generation (human tone, no AI tone — SD-K-026)
+- Help Center AI with action-taking (SD-K-026)
+- Profitability calculator + what-if commission scenarios
+- Multi-location service catalog with sync toggles
+- Sub-tenant price approval workflows
+- Custom roles + permissions (P0.A engine)
+- Full reports suite (per-location + aggregate, macro/micro views)
+- Reviews + Google Business Profile integration (smart filter, 4+ stars → public — SD-K-037)
+- Custom loyalty programs (SD-K-035)
+- Custom referral programs (SD-K-035)
+- Inventory tracking with real-time alerts
+- Optional inventory auto-deduction
+- Salon Centric reorder PDF (SD-K-027)
+- 1099 + W-2 PDF generation (SD-K-038)
+- HCM foundations: W-4, I-9, direct deposit, license verification, background check, time clock (SD-K-019)
+- Geolocation enforcement for time clock (SD-K-030)
+- PTO/sick request workflow
+- Employment agreement templates + custom upload + e-signature (SD-K-019)
+- Per-stylist commission models (flat, per-service, tiered, hybrid)
+- Tip splits (configurable per salon: primary-only / time-based / revenue-ratio / explicit %)
+- TDPSA + CCPA compliance handling (SD-K-039)
+- Priority email + chat support (8hr SLA)
 
-**Who should be on Pro:**
-- High-volume salons ($300K+ annual revenue)
-- Gyms with 200+ members
-- Restaurants with heavy reservation volume
-- Any multi-location operator
-
----
-
-### Tier 4 — ENTERPRISE
-
-**Price:** $349/month (annual: $299/month = $3,588/year)  
-**Revenue model:** Subscription + processing margin  
-**Target:** Large multi-location operators, franchisors, high-scale businesses  
-**Capacity:** Unlimited everything
-
-**Included features:**
-- Everything in Pro, plus:
-- Unlimited staff
-- Unlimited locations
-- AI Receptionist (500 calls/month included)
-- Franchise Creator (add-on still required for royalty collection — see addons)
-- White-label branding (remove Kasse branding completely from all customer-facing surfaces)
-- Custom onboarding support (dedicated onboarding call)
-- Dedicated Customer Success Manager (monthly check-ins)
-- API access (10,000 requests/hour)
-- Priority support (1hr SLA)
-- Custom integration support
-- Business Exchange (early access — list business for sale in Kasse Exchange)
-- Advanced team management (department groupings, complex commission structures)
-- Custom reporting (build any report from Kasse data)
-- SMS 3,000/month included
-- SalonBacked integration (if enrolled)
-
-**Who should be on Enterprise:**
-- Franchise systems (5+ locations)
-- Any business doing $500K+ annual revenue
-- Operators who need white-label (remove Kasse branding)
+**Excluded:**
+- Voice receptionist beyond 200 calls
+- Owner Command Center
+- Franchise Edition features
+- API access (limited dev access only)
+- White-label
 
 ---
 
-## COMPLETE ADDON CATALOG
+### Tier 3 — ENTERPRISE
 
-Addons are available on the plans specified. Mix-and-match creates the $250 average.
+**Price:** Custom (typically $99-$249/month per location depending on volume)
+**Locations:** Unlimited
+**Staff:** Unlimited
+**Target:** Multi-state operators, franchisors, large chains, brand-mode holding companies
 
-### AI & Receptionist
+**Included (everything in PREMIUM plus):**
+- Unlimited voice receptionist calls
+- Owner Command Center (Claude-powered platform admin with full audit log — SD-K-026)
+- Franchise Edition foundation: sub-tenant hierarchy, royalty collection (3 models — SD-K-024), marketing co-op fund, brand standards enforcement (UI/workflow ships v1.x or v2)
+- Full multi-location hierarchy (flat / tiered / brand-mode — SD-K-040)
+- Cross-location operations: shared clients, gift cards cross-redeemable, inventory transfers, staff multi-location, traveling stylists
+- Concierge onboarding (human-assisted within 7 days if self-serve incomplete)
+- Dedicated Customer Success Manager
+- White-label capability (custom branding, custom domain)
+- Full API access (REST + webhooks + agent-native — SD-K-005)
+- Custom integrations support
+- Priority support (1hr SLA, 99.95% uptime SLA — SD-K-022)
+- TDLR + state-by-state employment compliance (TX, CA, FL, NY, IL priority — SD-K-021)
+- Custom reporting
+- Audit log export (compliance / forensics)
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| AI Receptionist — Standard | $49/month | Growth+ | 100 calls/month AI phone answering, booking, FAQ handling |
-| AI Receptionist — Pro | $79/month | Growth+ | 300 calls/month + WhatsApp automation |
-| AI Receptionist — Unlimited | $129/month | Pro+ | Unlimited calls + SMS auto-responses + DM booking |
-| AI Caption Generator | $19/month | All | Auto-generate social media captions for before/after posts |
-| AI Business Insights | $29/month | Starter+ | Weekly AI-generated action items based on business data |
+---
 
-### Color & Formula Management
+## ADDON CATALOG
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Kasse Color — Solo | $29/month | All | Formula cards for 1 stylist, basic color inventory |
-| Kasse Color — Team | $49/month | Starter+ | Formula cards for all staff, full inventory, portfolio |
-| Kasse Color — Pro | $79/month | Growth+ | All Team features + formula library analytics, AI suggestions, franchise formula standards |
+Addons are tracked via `Organization.enabledAddons: String[]` (shipped in PR #70). Available on PLUS+ unless noted.
 
-### Website & Online Presence
+### AI & Voice
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Kasse Sites — Subdomain | $19/month | All | Full website on brand.kasseapp.com |
-| Kasse Sites — Custom Domain | $29/month | All | Full website on yourdomain.com |
-| Custom Booking Domain | $9/month | Starter+ | book.yourdomain.com instead of brand.kasseapp.com/book |
-| Remove "Powered by Kasse" | $9/month | Starter | Remove Kasse branding from booking pages and receipts |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| AI Receptionist — Extra Calls | $0.20/call | PLUS+ | Beyond included 200/month/location |
+| AI Receptionist — Unlimited | $99/month/location | PLUS+ | Replaces per-call billing |
+| Booking AI (web + SMS + voice) | Included | PREMIUM+ | Conversational booking + upsell |
+| Command Center AI (read/modify platform) | Included | ENTERPRISE | Full audit log |
+| Proactive Bug Detection AI | $49/month | ENTERPRISE | v2 — reactive included in PREMIUM |
 
 ### Communication
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| SMS — Extra 500/month | $9/month | All | Add 500 SMS to monthly allotment |
-| SMS — Extra 2,000/month | $29/month | All | Add 2,000 SMS |
-| Kasse Phone Number | $9/month | All | Dedicated business phone number (text + voice) via Twilio |
-| Two-Way Client Messaging | $19/month | Starter+ | Enable clients to reply to SMS reminders; unified inbox |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| SMS Pack — 1,000 extra/month | $15/month | All | Stacks |
+| SMS Pack — 5,000 extra/month | $59/month | All | Stacks |
+| Custom Phone Number | $9/month | All | Twilio dedicated number |
+| Two-Way Client Messaging | $19/month | PLUS+ | Reply tracking + unified inbox |
 
-### Staff & HR
+### Compliance & Tax
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Advanced Commission | $19/month | Starter+ | Tiered commissions, service-specific rates, performance bonuses |
-| Time & Attendance | $19/month | Starter+ | Clock-in/clock-out, labor reports, overtime tracking |
-| Accountant Access | $9/month | All | Read-only financial access for accountant or bookkeeper |
-| Business Partner Access | $9/month | All | Extended read-only access (operations + finance) |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| Managed PCI Compliance (v2) | $79/month | ENTERPRISE | v2 only — pass-through v1 (SD-K-023) |
+| TaxJar Integration (v2) | $29/month | PREMIUM+ | v2 — manual tax rates v1 |
+| State Compliance Beyond Top 5 | $0 | All | Rolled out as ready (TX/CA/FL/NY/IL v1, others v1.x) |
+| Tax Form E-Filing (v2) | $39/month | PREMIUM+ | v2 — PDF generation v1 |
 
-### SalonBacked Integration
+### Multi-Location & Franchise
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| SalonBacked Payroll | $49/month + $6/staff | Growth+ | Full payroll processing via SalonBacked |
-| SalonBacked Tax Filing | $39/month | Growth+ | In-house Schedule C, SE, 1040 filing via SalonBacked |
-| SalonBacked Benefits | $29/month | All | Access to group insurance options via SEPA |
-| SalonBacked Full Suite | $99/month + $6/staff | Pro+ | All SalonBacked modules bundled |
-
-### Franchise & Multi-Location
-
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Franchise Creator | $199/month | Enterprise | Full franchise system — FDD builder, territory mapping, application portal, training, royalty auto-collection |
-| Per-Franchisee Location | $49/month | Enterprise | Adds each franchisee location to the franchise system |
-| Reseller Program | $199/month | Enterprise | White-label reseller portal (legal review required before enabling) |
-
-### Retention & Marketplace
-
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Freeze Account — Full | $9/month | All | Pause account, keep data, unfreeze anytime |
-| Freeze Account — Light | $19/month | All | Pause + keep client history visible |
-| Freeze Account — Revenue | $29/month | All | Keep payment processing active, pause everything else |
-| Business Exchange Listing | $299 one-time | Pro+ | List business for sale with Kasse verified valuation |
-| Business Exchange Featured | $99/month | Pro+ | Featured placement in exchange listings |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| Brand-Mode Hosting | Included | ENTERPRISE | Multiple brands under one org |
+| Franchise Creator | Included | ENTERPRISE | FDD builder, territory mapping, royalty system |
+| Per-Franchisee Royalty Auto-Collect | $0.10/transaction | ENTERPRISE | Default model (SD-K-011, alternatives per SD-K-024) |
 
 ### Vertical-Specific
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| Table Management | $49/month | All (Restaurant) | Floor plan, waitlist, reservations, tab management |
-| Online Ordering | $49/month | All (Restaurant) | Direct online ordering (no commission like DoorDash) |
-| Kitchen Display System | $29/month | Growth+ (Restaurant) | KDS app for kitchen screens |
-| Class Management | $49/month | All (Gym/Studio) | Class scheduling, registration, attendance, waitlist |
-| Membership Management | $49/month | Starter+ | Recurring membership billing, member check-in |
-| Door Access Integration | $39/month | Growth+ (Gym) | QR/fob-based door access system |
-| Waitlist Queue | $19/month | All (Barbershop) | Walk-in queue management, TV display, remote queue join |
-| Pet Profiles | $19/month | All (Pet Grooming) | Extended pet profiles with vaccine tracking, temperament notes |
-| Medical Intake | $39/month | Growth+ (Med Spa) | Digital intake forms, consent management, HIPAA-aware storage |
-| Vehicle Profiles | $19/month | All (Auto) | Vehicle-based service history, VIN tracking, service reminder system |
-| Tax Nexus Tracker | $29/month | Growth+ | Sales tax nexus monitoring for mobile/multi-state businesses |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| Salon Color Studio | Included | PLUS+ | Formula tracking per client |
+| Booth Rental Classification | Included | PLUS+ | v1 — true sub-merchant v2 (SD-K-025) |
+| Med Spa HIPAA Mode | $79/month | ENTERPRISE | v2 only — defer until HIPAA review (SD-K-008) |
 
-### Developer & Integration
+### Integrations
 
-| Addon | Price | Plans | Description |
-|-------|-------|-------|-------------|
-| API Access — Standard | Included | Pro+ | Already included in Pro |
-| API Access — Starter | $29/month | Growth | API access for Growth plan merchants |
-| Additional API Capacity | $49/month | Pro+ | Increase rate limit to 50,000 requests/hour |
-| Zapier Integration | $19/month | Starter+ | Connect Kasse to 5,000+ apps via Zapier |
-| DoorDash Integration | $29/month | All (Restaurant) | DoorDash order management in Kasse |
-| Uber Eats Integration | $29/month | All (Restaurant) | Uber Eats order management in Kasse |
-| Shopify Sync | $29/month | All (Retail) | Bi-directional product + inventory sync |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| Salon Centric Inventory | $19/month | PLUS+ | PDF reorder workflow (SD-K-027) |
+| Google Business Profile | Included | PREMIUM+ | Review management |
+| Checkr Background Check | Pass-through cost | PREMIUM+ | Built into HCM |
+| Apple/Google Pay | Included | All | Standard checkout option |
 
----
+### Mobile
 
-## PLAN COMPARISON TABLE
-
-| Feature | Free | Starter | Growth | Pro | Enterprise |
-|---------|------|---------|--------|-----|-----------|
-| Monthly price | $0 | $49 | $99 | $179 | $349 |
-| Transactions | 100/mo | Unlimited | Unlimited | Unlimited | Unlimited |
-| Staff | 1 | 5 | 15 | 30 | Unlimited |
-| Locations | 1 | 1 | 1 | 3 | Unlimited |
-| Booking page | ✓ (Kasse URL) | ✓ | ✓ | ✓ | ✓ |
-| Client management | Basic | Full | Full | Full | Full |
-| Service catalog | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Gift cards | ✗ | ✓ | ✓ | ✓ | ✓ |
-| Marketing automations | ✗ | 1 | Unlimited | Unlimited | Unlimited |
-| Review management | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Full reports | ✗ | Basic | ✓ | Advanced | Custom |
-| Inventory | ✗ | 50 SKUs | Unlimited | Unlimited | Unlimited |
-| AI Receptionist | ✗ | ✗ | Add-on | 200 calls | 500 calls |
-| Memberships | ✗ | ✗ | ✗ | ✓ | ✓ |
-| API access | ✗ | ✗ | Add-on | ✓ | ✓ |
-| Franchise Creator | ✗ | ✗ | ✗ | ✗ | Add-on |
-| White-label | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Support SLA | 72hr email | 24hr email | 8hr chat | 4hr chat+phone | 1hr dedicated |
-| SMS included | 0 | 200 | 500 | 1,000 | 3,000 |
-| Kasse branding on pages | Yes | Removable ($9) | Removed | Removed | Removed |
+| Addon | Price | Tier | Notes |
+|-------|-------|------|-------|
+| Capacitor Native App (iOS + Android) | Included | All | v1 (SD-K-018) |
+| React Native Rewrite | Included | All | v2 (SD-K-018) |
 
 ---
 
 ## REVENUE MODEL MATH
 
-### Revenue Per Merchant — Model Scenarios
+Per-location pricing creates predictable scaling. ARPU varies with location count and addon attach.
 
-**Scenario A: Small Salon Owner, Starter Plan**
-- Starter base: $49/month
-- Kasse Color Solo: $29/month
-- Kasse Phone Number: $9/month
-- SMS add-on 500: $9/month
-- **Total subscription: $96/month**
-- Processing margin on $12,000/month volume at 0.30%: $36/month
-- **Total revenue: $132/month**
+**Scenario A: Single-location PLUS salon**
+- PLUS base: $29
+- Salon Centric: $19
+- AI Receptionist extra 100 calls: $20
+- **Total subscription: $68/month**
+- Processing margin (avg $12k/mo volume at 0.30%): $36/month
+- **Total revenue: $104/month**
 
-**Scenario B: Mid-size Salon, Growth Plan**
-- Growth base: $99/month
-- Kasse Color Team: $49/month
-- AI Receptionist Standard: $49/month
-- Kasse Sites Custom: $29/month
-- Accountant Access: $9/month
-- **Total subscription: $235/month**
-- Processing margin on $25,000/month at 0.30%: $75/month
-- **Total revenue: $310/month**
+**Scenario B: Single-location PREMIUM salon**
+- PREMIUM base: $69
+- AI Receptionist unlimited: $99
+- Two-Way Messaging: $19
+- **Total subscription: $187/month**
+- Processing margin (avg $25k/mo volume at 0.30%): $75/month
+- **Total revenue: $262/month**
 
-**Scenario C: Restaurant, Pro Plan**
-- Pro base: $179/month
-- Table Management: $49/month
-- Online Ordering: $49/month
-- Kitchen Display: $29/month
-- Zapier: $19/month
-- **Total subscription: $325/month**
-- Processing margin on $85,000/month at 0.30%: $255/month
-- **Total revenue: $580/month**
+**Scenario C: 5-location PREMIUM chain**
+- PREMIUM × 5 locations: $345
+- AI Receptionist unlimited × 5: $495
+- Salon Centric × 5: $95
+- **Total subscription: $935/month**
+- Processing margin (combined $100k/mo at 0.30%): $300/month
+- **Total revenue: $1,235/month**
 
-**Scenario D: Gym, Pro Plan**
-- Pro base: $179/month
-- Class Management: $49/month
-- Membership Management: $49/month
-- Door Access: $39/month
-- AI Receptionist Pro: $79/month
-- **Total subscription: $395/month**
-- Processing margin on $35,000/month at 0.30%: $105/month
-- **Total revenue: $500/month**
-
-**Scenario E: Franchise System, Enterprise**
-- Enterprise base: $349/month
-- Franchise Creator: $199/month
-- 12 franchisee locations × $49: $588/month
-- Kasse Color Pro: $79/month
-- **Total subscription: $1,215/month**
-- Processing margin on combined 13-location $400,000/month at 0.30%: $1,200/month
-- Plus royalty auto-collection fee (0.1% of franchisee volume): $380/month
-- **Total revenue: $2,795/month**
+**Scenario D: 12-location ENTERPRISE franchise**
+- ENTERPRISE custom (~$149/loc × 12): $1,788
+- Franchise Creator: included
+- Royalty auto-collect on $400k/mo: $400
+- AI Receptionist unlimited × 12: $1,188
+- **Total subscription: $2,976/month**
+- Processing margin (combined $400k/mo at 0.30%): $1,200/month
+- **Total revenue: $4,576/month**
 
 ---
 
-## ANNUAL PRICING INCENTIVE
+## ANNUAL DISCOUNTS
 
-Annual pricing offers 20% discount across all plans:
-- Free: still free
-- Starter: $39/month (billed $468/year) — saves $120/year
-- Growth: $79/month (billed $948/year) — saves $240/year
-- Pro: $149/month (billed $1,788/year) — saves $360/year
-- Enterprise: $299/month (billed $3,588/year) — saves $600/year
+Annual prepay offers 17% discount across all paid tiers:
+- PLUS: $24/month/location (billed $288/year/location)
+- PREMIUM: $57/month/location (billed $684/year/location)
+- ENTERPRISE: Custom
 
-Addons remain monthly regardless of base plan billing cycle.
+Addons remain monthly billing.
 
-**Annual plan target:** 40% of paying merchants on annual plans within 18 months of launch. Annual merchants churn at 1/3 the rate of monthly merchants.
+**Target:** 35% of paying merchants on annual plans within 12 months of launch. Annual merchants churn at ~1/3 the rate of monthly.
 
 ---
 
 ## PLAN MIGRATION
 
-### Upgrade path
+### Upgrade
+Instant. Features unlock immediately. Billing prorated for remainder of current cycle.
 
-Upgrading is instant — features unlock immediately. Billing is prorated for the remaining days of the current billing cycle.
-
-### Downgrade path
-
-Downgrading takes effect at the end of the billing period. If a downgrade would leave the merchant over their new plan's limits:
-- Over staff limit: excess staff set to "inactive" (data preserved, login disabled)
-- Over location limit: excess locations set to "archived" (data preserved, not actively usable)
-- Over transaction limit: not applicable (no transaction limit on Starter+)
-
-Merchants receive warning email 5 days before downgrade takes effect showing what they'll lose.
+### Downgrade
+Takes effect at end of billing period. Warning email 5 days before. If new tier limits are exceeded, owner is prompted to reduce locations/staff before downgrade applies.
 
 ### Cancellation
-
-Cancel anytime. Data retained 90 days after final billing date. After 90 days, permanently deleted.
+Cancel anytime. Data retained 90 days after final billing. After 90 days, soft-deleted (recoverable for 1 year), then permanently deleted.
 
 ---
 
-*Document version 1.0 — For internal use only. Last updated: May 2026.*
-*Owner: Robert Reyna, CEO, 36 West Holdings*
-*Next review: Phase 0 kickoff (pricing pages must be built before launch)*
+## SUPPORT SLAs
+
+| Tier | First Response | Resolution Target |
+|------|---------------|-------------------|
+| FREE | 72hr email | Best effort |
+| PLUS | 24hr email + chat | 5 business days |
+| PREMIUM | 8hr email + chat | 3 business days |
+| ENTERPRISE | 1hr (24/7) | Same day for P1, 24hr P2 |
+
+Uptime SLA: 99.9% all tiers, 99.95% ENTERPRISE (SD-K-022).
+
+---
+
+## REFERENCES
+
+- **Pricing model lock:** SD-K-020
+- **Per-location enforcement:** PR #70 (lib/plans/limits.ts), PR #72 (POST /api/locations 402 enforcement)
+- **Plan tier enum:** `prisma/schema.prisma` PlanTier (FREE, PLUS, PREMIUM, ENTERPRISE)
+- **Strategic decisions:** docs/KASSE_STRATEGIC_DECISIONS.md
+- **Contradictions resolved:** docs/architecture/CONVERSATION_VS_DOCS_CONTRADICTIONS.md
