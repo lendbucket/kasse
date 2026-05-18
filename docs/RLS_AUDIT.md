@@ -115,6 +115,14 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/onboarding/complete` | POST | Writes KYC/banking via ORGANIZATION_ONBOARDING_ALLOWED_FIELDS; atomic 3-write transaction. Email outside tx. (migrated 0.5.3b-2c) |
 | `/api/onboarding/send-application` | POST | TENANT_SCOPED — auth-required but no DB writes (uses requireTenantContext for actor identity only; no withTenantScope wrapper needed since the only side effect is a Resend email. This is TENANT_SCOPED in the audit-bucket sense but does not exercise the tenant scope at runtime.) (migrated 0.5.3b-2c) |
 
+### CRON — Scheduled platform tasks (no user session)
+
+Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected via shared secret in the Authorization header (compared with `timingSafeEqual` against `CRON_SECRET`). No user session, no tenant context. Uses `prismaAdmin` because the operations are platform-wide (retention sweeps, integrity checks, etc.).
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/cron/audit-retention` | POST | Deletes tenant audit rows older than 730 days; preserves platform rows. Uses prismaAdmin. |
+
 ### PUBLIC_STATIC — No auth, no database
 
 | Route | Method(s) | Reason |
@@ -124,13 +132,14 @@ These library helpers must be called inside a `withTenantScope` block — they a
 ## Summary
 
 - TENANT_SCOPED: **30**
-- BYPASS_NEEDED: **13**
+- BYPASS_NEEDED: **14**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
-  - SUPERADMIN: **8** (admin portal operations — 5 original + 3 feature-flag routes)
+  - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
+- CRON: **1** (audit retention, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 44**
+**Total routes: 46**
 
 ## What happens next
 
@@ -843,6 +852,35 @@ Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `setValues` | `lib/custom-fields/values` | Batch upsert with all-or-nothing validation + required field check |
 | `getValues` | `lib/custom-fields/values` | Read all custom field values for an entity |
 | `deleteValue` | `lib/custom-fields/values` | Remove a value (field cleared) |
+
+## P0.I.3 — Audit Extension (2026-05-18)
+
+No new tables. Added performance indexes on existing AuditLog table:
+- `idx_auditlog_action` on `action`
+- `idx_auditlog_request` on `requestId` (partial: WHERE requestId IS NOT NULL)
+
+### P0.I.3 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/admin/audit-logs` | GET | BYPASS_NEEDED — SUPERADMIN | Cross-tenant audit query; uses `requireSuperadminContext` + `prismaAdmin` via `queryAuditLogs` |
+| `/api/cron/audit-retention` | POST | CRON | Protected by CRON_SECRET bearer token; uses `prismaAdmin` for retention sweep |
+
+### P0.I.3 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `queryAuditLogs` | `lib/audit/query` | SUPERADMIN cross-tenant query with full filter set + pagination |
+| `queryAuditLogsForTenant` | `lib/audit/query` | Tenant-scoped query (forces organizationId) |
+| `getEntityAuditTrail` | `lib/audit/query` | Entity-specific audit history |
+| `runAuditRetention` | `lib/audit/retention` | Delete tenant rows older than 730 days; preserves platform rows |
+
+### P0.I.3 Notes
+
+- Query helpers use `prismaAdmin` (RLS bypass) because audit logs are platform-level data
+- Tenant-scoped reads via `queryAuditLogsForTenant` enforce org scope in the where clause
+- Retention sweep runs as platform-level via `prismaAdmin` — bypasses RLS intentionally
+- Cron route built but NOT yet registered in vercel.json — registration is a deployment step
 
 ## P0.I.2 Tables — RLS Classification (2026-05-18)
 

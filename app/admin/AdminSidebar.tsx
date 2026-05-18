@@ -3,14 +3,13 @@
 import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
-  LayoutDashboard, Building2, Users, CreditCard, Upload, Flag,
+  LayoutDashboard, Building2, Users, CreditCard, Upload, Flag, FileText,
 } from "lucide-react"
 
 // NAV — admin sidebar nav items.
 // Pages must exist before they're added here. Removed in P0.A.12.1:
 //   - /admin/ai-receptionist (planned for P15)
 //   - /admin/platform-settings (planned for P0.B Command Center)
-//   - /admin/audit-log (planned for P0.A.14)
 // Add each back when its page ships.
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
@@ -19,6 +18,7 @@ const NAV = [
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
   { href: "/admin/import-jobs", label: "Import Jobs", icon: Upload },
   { href: "/admin/feature-flags", label: "Feature Flags", icon: Flag },
+  { href: "/admin/audit-logs", label: "Audit Logs", icon: FileText },
 ]
 
 export default function AdminSidebar() {

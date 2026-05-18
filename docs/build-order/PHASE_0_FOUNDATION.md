@@ -262,7 +262,7 @@ Estimated: 12-15 commits.
 
 ## P0.I — Custom Fields + Tags + Audit Extension (2-3 PRs)
 
-**Status:** In progress (2 of 3 PRs shipped)
+**Status:** COMPLETE (3 of 3 PRs shipped)
 
 ### P0.I PR 1 — Custom Fields ✅ COMPLETE
 
@@ -288,13 +288,16 @@ Estimated: 12-15 commits.
 - API routes: GET/POST /api/tags, PATCH/DELETE /api/tags/[id] — OWNER/MANAGER permission required
 - No UI in this PR — tag picker UI lands in P1+ per consuming surface
 
-### P0.I PR 3 — Audit Extension (if needed)
+### P0.I PR 3 — Audit Extension ✅ COMPLETE
 
-P0.A.14 already shipped audit log. This PR extends if needed:
-- Audit log viewer (SUPERADMIN, in admin portal)
-- CSV export
-- Saved searches
-- 18-month hot retention + cold storage archive
+- Query helpers: queryAuditLogs (SUPERADMIN cross-tenant), queryAuditLogsForTenant (org-scoped), getEntityAuditTrail (entity history)
+- Pagination: default 50, max 200, hasMore flag
+- Retention: runAuditRetention deletes tenant rows older than 730 days (2 years); platform rows (organizationId IS NULL) never auto-deleted
+- Cron route: POST /api/cron/audit-retention (CRON_SECRET protected, built but not yet registered in vercel.json)
+- Admin UI: /admin/audit-logs — SUPERADMIN browse/filter/paginate with before/after detail expansion, dark theme
+- Admin API: GET /api/admin/audit-logs — JSON endpoint backing the UI
+- Performance indexes: action, requestId (partial) on AuditLog table
+- Gap check: all P0.G/H/I mutating helpers verified — 2 known acceptable gaps documented (device pairing, geolocation)
 
 ---
 
@@ -326,7 +329,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
 - ✅ P0.H — observability, feature flags, i18n scaffolding (3/3 shipped)
-- ⏳ P0.I — custom fields + tags (2/3 shipped), audit extension
+- ✅ P0.I — custom fields + tags + audit extension (3/3 shipped)
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships
 
