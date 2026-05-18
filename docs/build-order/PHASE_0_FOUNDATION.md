@@ -136,7 +136,7 @@ engine endpoints are deployed by Christopher / Matt.
 clients, formula tracking, devices, carts, POS, commission, inventory, geolocation, 
 multi-location, HCM, and more.
 
-**Status:** PR 1 of 4 shipped. PRs 2-4 remaining.
+**Status:** PRs 1-2 of 4 shipped. PRs 3-4 remaining.
 
 **Architectural decisions locked for P0.G:**
 - SD-K-016: Dual-iPad POS architecture (Stylist iPad + Customer iPad + Payroc terminal)
@@ -171,7 +171,7 @@ New tables/fields:
 
 Estimated: 8-10 atomic commits within this PR.
 
-### P0.G PR 2 — Appointment + Recurring + Booking Constraints
+### P0.G PR 2 — Appointment + Recurring + Booking Constraints ✅ SHIPPED
 
 New tables/fields:
 - `Appointment`: extend existing with `seriesId` (cuid, links recurring appointments), `appointmentItems` relation
