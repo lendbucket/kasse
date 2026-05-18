@@ -88,6 +88,15 @@ enum PlanTier {
 }
 
 // ═══════════════════════════════════════════
+// DEPOSIT TYPE ENUM (P0.G.1: service deposit type)
+// ═══════════════════════════════════════════
+
+enum DepositType {
+  FIXED_AMOUNT
+  PERCENTAGE
+}
+
+// ═══════════════════════════════════════════
 // ORGANIZATION GROUPS (P0.A.13: multi-level hierarchy)
 // ═══════════════════════════════════════════
 
@@ -206,6 +215,8 @@ model Organization {
   aiReceptionistConfig   AiReceptionistConfig?
   messages               Message[]
   organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
+  colorFormulas          ColorFormula[]
+  consentSignatures      ConsentSignature[]
 
   @@index([verticalId])
   @@index([planTier])
@@ -303,7 +314,7 @@ model Location {
   coverImageUrl           String?
   lat                     Float?
   lng                     Float?
-  geofenceRadius          Int                @default(500)
+  geofenceRadius          Int                @default(100)
   businessHours           Json?
   groupId                 String?
   group                   OrganizationGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -316,6 +327,8 @@ model Location {
   transactions            Transaction[]
   devices                 Device[]
   waitlistEntries         WaitlistEntry[]
+  serviceLocations        ServiceLocation[]
+  stylistSchedules        StylistSchedule[]
 
   @@index([groupId])
 }
@@ -325,34 +338,43 @@ model Location {
 // ═══════════════════════════════════════════
 
 model Staff {
-  id               String            @id @default(cuid())
-  organizationId   String
-  organization     Organization      @relation(fields: [organizationId], references: [id])
-  locationId       String
-  location         Location          @relation(fields: [locationId], references: [id])
-  userId           String?           @unique
-  user             User?             @relation("UserStaff", fields: [userId], references: [id], onDelete: SetNull)
-  name             String
-  email            String?
-  phone            String?
-  role             String            @default("stylist")
-  jobTitle         String?
-  commissionType   String            @default("percentage")
-  commissionRate   Float             @default(40)
-  isActive         Boolean           @default(true)
-  color            String?
-  bio              String?
-  avatarUrl        String?
-  licenseNumber    String?
-  licenseExpiry    DateTime?
-  hireDate         DateTime?
-  goals            Json?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  appointments     Appointment[]
-  clockEvents      ClockEvent[]
-  performanceStats PerformanceStat[]
-  messages         Message[]
+  id                    String                     @id @default(cuid())
+  organizationId        String
+  organization          Organization               @relation(fields: [organizationId], references: [id])
+  locationId            String
+  location              Location                   @relation(fields: [locationId], references: [id])
+  userId                String?                    @unique
+  user                  User?                      @relation("UserStaff", fields: [userId], references: [id], onDelete: SetNull)
+  name                  String
+  email                 String?
+  phone                 String?
+  role                  String                     @default("stylist")
+  jobTitle              String?
+  commissionType        String                     @default("percentage")
+  commissionRate        Float                      @default(40)
+  isActive              Boolean                    @default(true)
+  color                 String?
+  bio                   String?
+  avatarUrl             String?
+  licenseNumber         String?
+  licenseExpiry         DateTime?
+  hireDate              DateTime?
+  goals                 Json?
+  softDeletedAt         DateTime?
+  bufferOverrideMinutes Json?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  appointments          Appointment[]
+  clockEvents           ClockEvent[]
+  performanceStats      PerformanceStat[]
+  messages              Message[]
+  serviceStaffOverrides ServiceStaffOverride[]
+  stylistServices       StylistService[]
+  stylistSchedules      StylistSchedule[]
+  scheduleExceptions    StylistScheduleException[]
+  colorFormulas         ColorFormula[]
+
+  @@index([organizationId, isActive])
 }
 
 model ClockEvent {
@@ -388,51 +410,62 @@ model PerformanceStat {
 // ═══════════════════════════════════════════
 
 model Client {
-  id               String              @id @default(cuid())
-  organizationId   String
-  organization     Organization        @relation(fields: [organizationId], references: [id])
-  locationId       String?
-  location         Location?           @relation(fields: [locationId], references: [id])
-  name             String
-  firstName        String?
-  lastName         String?
-  email            String?
-  phone            String?
-  altPhone         String?
-  dateOfBirth      DateTime?
-  gender           String?
-  address          String?
-  city             String?
-  state            String?
-  zip              String?
-  notes            String?
-  preferredStaffId String?
-  genderPref       String?
-  referralSource   String?
-  referredById     String?
-  tags             String[]
-  isActive         Boolean             @default(true)
-  marketingOptIn   Boolean             @default(false)
-  smsOptIn         Boolean             @default(false)
-  emailOptIn       Boolean             @default(false)
-  loyaltyPoints    Int                 @default(0)
-  totalSpent       Float               @default(0)
-  visitCount       Int                 @default(0)
-  lastVisitAt      DateTime?
-  cardOnFile       Boolean             @default(false)
-  stripeCustomerId String?
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
-  familyMembers    FamilyMember[]
-  appointments     Appointment[]
-  transactions     Transaction[]
-  giftCards        GiftCard[]
-  memberships      ClientMembership[]
-  loyaltyHistory   LoyaltyEvent[]
-  formSubmissions  FormSubmission[]
-  waitlistEntries  WaitlistEntry[]
-  campaigns        CampaignRecipient[]
-  messages         Message[]
+  id                      String              @id @default(cuid())
+  organizationId          String
+  organization            Organization        @relation(fields: [organizationId], references: [id])
+  locationId              String?
+  location                Location?           @relation(fields: [locationId], references: [id])
+  name                    String
+  firstName               String?
+  lastName                String?
+  email                   String?
+  phone                   String?
+  altPhone                String?
+  dateOfBirth             DateTime?
+  gender                  String?
+  address                 String?
+  city                    String?
+  state                   String?
+  zip                     String?
+  notes                   String?
+  preferredStaffId        String?
+  genderPref              String?
+  referralSource          String?
+  referredById            String?
+  tags                    String[]
+  isActive                Boolean             @default(true)
+  marketingOptIn          Boolean             @default(false)
+  smsOptIn                Boolean             @default(false)
+  emailOptIn              Boolean             @default(false)
+  loyaltyPoints           Int                 @default(0)
+  totalSpent              Float               @default(0)
+  visitCount              Int                 @default(0)
+  lastVisitAt             DateTime?
+  cardOnFile              Boolean             @default(false)
+  stripeCustomerId        String?
+  allergies               Json?
+  vipStatus               Boolean             @default(false)
+  relationshipScore       Int                 @default(0)
+  preferredLanguage       String              @default("en")
+  preferredContactChannel String              @default("SMS")
+  totalLifetimeValue      Int                 @default(0)
+  softDeletedAt           DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  familyMembers           FamilyMember[]
+  appointments            Appointment[]
+  transactions            Transaction[]
+  giftCards               GiftCard[]
+  memberships             ClientMembership[]
+  loyaltyHistory          LoyaltyEvent[]
+  formSubmissions         FormSubmission[]
+  waitlistEntries         WaitlistEntry[]
+  campaigns               CampaignRecipient[]
+  messages                Message[]
+  colorFormulas           ColorFormula[]
+  consentSignatures       ConsentSignature[]
+
+  @@index([organizationId, isActive])
 }
 
 model FamilyMember {
@@ -451,30 +484,193 @@ model FamilyMember {
 // ═══════════════════════════════════════════
 
 model Service {
-  id              String        @id @default(cuid())
-  organizationId  String
-  organization    Organization  @relation(fields: [organizationId], references: [id])
-  locationId      String?
-  location        Location?     @relation(fields: [locationId], references: [id])
-  name            String
-  description     String?
-  category        String?
-  price           Float
-  duration        Int
-  bufferTime      Int           @default(0)
-  isAddon         Boolean       @default(false)
-  addonAddsTime   Boolean       @default(false)
-  maxAddonTime    Int?
-  isActive        Boolean       @default(true)
-  taxable         Boolean       @default(true)
-  color           String?
-  imageUrl        String?
-  depositRequired Boolean       @default(false)
-  depositAmount   Float?
-  depositType     String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  appointments    Appointment[]
+  id                        String                 @id @default(cuid())
+  organizationId            String
+  organization              Organization           @relation(fields: [organizationId], references: [id])
+  locationId                String?
+  location                  Location?              @relation(fields: [locationId], references: [id])
+  name                      String
+  description               String?
+  category                  String?
+  price                     Float
+  duration                  Int
+  bufferTime                Int                    @default(0)
+  isAddon                   Boolean                @default(false)
+  addonAddsTime             Boolean                @default(false)
+  maxAddonTime              Int?
+  isActive                  Boolean                @default(true)
+  taxable                   Boolean                @default(true)
+  color                     String?
+  imageUrl                  String?
+  depositRequired           Boolean                @default(false)
+  depositType               DepositType?
+  depositValueCents         Int?
+  productCost               Int?
+  consumableCost            Int?
+  targetMarginPct           Int?
+  processingMinutes         Int?
+  addOnVisibleOnBookingMenu Boolean                @default(true)
+  bookableByCustomers       Boolean                @default(true)
+  bookableByStaff           Boolean                @default(true)
+  requiresConsultation      Boolean                @default(false)
+  requiresConsent           Boolean                @default(false)
+  softDeletedAt             DateTime?
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  appointments              Appointment[]
+  serviceLocations          ServiceLocation[]
+  serviceStaffOverrides     ServiceStaffOverride[]
+  stylistServices           StylistService[]
+  consentSignatures         ConsentSignature[]
+
+  @@index([organizationId, locationId, isActive])
+  @@index([organizationId, isAddon, isActive])
+}
+
+// ═══════════════════════════════════════════
+// SERVICE OVERRIDES (P0.G.1: per-location + per-staff pricing/duration)
+// ═══════════════════════════════════════════
+
+model ServiceLocation {
+  id                      String   @id @default(cuid())
+  serviceId               String
+  service                 Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  locationId              String
+  location                Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  priceOverrideCents      Int?
+  durationOverrideMinutes Int?
+  isAvailable             Boolean  @default(true)
+  pendingPriceApproval    Json?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @default(now()) @updatedAt
+
+  @@unique([serviceId, locationId])
+  @@index([serviceId])
+  @@index([locationId])
+}
+
+model ServiceStaffOverride {
+  id              String   @id @default(cuid())
+  serviceId       String
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  staffId         String
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  priceCents      Int?
+  durationMinutes Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@unique([serviceId, staffId])
+  @@index([serviceId])
+  @@index([staffId])
+}
+
+model StylistService {
+  id         String   @id @default(cuid())
+  staffId    String
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  serviceId  String
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  skillLevel String?
+  createdAt  DateTime @default(now())
+
+  @@unique([staffId, serviceId])
+  @@index([staffId])
+  @@index([serviceId])
+}
+
+// ═══════════════════════════════════════════
+// COLOR FORMULAS (P0.G.1: per-client formula history)
+// ═══════════════════════════════════════════
+
+model ColorFormula {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId           String
+  client             Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  appointmentId      String?
+  appointment        Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  staffId            String
+  staff              Staff        @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  formulaVersion     Int          @default(1)
+  formulaIngredients Json
+  processingMinutes  Int?
+  resultNotes        String?
+  beforePhotoUrl     String?
+  afterPhotoUrl      String?
+  allergyChecked     Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now()) @updatedAt
+
+  @@index([clientId, createdAt(sort: Desc)])
+  @@index([organizationId])
+  @@index([appointmentId])
+}
+
+// ═══════════════════════════════════════════
+// CONSENT SIGNATURES (P0.G.1: chemical service waivers)
+// ═══════════════════════════════════════════
+
+/// Immutable audit record — signatures don't change after creation. No updatedAt field intentional.
+model ConsentSignature {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  clientId         String
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  serviceId        String?
+  service          Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  consentType      String
+  signedAt         DateTime     @default(now())
+  signedDocUrl     String?
+  signatureDataUrl String?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime?
+
+  @@index([clientId, signedAt(sort: Desc)])
+  @@index([organizationId])
+}
+
+// ═══════════════════════════════════════════
+// STYLIST SCHEDULING (P0.G.1: weekly recurring + exceptions)
+// ═══════════════════════════════════════════
+
+model StylistSchedule {
+  id                 String    @id @default(cuid())
+  staffId            String
+  staff              Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  locationId         String
+  location           Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  dayOfWeek          Int
+  startTime          DateTime  @db.Time()
+  endTime            DateTime  @db.Time()
+  isWorking          Boolean   @default(true)
+  effectiveStartDate DateTime  @db.Date
+  effectiveEndDate   DateTime? @db.Date
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now()) @updatedAt
+
+  @@unique([staffId, dayOfWeek, effectiveStartDate])
+  @@index([staffId, dayOfWeek])
+  @@index([staffId, effectiveStartDate, effectiveEndDate])
+  @@index([locationId])
+}
+
+model StylistScheduleException {
+  id        String    @id @default(cuid())
+  staffId   String
+  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime  @db.Date
+  startTime DateTime? @db.Time()
+  endTime   DateTime? @db.Time()
+  isWorking Boolean   @default(false)
+  reason    String?
+  createdAt DateTime  @default(now())
+
+  @@unique([staffId, date])
+  @@index([staffId, date])
 }
 
 // ═══════════════════════════════════════════
@@ -513,8 +709,13 @@ model Appointment {
   rebookedFrom     String?
   addons           AppointmentAddon[]
   formSubmissions  FormSubmission[]
+  colorFormulas    ColorFormula[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
+
+  @@index([organizationId, locationId, startTime])
+  @@index([organizationId, staffId, startTime])
+  @@index([clientId])
 }
 
 model AppointmentAddon {
