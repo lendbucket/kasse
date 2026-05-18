@@ -725,3 +725,47 @@ All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `checkGeolocationAndLog` | `lib/geolocation/check` | Haversine distance check + always-log pattern (SD-K-030) |
 | `pairCustomerDisplayToChair` | `lib/devices/pairing` | Chair pairing with role enforcement (SD-K-016) |
 | `getActiveCustomerDisplay` | `lib/devices/pairing` | Lookup current chair pairing |
+
+## P0.G.4 Tables — RLS Classification (2026-05-18)
+
+All 17 new tables from P0.G PR 4 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `Compensation` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `TipSplit` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `TipDistribution` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `TaxRate` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `ProductCategory` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `Product` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `ProductVariant` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `InventoryLevel` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `InventoryDeduction` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `InventoryReorderDraft` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `EmploymentAgreement` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `PtoRequest` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `BackgroundCheck` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `LicenseVerification` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `EmailTemplate` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `MarketingAutomation` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `MarketingExecution` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+
+All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.G.4 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `computeSplit` | `lib/tips/distribute` | Pure tip split computation (PRIMARY_ONLY, TIME_BASED, REVENUE_RATIO) |
+| `distributeTipForAppointment` | `lib/tips/distribute` | DB version: persist TipDistribution rows + audit |
+| `recordInventoryDeduction` | `lib/inventory/deduct` | Create deduction + update InventoryLevel atomically |
+| `calculateTaxCents` | `lib/tax/calculate` | Pure tax math (subtotal * rate, rounded) |
+| `getActiveTaxRate` | `lib/tax/calculate` | Look up effective tax rate for a location |
+| `findExpiringLicenses` | `lib/hcm/license` | Find ACTIVE licenses expiring within N days |
+
+**NOTE:** The helpers listed above are TENANT_SCOPED (require `withTenantScope` context). When future API routes are wired to call these helpers, those routes must be classified in this audit doc as TENANT_SCOPED. This applies especially to:
+
+- POST/PUT routes for tip distribution
+- Inventory deduction routes
+- Tax rate management routes
+- License verification cron jobs

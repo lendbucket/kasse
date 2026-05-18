@@ -1,15 +1,1994 @@
+// partialIndexes is a Prisma preview feature used extensively in P0.G PR 1-4
+// for `WHERE ... IS NOT NULL` and similar partial index conditions.
+// Must be verified non-breaking before any Prisma version upgrade.
+// Tested with: Prisma 7.x against Supabase Postgres 17.6 (us-east-2).
 generator client {
-  provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-// ═══════════════════════════════════════════
-// ROLE ENUM (ABO-002: database-level role enforcement)
-// ═══════════════════════════════════════════
+model OrganizationGroup {
+  id              String              @id @default(cuid())
+  name            String
+  level           GroupLevel
+  parentGroupId   String?
+  permissionSetId String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @default(now()) @updatedAt
+  organizationId  String
+  locations       Location[]
+  organization    Organization        @relation("OrgGroups", fields: [organizationId], references: [id], onDelete: Cascade)
+  parentGroup     OrganizationGroup?  @relation("GroupHierarchy", fields: [parentGroupId], references: [id])
+  childGroups     OrganizationGroup[] @relation("GroupHierarchy")
+  permissionSet   PermissionSet?      @relation("GroupPermissionSet", fields: [permissionSetId], references: [id])
+
+  @@index([parentGroupId])
+  @@index([level])
+  @@index([permissionSetId])
+  @@index([organizationId])
+}
+
+model Organization {
+  id                     String                  @id @default(cuid())
+  name                   String
+  slug                   String                  @unique
+  logoUrl                String?
+  primaryColor           String?                 @default("#606E74")
+  email                  String?
+  phone                  String?
+  website                String?
+  address                String?
+  city                   String?
+  state                  String?
+  zip                    String?
+  country                String                  @default("US")
+  timezone               String                  @default("America/Chicago")
+  language               String                  @default("en")
+  isFranchise            Boolean                 @default(false)
+  franchiseFeeType       String?
+  franchiseFeeValue      Float?
+  techFeeType            String?
+  techFeeValue           Float?
+  marketingFeeType       String?
+  marketingFeeValue      Float?
+  parentOrgId            String?
+  plan                   String                  @default("starter")
+  planStatus             String                  @default("trial")
+  trialEndsAt            DateTime?
+  stripeCustomerId       String?
+  stripeSubId            String?
+  salonTransactId        String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  businessStructure      String?
+  businessType           String?
+  description            String?
+  ein                    String?
+  legalName              String?
+  onboardingCompleted    Boolean                 @default(false)
+  onboardingStep         Int                     @default(0)
+  sourceSystem           String?
+  stateOfFormation       String?
+  teamSize               String?
+  yearEstablished        Int?
+  applicationStatus      String?                 @default("not_started")
+  applicationSubmittedAt DateTime?
+  avgTransaction         String?
+  bankAccountHolder      String?
+  bankAccountNumber      String?
+  bankAccountType        String?
+  bankRoutingNumber      String?
+  dbaName                String?
+  fundingSpeed           String?
+  monthlyVolume          String?
+  ownerAddress           String?
+  ownerDob               String?
+  ownerFirstName         String?
+  ownerLastName          String?
+  ownerSsnLast4          String?
+  ownerTitle             String?
+  ownershipPercentage    Int?
+  paymentMethods         String[]
+  verticalId             VerticalId              @default(salon)
+  verticalConfigOverride Json?
+  themeOverride          Json?
+  planTier               PlanTier                @default(FREE)
+  enabledAddons          String[]                @default([])
+  planEffectiveAt        DateTime?
+  aiReceptionistConfig   AiReceptionistConfig?
+  apiKeys                ApiKey[]
+  appointments           Appointment[]
+  backgroundChecks       BackgroundCheck[]
+  businessSettings       BusinessSettings?
+  campaigns              Campaign[]
+  cancellationPolicies   CancellationPolicy[]
+  carts                  Cart[]
+  chairs                 Chair[]
+  clients                Client[]
+  colorFormulas          ColorFormula[]
+  compensations          Compensation[]
+  consentSignatures      ConsentSignature[]
+  devices                Device[]
+  emailTemplates         EmailTemplate[]
+  employmentAgreements   EmploymentAgreement[]
+  geolocationLogs        GeolocationLog[]
+  giftCards              GiftCard[]
+  importJobs             ImportJob[]
+  inventoryDeductions    InventoryDeduction[]
+  inventoryLevels        InventoryLevel[]
+  inventoryReorderDrafts InventoryReorderDraft[]
+  licenseVerifications   LicenseVerification[]
+  locations              Location[]
+  loyaltyProgram         LoyaltyProgram?
+  marketingAutomations   MarketingAutomation[]
+  marketingExecutions    MarketingExecution[]
+  memberships            Membership[]
+  messages               Message[]
+  offlineQueues          OfflineQueue[]
+  orders                 Order[]
+  parentOrg              Organization?           @relation("FranchiseHierarchy", fields: [parentOrgId], references: [id])
+  childOrgs              Organization[]          @relation("FranchiseHierarchy")
+  organizationGroups     OrganizationGroup[]     @relation("OrgGroups")
+  payments               Payment[]
+  permissionSets         PermissionSet[]
+  products               Product[]
+  productCategories      ProductCategory[]
+  productVariants        ProductVariant[]
+  ptoRequests            PtoRequest[]
+  recurringSeries        RecurringSeries[]
+  refunds                Refund[]
+  services               Service[]
+  staff                  Staff[]
+  taxRates               TaxRate[]
+  tipDistributions       TipDistribution[]
+  tipSplit               TipSplit?
+  transactions           Transaction[]
+  users                  User[]
+  waitlistEntries        WaitlistEntry[]
+  webhooks               Webhook[]
+
+  @@index([verticalId])
+  @@index([planTier])
+}
+
+model User {
+  id                          String                     @id @default(cuid())
+  name                        String?
+  email                       String                     @unique
+  emailVerified               DateTime?
+  emailVerifyToken            String?
+  emailVerifyExp              DateTime?
+  password                    String?
+  image                       String?
+  organizationId              String?
+  locationId                  String?
+  isActive                    Boolean                    @default(true)
+  lastLoginAt                 DateTime?
+  passwordResetToken          String?
+  passwordResetExp            DateTime?
+  twoFactorEnabled            Boolean                    @default(false)
+  twoFactorSecret             String?
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
+  role                        Role                       @default(STAFF)
+  customRoleId                String?
+  accounts                    Account[]
+  bookedAppointments          Appointment[]              @relation("BookedByUser")
+  statusChanges               AppointmentStatusHistory[] @relation("StatusChangedByUser")
+  auditLogs                   AuditLog[]
+  geolocationManagerOverrides GeolocationLog[]           @relation("GeolocationManagerOverride")
+  geolocationLogs             GeolocationLog[]           @relation("GeolocationUser")
+  inventoryReorderApprovals   InventoryReorderDraft[]    @relation("ReorderApprovedBy")
+  notifications               Notification[]
+  ptoDecisions                PtoRequest[]               @relation("PtoApprovedBy")
+  refundsInitiated            Refund[]                   @relation("RefundInitiatedByUser")
+  sessions                    Session[]
+  staff                       Staff?                     @relation("UserStaff")
+  customRole                  PermissionSet?             @relation("UserCustomRole", fields: [customRoleId], references: [id])
+  organization                Organization?              @relation(fields: [organizationId], references: [id])
+
+  @@index([customRoleId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Location {
+  id                          String                  @id @default(cuid())
+  organizationId              String
+  name                        String
+  address                     String?
+  city                        String?
+  state                       String?
+  zip                         String?
+  phone                       String?
+  email                       String?
+  timezone                    String                  @default("America/Chicago")
+  isActive                    Boolean                 @default(true)
+  taxRate                     Float                   @default(8.25)
+  logoUrl                     String?
+  coverImageUrl               String?
+  lat                         Float?
+  lng                         Float?
+  geofenceRadius              Int                     @default(100)
+  businessHours               Json?
+  salonTransactLocationId     String?
+  createdAt                   DateTime                @default(now())
+  groupId                     String?
+  appointments                Appointment[]
+  bookingWindow               BookingWindow?
+  cancellationPolicies        CancellationPolicy[]
+  carts                       Cart[]
+  chairs                      Chair[]
+  clients                     Client[]
+  devices                     Device[]
+  geolocationLogs             GeolocationLog[]
+  inventoryDeductions         InventoryDeduction[]    @relation("DeductionLocation")
+  inventoryDeductionTransfers InventoryDeduction[]    @relation("DeductionTransferLocation")
+  inventoryLevels             InventoryLevel[]
+  inventoryReorderDrafts      InventoryReorderDraft[]
+  group                       OrganizationGroup?      @relation(fields: [groupId], references: [id])
+  organization                Organization            @relation(fields: [organizationId], references: [id])
+  orders                      Order[]
+  recurringSeries             RecurringSeries[]
+  services                    Service[]
+  serviceLocations            ServiceLocation[]
+  staff                       Staff[]
+  stylistSchedules            StylistSchedule[]
+  taxRates                    TaxRate[]
+  transactions                Transaction[]
+  waitlistEntries             WaitlistEntry[]
+
+  @@index([groupId])
+}
+
+model Staff {
+  id                    String                     @id @default(cuid())
+  organizationId        String
+  locationId            String
+  userId                String?                    @unique
+  name                  String
+  email                 String?
+  phone                 String?
+  role                  String                     @default("stylist")
+  jobTitle              String?
+  commissionType        String                     @default("percentage")
+  commissionRate        Float                      @default(40)
+  isActive              Boolean                    @default(true)
+  color                 String?
+  bio                   String?
+  avatarUrl             String?
+  licenseNumber         String?
+  licenseExpiry         DateTime?
+  hireDate              DateTime?
+  goals                 Json?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  softDeletedAt         DateTime?
+  bufferOverrideMinutes Json?
+  bookedAppointments    Appointment[]              @relation("BookedByStaff")
+  appointments          Appointment[]
+  appointmentItems      AppointmentItem[]
+  statusChanges         AppointmentStatusHistory[] @relation("StatusChangedByStaff")
+  backgroundChecks      BackgroundCheck[]
+  cartItems             CartItem[]                 @relation("CartItemStaff")
+  defaultChairs         Chair[]                    @relation("ChairDefaultStaff")
+  clockEvents           ClockEvent[]
+  colorFormulas         ColorFormula[]
+  compensation          Compensation?
+  employmentAgreements  EmploymentAgreement[]
+  geolocationLogs       GeolocationLog[]           @relation("GeolocationStaff")
+  inventoryDeductions   InventoryDeduction[]       @relation("DeductionStaff")
+  licenseVerifications  LicenseVerification[]
+  messages              Message[]
+  orderItems            OrderItem[]                @relation("OrderItemStaff")
+  performanceStats      PerformanceStat[]
+  ptoRequests           PtoRequest[]
+  tipDistributions      TipDistribution[]
+  recurringSeries       RecurringSeries[]
+  refundsInitiated      Refund[]                   @relation("RefundInitiatedByStaff")
+  serviceStaffOverrides ServiceStaffOverride[]
+  location              Location                   @relation(fields: [locationId], references: [id])
+  organization          Organization               @relation(fields: [organizationId], references: [id])
+  user                  User?                      @relation("UserStaff", fields: [userId], references: [id])
+  stylistSchedules      StylistSchedule[]
+  scheduleExceptions    StylistScheduleException[]
+  stylistServices       StylistService[]
+
+  @@index([organizationId, isActive], map: "idx_staff_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+}
+
+model ClockEvent {
+  id             String   @id @default(cuid())
+  staffId        String
+  type           String
+  timestamp      DateTime @default(now())
+  lat            Float?
+  lng            Float?
+  withinGeofence Boolean  @default(false)
+  ipAddress      String?
+  staff          Staff    @relation(fields: [staffId], references: [id])
+}
+
+model PerformanceStat {
+  id           String   @id @default(cuid())
+  staffId      String
+  periodStart  DateTime
+  periodEnd    DateTime
+  revenue      Float    @default(0)
+  transactions Int      @default(0)
+  tips         Float    @default(0)
+  commission   Float    @default(0)
+  rebooks      Int      @default(0)
+  newClients   Int      @default(0)
+  retailSales  Float    @default(0)
+  createdAt    DateTime @default(now())
+  staff        Staff    @relation(fields: [staffId], references: [id])
+}
+
+model Client {
+  id                      String               @id @default(cuid())
+  organizationId          String
+  locationId              String?
+  name                    String
+  firstName               String?
+  lastName                String?
+  email                   String?
+  phone                   String?
+  altPhone                String?
+  dateOfBirth             DateTime?
+  gender                  String?
+  address                 String?
+  city                    String?
+  state                   String?
+  zip                     String?
+  notes                   String?
+  preferredStaffId        String?
+  genderPref              String?
+  referralSource          String?
+  referredById            String?
+  tags                    String[]
+  isActive                Boolean              @default(true)
+  marketingOptIn          Boolean              @default(false)
+  smsOptIn                Boolean              @default(false)
+  emailOptIn              Boolean              @default(false)
+  loyaltyPoints           Int                  @default(0)
+  totalSpent              Float                @default(0)
+  visitCount              Int                  @default(0)
+  lastVisitAt             DateTime?
+  cardOnFile              Boolean              @default(false)
+  stripeCustomerId        String?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  allergies               Json?
+  vipStatus               Boolean              @default(false)
+  relationshipScore       Int                  @default(0)
+  preferredLanguage       String               @default("en")
+  preferredContactChannel String               @default("SMS")
+  totalLifetimeValue      Int                  @default(0)
+  softDeletedAt           DateTime?
+  appointments            Appointment[]
+  campaigns               CampaignRecipient[]
+  carts                   Cart[]
+  location                Location?            @relation(fields: [locationId], references: [id])
+  organization            Organization         @relation(fields: [organizationId], references: [id])
+  memberships             ClientMembership[]
+  colorFormulas           ColorFormula[]
+  consentSignatures       ConsentSignature[]
+  familyMembers           FamilyMember[]
+  formSubmissions         FormSubmission[]
+  giftCards               GiftCard[]
+  loyaltyHistory          LoyaltyEvent[]
+  marketingExecutions     MarketingExecution[]
+  messages                Message[]
+  orders                  Order[]
+  recurringSeries         RecurringSeries[]
+  transactions            Transaction[]
+  waitlistEntries         WaitlistEntry[]
+
+  @@index([organizationId, isActive], map: "idx_client_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([organizationId, email], map: "idx_client_org_email", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([organizationId, phone], map: "idx_client_org_phone", where: raw("(\"softDeletedAt\" IS NULL)"))
+}
+
+model FamilyMember {
+  id              String    @id @default(cuid())
+  primaryClientId String
+  name            String
+  relationship    String?
+  dateOfBirth     DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  primaryClient   Client    @relation(fields: [primaryClientId], references: [id])
+}
+
+model Service {
+  id                        String                 @id @default(cuid())
+  organizationId            String
+  locationId                String?
+  name                      String
+  description               String?
+  category                  String?
+  price                     Float
+  duration                  Int
+  bufferTime                Int                    @default(0)
+  isAddon                   Boolean                @default(false)
+  addonAddsTime             Boolean                @default(false)
+  maxAddonTime              Int?
+  isActive                  Boolean                @default(true)
+  taxable                   Boolean                @default(true)
+  color                     String?
+  imageUrl                  String?
+  depositRequired           Boolean                @default(false)
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+  productCost               Int?
+  consumableCost            Int?
+  targetMarginPct           Int?
+  processingMinutes         Int?
+  addOnVisibleOnBookingMenu Boolean                @default(true)
+  bookableByCustomers       Boolean                @default(true)
+  bookableByStaff           Boolean                @default(true)
+  requiresConsultation      Boolean                @default(false)
+  requiresConsent           Boolean                @default(false)
+  softDeletedAt             DateTime?
+  depositType               DepositType?
+  depositValueCents         Int?
+  appointments              Appointment[]
+  appointmentItems          AppointmentItem[]
+  cancellationPolicies      CancellationPolicy[]
+  cartItems                 CartItem[]
+  consentSignatures         ConsentSignature[]
+  orderItems                OrderItem[]
+  recurringSeries           RecurringSeries[]
+  location                  Location?              @relation(fields: [locationId], references: [id])
+  organization              Organization           @relation(fields: [organizationId], references: [id])
+  serviceLocations          ServiceLocation[]
+  serviceStaffOverrides     ServiceStaffOverride[]
+  stylistServices           StylistService[]
+
+  @@index([organizationId, isAddon, isActive], map: "idx_service_org_addon")
+  @@index([organizationId, locationId, isActive], map: "idx_service_org_loc_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+}
+
+model ServiceLocation {
+  id                      String   @id @default(cuid())
+  serviceId               String
+  locationId              String
+  priceOverrideCents      Int?
+  durationOverrideMinutes Int?
+  isAvailable             Boolean  @default(true)
+  pendingPriceApproval    Json?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @default(now()) @updatedAt
+  location                Location @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service                 Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([serviceId, locationId])
+  @@index([locationId], map: "idx_servicelocation_location")
+  @@index([serviceId], map: "idx_servicelocation_service")
+}
+
+model ServiceStaffOverride {
+  id              String   @id @default(cuid())
+  serviceId       String
+  staffId         String
+  priceCents      Int?
+  durationMinutes Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([serviceId, staffId])
+  @@index([serviceId], map: "idx_servicestaff_service")
+  @@index([staffId], map: "idx_servicestaff_staff")
+}
+
+model StylistService {
+  id         String   @id @default(cuid())
+  staffId    String
+  serviceId  String
+  skillLevel String?
+  createdAt  DateTime @default(now())
+  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([staffId, serviceId])
+  @@index([serviceId], map: "idx_stylistservice_service")
+  @@index([staffId], map: "idx_stylistservice_staff")
+}
+
+model ColorFormula {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  clientId            String
+  appointmentId       String?
+  staffId             String
+  formulaVersion      Int                  @default(1)
+  formulaIngredients  Json
+  processingMinutes   Int?
+  resultNotes         String?
+  beforePhotoUrl      String?
+  afterPhotoUrl       String?
+  allergyChecked      Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now()) @updatedAt
+  appointment         Appointment?         @relation(fields: [appointmentId], references: [id], onUpdate: NoAction)
+  client              Client               @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff               Staff                @relation(fields: [staffId], references: [id], onUpdate: NoAction)
+  inventoryDeductions InventoryDeduction[]
+
+  @@index([appointmentId], map: "idx_colorformula_appointment", where: raw("(\"appointmentId\" IS NOT NULL)"))
+  @@index([clientId, createdAt(sort: Desc)], map: "idx_colorformula_client_created")
+  @@index([organizationId], map: "idx_colorformula_org")
+}
+
+/// Immutable audit record — signatures don't change after creation. No updatedAt field intentional.
+model ConsentSignature {
+  id               String       @id @default(cuid())
+  organizationId   String
+  clientId         String
+  serviceId        String?
+  consentType      String
+  signedAt         DateTime     @default(now())
+  signedDocUrl     String?
+  signatureDataUrl String?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime?
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service          Service?     @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
+
+  @@index([clientId, signedAt(sort: Desc)], map: "idx_consent_client")
+  @@index([organizationId], map: "idx_consent_org")
+}
+
+model StylistSchedule {
+  id                 String    @id @default(cuid())
+  staffId            String
+  locationId         String
+  dayOfWeek          Int
+  startTime          DateTime  @db.Time(6)
+  endTime            DateTime  @db.Time(6)
+  isWorking          Boolean   @default(true)
+  effectiveStartDate DateTime  @db.Date
+  effectiveEndDate   DateTime? @db.Date
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now()) @updatedAt
+  location           Location  @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff              Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([staffId, dayOfWeek, effectiveStartDate])
+  @@index([locationId], map: "idx_stylistsched_location")
+  @@index([staffId, dayOfWeek], map: "idx_stylistsched_staff_day")
+  @@index([staffId, effectiveStartDate, effectiveEndDate], map: "idx_stylistsched_staff_eff")
+}
+
+model StylistScheduleException {
+  id        String    @id @default(cuid())
+  staffId   String
+  date      DateTime  @db.Date
+  startTime DateTime? @db.Time(6)
+  endTime   DateTime? @db.Time(6)
+  isWorking Boolean   @default(false)
+  reason    String?
+  createdAt DateTime  @default(now())
+  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([staffId, date])
+  @@index([staffId, date], map: "idx_schedexc_staff_date")
+}
+
+model Appointment {
+  id                          String                     @id @default(cuid())
+  organizationId              String
+  locationId                  String
+  clientId                    String?
+  staffId                     String
+  serviceId                   String?
+  clientName                  String?
+  serviceName                 String?
+  price                       Float?
+  depositPaid                 Float                      @default(0)
+  status                      String                     @default("scheduled")
+  startTime                   DateTime
+  endTime                     DateTime
+  notes                       String?
+  internalNotes               String?
+  isWalkIn                    Boolean                    @default(false)
+  checkoutCode                String?                    @unique
+  checkedInAt                 DateTime?
+  completedAt                 DateTime?
+  cancelledAt                 DateTime?
+  cancelReason                String?
+  reminderSent                Boolean                    @default(false)
+  confirmationSent            Boolean                    @default(false)
+  rebookedFrom                String?
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
+  seriesId                    String?
+  bookingSource               String                     @default("STAFF")
+  bookedByUserId              String?
+  bookedByStaffId             String?
+  preAuthHoldCents            Int?
+  preAuthHoldStatus           String?
+  /// Pre-auth transaction ID from SalonTransact (which routes to Payroc or future processors).
+  /// Processor-agnostic naming intentional — Kasse calls SalonTransact, not Payroc directly.
+  preAuthHoldTxId             String?
+  noShowFeeAppliedCents       Int?
+  cancellationFeeAppliedCents Int?
+  consentSignatureIds         String[]                   @default([])
+  estimatedTotalCents         Int?
+  estimatedTotalMinutes       Int?
+  isFirstVisit                Boolean                    @default(false)
+  formulaIds                  String[]                   @default([])
+  softDeletedAt               DateTime?
+  bookedByStaff               Staff?                     @relation("BookedByStaff", fields: [bookedByStaffId], references: [id], onUpdate: NoAction)
+  bookedByUser                User?                      @relation("BookedByUser", fields: [bookedByUserId], references: [id], onUpdate: NoAction)
+  client                      Client?                    @relation(fields: [clientId], references: [id])
+  location                    Location                   @relation(fields: [locationId], references: [id])
+  organization                Organization               @relation(fields: [organizationId], references: [id])
+  series                      RecurringSeries?           @relation(fields: [seriesId], references: [id], onUpdate: NoAction)
+  service                     Service?                   @relation(fields: [serviceId], references: [id])
+  staff                       Staff                      @relation(fields: [staffId], references: [id])
+  addons                      AppointmentAddon[]
+  items                       AppointmentItem[]
+  statusHistory               AppointmentStatusHistory[]
+  carts                       Cart[]
+  colorFormulas               ColorFormula[]
+  formSubmissions             FormSubmission[]
+  inventoryDeductions         InventoryDeduction[]
+  marketingExecutions         MarketingExecution[]       @relation("ConvertedAppointment")
+  orders                      Order[]
+  tipDistributions            TipDistribution[]
+
+  @@index([clientId], map: "idx_appointment_client", where: raw("(\"clientId\" IS NOT NULL)"))
+  @@index([organizationId, locationId, startTime], map: "idx_appointment_org_loc_start")
+  @@index([organizationId, bookingSource], map: "idx_appointment_org_source")
+  @@index([organizationId, staffId, startTime], map: "idx_appointment_org_staff_start")
+  @@index([seriesId], map: "idx_appointment_series", where: raw("(\"seriesId\" IS NOT NULL)"))
+  @@index([organizationId, locationId, startTime], map: "idx_appointment_softdel", where: raw("(\"softDeletedAt\" IS NULL)"))
+}
+
+model AppointmentItem {
+  id                       String      @id @default(cuid())
+  appointmentId            String
+  serviceId                String
+  staffId                  String
+  scheduledStart           DateTime
+  scheduledEnd             DateTime
+  actualStart              DateTime?
+  actualEnd                DateTime?
+  priceAtBookingCents      Int
+  durationAtBookingMinutes Int
+  isPrimary                Boolean     @default(false)
+  isAddOn                  Boolean     @default(false)
+  displayOrder             Int         @default(0)
+  notes                    String?
+  status                   String      @default("SCHEDULED")
+  completedAt              DateTime?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @default(now()) @updatedAt
+  appointment              Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service                  Service     @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
+  staff                    Staff       @relation(fields: [staffId], references: [id], onUpdate: NoAction)
+  cartItems                CartItem[]
+  orderItems               OrderItem[]
+
+  @@index([appointmentId], map: "idx_apptitem_appointment")
+  @@index([serviceId], map: "idx_apptitem_service")
+  @@index([staffId, scheduledStart], map: "idx_apptitem_staff_scheduled")
+  @@index([appointmentId, status], map: "idx_apptitem_status")
+}
+
+model AppointmentStatusHistory {
+  id               String      @id @default(cuid())
+  appointmentId    String
+  previousStatus   String?
+  newStatus        String
+  changedByUserId  String?
+  changedByStaffId String?
+  changeReason     String?
+  changeSource     String      @default("STAFF")
+  createdAt        DateTime    @default(now())
+  appointment      Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  changedByStaff   Staff?      @relation("StatusChangedByStaff", fields: [changedByStaffId], references: [id], onUpdate: NoAction)
+  changedByUser    User?       @relation("StatusChangedByUser", fields: [changedByUserId], references: [id], onUpdate: NoAction)
+
+  @@index([appointmentId, createdAt(sort: Desc)], map: "idx_apptsh_appointment_created")
+}
+
+model AppointmentAddon {
+  id            String      @id @default(cuid())
+  appointmentId String
+  name          String
+  price         Float
+  duration      Int         @default(0)
+  addedBy       String?
+  createdAt     DateTime    @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+}
+
+model RecurringSeries {
+  id                   String        @id @default(cuid())
+  organizationId       String
+  locationId           String
+  clientId             String
+  staffId              String
+  primaryServiceId     String
+  frequency            String
+  customIntervalDays   Int?
+  dayOfWeek            Int?
+  preferredTime        DateTime      @db.Time(6)
+  startDate            DateTime      @db.Date
+  endDate              DateTime?     @db.Date
+  maxOccurrences       Int?
+  occurrencesGenerated Int           @default(0)
+  lastGeneratedThrough DateTime?     @db.Date
+  status               String        @default("ACTIVE")
+  pausedReason         String?
+  pausedUntil          DateTime?     @db.Date
+  notes                String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @default(now()) @updatedAt
+  appointments         Appointment[]
+  client               Client        @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  location             Location      @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization         Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  primaryService       Service       @relation(fields: [primaryServiceId], references: [id], onUpdate: NoAction)
+  staff                Staff         @relation(fields: [staffId], references: [id], onUpdate: NoAction)
+
+  @@index([clientId], map: "idx_recseries_client")
+  @@index([lastGeneratedThrough], map: "idx_recseries_generate", where: raw("(status = 'ACTIVE'::text)"))
+  @@index([organizationId, status], map: "idx_recseries_org")
+  @@index([staffId, status], map: "idx_recseries_staff", where: raw("(status = 'ACTIVE'::text)"))
+}
+
+model CancellationPolicy {
+  id                        String       @id @default(cuid())
+  organizationId            String
+  serviceId                 String?
+  locationId                String?
+  windowHours               Int          @default(24)
+  cancellationFeeFixedCents Int?
+  cancellationFeePercentage Int?
+  cancellationFeeChargeType String       @default("FIXED")
+  noShowFeeFixedCents       Int?
+  noShowFeePercentage       Int?
+  noShowFeeChargeType       String       @default("FIXED")
+  policyText                String?
+  requirePreAuth            Boolean      @default(false)
+  preAuthAmountCents        Int?
+  isActive                  Boolean      @default(true)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @default(now()) @updatedAt
+  location                  Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service                   Service?     @relation(fields: [serviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([locationId], map: "idx_cancelpol_location", where: raw("(\"locationId\" IS NOT NULL)"))
+  @@index([organizationId, isActive], map: "idx_cancelpol_org")
+  @@index([serviceId], map: "idx_cancelpol_service", where: raw("(\"serviceId\" IS NOT NULL)"))
+}
+
+model BookingWindow {
+  id                               String   @id @default(cuid())
+  locationId                       String   @unique
+  maxDaysAhead                     Int      @default(60)
+  minHoursAhead                    Int      @default(1)
+  slotGranularityMinutes           Int      @default(15)
+  allowSameDayBooking              Boolean  @default(true)
+  allowOnlineBooking               Boolean  @default(true)
+  requireDepositForNewClients      Boolean  @default(false)
+  requireConsultationForNewClients Boolean  @default(false)
+  bufferBetweenAppointmentsMinutes Int      @default(0)
+  maxConcurrentBookingsPerClient   Int      @default(5)
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @default(now()) @updatedAt
+  location                         Location @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model Transaction {
+  id              String            @id @default(cuid())
+  organizationId  String
+  locationId      String
+  appointmentId   String?
+  clientId        String?
+  staffId         String?
+  clientName      String?
+  subtotal        Float
+  tax             Float             @default(0)
+  tip             Float             @default(0)
+  discount        Float             @default(0)
+  giftCardAmount  Float             @default(0)
+  loyaltyAmount   Float             @default(0)
+  depositApplied  Float             @default(0)
+  total           Float
+  paymentMethod   String?
+  salonTransactId String?
+  stripePaymentId String?
+  status          String            @default("completed")
+  receiptSent     Boolean           @default(false)
+  receiptEmail    String?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  client          Client?           @relation(fields: [clientId], references: [id])
+  location        Location          @relation(fields: [locationId], references: [id])
+  organization    Organization      @relation(fields: [organizationId], references: [id])
+  items           TransactionItem[]
+}
+
+model TransactionItem {
+  id             String      @id @default(cuid())
+  transactionId  String
+  name           String
+  type           String
+  price          Float
+  quantity       Int         @default(1)
+  staffId        String?
+  commissionRate Float?
+  createdAt      DateTime    @default(now())
+  transaction    Transaction @relation(fields: [transactionId], references: [id])
+}
+
+model GiftCard {
+  id             String               @id @default(cuid())
+  organizationId String
+  clientId       String?
+  code           String               @unique
+  initialBalance Float
+  balance        Float
+  isActive       Boolean              @default(true)
+  expiresAt      DateTime?
+  purchasedAt    DateTime             @default(now())
+  client         Client?              @relation(fields: [clientId], references: [id])
+  organization   Organization         @relation(fields: [organizationId], references: [id])
+  redemptions    GiftCardRedemption[]
+}
+
+model GiftCardRedemption {
+  id            String   @id @default(cuid())
+  giftCardId    String
+  amount        Float
+  transactionId String?
+  redeemedAt    DateTime @default(now())
+  giftCard      GiftCard @relation(fields: [giftCardId], references: [id])
+}
+
+model LoyaltyProgram {
+  id              String       @id @default(cuid())
+  organizationId  String       @unique
+  name            String       @default("Rewards")
+  pointsPerDollar Float        @default(1)
+  dollarPerPoint  Float        @default(0.01)
+  minRedemption   Int          @default(100)
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id])
+}
+
+model LoyaltyEvent {
+  id        String   @id @default(cuid())
+  clientId  String
+  type      String
+  points    Int
+  balance   Int
+  note      String?
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id])
+}
+
+model Membership {
+  id               String             @id @default(cuid())
+  organizationId   String
+  name             String
+  description      String?
+  price            Float
+  billingCycle     String             @default("monthly")
+  discountType     String?
+  discountValue    Float?
+  servicesIncluded Json?
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  clients          ClientMembership[]
+  organization     Organization       @relation(fields: [organizationId], references: [id])
+}
+
+model ClientMembership {
+  id              String     @id @default(cuid())
+  clientId        String
+  membershipId    String
+  status          String     @default("active")
+  startDate       DateTime   @default(now())
+  nextBillingDate DateTime?
+  stripeSubId     String?
+  createdAt       DateTime   @default(now())
+  client          Client     @relation(fields: [clientId], references: [id])
+  membership      Membership @relation(fields: [membershipId], references: [id])
+}
+
+model WaitlistEntry {
+  id               String       @id @default(cuid())
+  organizationId   String
+  locationId       String
+  clientId         String?
+  clientName       String?
+  clientPhone      String?
+  clientEmail      String?
+  serviceId        String?
+  serviceName      String?
+  preferredStaffId String?
+  preferredDate    DateTime?
+  flexibleDates    Boolean      @default(true)
+  status           String       @default("waiting")
+  notifiedAt       DateTime?
+  expiresAt        DateTime?
+  notes            String?
+  createdAt        DateTime     @default(now())
+  client           Client?      @relation(fields: [clientId], references: [id])
+  location         Location     @relation(fields: [locationId], references: [id])
+  organization     Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Campaign {
+  id             String              @id @default(cuid())
+  organizationId String
+  name           String
+  type           String
+  channel        String
+  status         String              @default("draft")
+  subject        String?
+  content        String?
+  htmlContent    String?
+  segmentRules   Json?
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  sentCount      Int                 @default(0)
+  openCount      Int                 @default(0)
+  clickCount     Int                 @default(0)
+  triggerType    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+  recipients     CampaignRecipient[]
+}
+
+model CampaignRecipient {
+  id         String    @id @default(cuid())
+  campaignId String
+  clientId   String
+  status     String    @default("pending")
+  sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
+  campaign   Campaign  @relation(fields: [campaignId], references: [id])
+  client     Client    @relation(fields: [clientId], references: [id])
+}
+
+model ReviewRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  locationId     String?
+  clientId       String?
+  clientName     String?
+  clientEmail    String?
+  clientPhone    String?
+  transactionId  String?
+  channel        String
+  status         String    @default("sent")
+  rating         Int?
+  feedback       String?
+  pushedToGoogle Boolean   @default(false)
+  pushedToYelp   Boolean   @default(false)
+  sentAt         DateTime  @default(now())
+  respondedAt    DateTime?
+}
+
+model FormTemplate {
+  id                String           @id @default(cuid())
+  organizationId    String
+  name              String
+  type              String
+  fields            Json
+  isActive          Boolean          @default(true)
+  requiresSignature Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  submissions       FormSubmission[]
+}
+
+model FormSubmission {
+  id             String       @id @default(cuid())
+  formTemplateId String
+  clientId       String?
+  appointmentId  String?
+  data           Json
+  signature      String?
+  submittedAt    DateTime     @default(now())
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  client         Client?      @relation(fields: [clientId], references: [id])
+  formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
+}
+
+model PermissionSet {
+  id                 String              @id @default(cuid())
+  organizationId     String?
+  name               String
+  isSystem           Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  permissions        String[]
+  updatedAt          DateTime            @default(now()) @updatedAt
+  groupsUsingThisSet OrganizationGroup[] @relation("GroupPermissionSet")
+  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users              User[]              @relation("UserCustomRole")
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model BusinessSettings {
+  id                   String       @id @default(cuid())
+  organizationId       String       @unique
+  onlineBookingEnabled Boolean      @default(true)
+  bookingLeadTime      Int          @default(60)
+  bookingMaxAdvance    Int          @default(60)
+  allowWalkIns         Boolean      @default(true)
+  requireDeposit       Boolean      @default(false)
+  depositPercentage    Float        @default(25)
+  cancellationPolicy   String?
+  cancellationWindow   Int          @default(24)
+  cancellationFee      Float?
+  sendConfirmations    Boolean      @default(true)
+  sendReminders        Boolean      @default(true)
+  reminderHours        Int          @default(24)
+  sendReviewRequests   Boolean      @default(true)
+  reviewRequestDelay   Int          @default(2)
+  acceptCash           Boolean      @default(true)
+  acceptCard           Boolean      @default(true)
+  acceptGiftCard       Boolean      @default(true)
+  taxRate              Float        @default(8.25)
+  tipPromptEnabled     Boolean      @default(true)
+  tipOptions           Json         @default("[15, 20, 25]")
+  receiptFooter        String?
+  receiptLogo          Boolean      @default(true)
+  autoSendReceipt      Boolean      @default(true)
+  loyaltyEnabled       Boolean      @default(false)
+  googlePlaceId        String?
+  yelpBusinessId       String?
+  autoRequestReviews   Boolean      @default(true)
+  minRatingForGoogle   Int          @default(4)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ImportJob {
+  id             String       @id @default(cuid())
+  organizationId String
+  type           String
+  status         String       @default("pending")
+  fileName       String?
+  totalRows      Int          @default(0)
+  processedRows  Int          @default(0)
+  successRows    Int          @default(0)
+  failedRows     Int          @default(0)
+  errors         Json?
+  sourceSystem   String?
+  createdAt      DateTime     @default(now())
+  completedAt    DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Device {
+  id                 String           @id @default(cuid())
+  organizationId     String
+  locationId         String
+  name               String
+  type               String
+  deviceCode         String           @unique
+  isActive           Boolean          @default(true)
+  lastSeenAt         DateTime?
+  createdAt          DateTime         @default(now())
+  role               String           @default("STANDALONE_POS")
+  payrocTerminalId   String?
+  pairedChairId      String?
+  realtimeChannelId  String?
+  lastHeartbeat      DateTime?
+  platformOs         String?
+  platformVersion    String?
+  isJailbroken       Boolean          @default(false)
+  ipAddressLastSeen  String?
+  softDeletedAt      DateTime?
+  carts              Cart[]           @relation("CartStylistDevice")
+  location           Location         @relation(fields: [locationId], references: [id])
+  organization       Organization     @relation(fields: [organizationId], references: [id])
+  pairedChair        Chair?           @relation("DevicePairedChair", fields: [pairedChairId], references: [id], onUpdate: NoAction)
+  pairingsAsCustomer DevicePairing[]  @relation("PairingCustomerDisplay")
+  pairingsAsStylist  DevicePairing[]  @relation("PairingStylist")
+  pairingsAsTerminal DevicePairing[]  @relation("PairingTerminal")
+  geolocationLogs    GeolocationLog[]
+  offlineQueues      OfflineQueue[]
+  payments           Payment[]
+
+  @@index([lastHeartbeat], map: "idx_device_heartbeat", where: raw("(\"isActive\" = true)"))
+  @@index([locationId, role], map: "idx_device_location_role", where: raw("(\"isActive\" = true)"))
+  @@index([organizationId, role], map: "idx_device_org_role", where: raw("(\"softDeletedAt\" IS NULL)"))
+}
+
+model Chair {
+  id             String          @id @default(cuid())
+  organizationId String
+  locationId     String
+  chairNumber    Int
+  name           String?
+  defaultStaffId String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+  carts          Cart[]
+  defaultStaff   Staff?          @relation("ChairDefaultStaff", fields: [defaultStaffId], references: [id], onUpdate: NoAction)
+  location       Location        @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  devices        Device[]        @relation("DevicePairedChair")
+  pairings       DevicePairing[]
+
+  @@unique([locationId, chairNumber])
+  @@index([defaultStaffId], map: "idx_chair_default_staff", where: raw("(\"defaultStaffId\" IS NOT NULL)"))
+  @@index([organizationId, locationId], map: "idx_chair_org_loc")
+}
+
+model DevicePairing {
+  id                      String    @id @default(cuid())
+  chairId                 String
+  customerDisplayDeviceId String?
+  stylistDeviceId         String?
+  terminalDeviceId        String?
+  pairedAt                DateTime  @default(now())
+  unpairedAt              DateTime?
+  isActive                Boolean   @default(true)
+  chair                   Chair     @relation(fields: [chairId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customerDisplayDevice   Device?   @relation("PairingCustomerDisplay", fields: [customerDisplayDeviceId], references: [id], onUpdate: NoAction)
+  stylistDevice           Device?   @relation("PairingStylist", fields: [stylistDeviceId], references: [id], onUpdate: NoAction)
+  terminalDevice          Device?   @relation("PairingTerminal", fields: [terminalDeviceId], references: [id], onUpdate: NoAction)
+
+  @@index([customerDisplayDeviceId], map: "idx_pairing_customer_display")
+  @@index([stylistDeviceId], map: "idx_pairing_stylist")
+  @@index([terminalDeviceId], map: "idx_pairing_terminal")
+  @@index([chairId, isActive], map: "idx_pairing_chair_active")
+}
+
+model Cart {
+  id                    String           @id @default(cuid())
+  organizationId        String
+  locationId            String
+  appointmentId         String?
+  clientId              String?
+  chairId               String?
+  activeStylistDeviceId String?
+  realtimeChannelId     String           @unique
+  status                String           @default("OPEN")
+  subtotalCents         Int              @default(0)
+  discountCents         Int              @default(0)
+  taxCents              Int              @default(0)
+  tipCents              Int              @default(0)
+  giftCardAppliedCents  Int              @default(0)
+  loyaltyAppliedCents   Int              @default(0)
+  depositAppliedCents   Int              @default(0)
+  totalCents            Int              @default(0)
+  expiresAt             DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @default(now()) @updatedAt
+  activeStylistDevice   Device?          @relation("CartStylistDevice", fields: [activeStylistDeviceId], references: [id], onUpdate: NoAction)
+  appointment           Appointment?     @relation(fields: [appointmentId], references: [id], onUpdate: NoAction)
+  chair                 Chair?           @relation(fields: [chairId], references: [id], onUpdate: NoAction)
+  client                Client?          @relation(fields: [clientId], references: [id], onUpdate: NoAction)
+  location              Location         @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  items                 CartItem[]
+  geolocationLogs       GeolocationLog[]
+  offlineQueues         OfflineQueue[]
+  order                 Order?
+
+  @@index([appointmentId], map: "idx_cart_appointment", where: raw("(\"appointmentId\" IS NOT NULL)"))
+  @@index([chairId, status], map: "idx_cart_chair_active", where: raw("(status = ANY (ARRAY['OPEN'::text, 'PENDING_PAYMENT'::text]))"))
+  @@index([expiresAt], map: "idx_cart_expires", where: raw("(status = 'OPEN'::text)"))
+  @@index([organizationId, status], map: "idx_cart_org_status")
+}
+
+model CartItem {
+  id                String           @id @default(cuid())
+  cartId            String
+  itemType          String
+  displayName       String
+  serviceId         String?
+  appointmentItemId String?
+  staffId           String?
+  quantity          Int              @default(1)
+  unitPriceCents    Int
+  discountCents     Int              @default(0)
+  subtotalCents     Int
+  taxableFlag       Boolean          @default(true)
+  taxCents          Int              @default(0)
+  isAddOn           Boolean          @default(false)
+  notes             String?
+  displayOrder      Int              @default(0)
+  createdAt         DateTime         @default(now())
+  appointmentItem   AppointmentItem? @relation(fields: [appointmentItemId], references: [id], onUpdate: NoAction)
+  cart              Cart             @relation(fields: [cartId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service?         @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
+  staff             Staff?           @relation("CartItemStaff", fields: [staffId], references: [id], onUpdate: NoAction)
+
+  @@index([cartId], map: "idx_cartitem_cart")
+  @@index([serviceId], map: "idx_cartitem_service", where: raw("(\"serviceId\" IS NOT NULL)"))
+  @@index([staffId], map: "idx_cartitem_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+}
+
+model Order {
+  id                   String            @id @default(cuid())
+  organizationId       String
+  locationId           String
+  cartId               String            @unique
+  orderNumber          String
+  appointmentId        String?
+  clientId             String?
+  clientNameSnapshot   String?
+  subtotalCents        Int
+  discountCents        Int               @default(0)
+  taxCents             Int               @default(0)
+  tipCents             Int               @default(0)
+  giftCardAppliedCents Int               @default(0)
+  loyaltyAppliedCents  Int               @default(0)
+  depositAppliedCents  Int               @default(0)
+  totalCents           Int
+  paidCents            Int               @default(0)
+  balanceDueCents      Int
+  status               String            @default("OPEN")
+  closedAt             DateTime?
+  receiptSentAt        DateTime?
+  receiptEmail         String?
+  receiptPhone         String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @default(now()) @updatedAt
+  appointment          Appointment?      @relation(fields: [appointmentId], references: [id], onUpdate: NoAction)
+  cart                 Cart              @relation(fields: [cartId], references: [id], onUpdate: NoAction)
+  client               Client?           @relation(fields: [clientId], references: [id], onUpdate: NoAction)
+  location             Location          @relation(fields: [locationId], references: [id], onUpdate: NoAction)
+  organization         Organization      @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
+  items                OrderItem[]
+  payments             Payment[]
+  refunds              Refund[]
+  tipDistributions     TipDistribution[]
+
+  @@unique([locationId, orderNumber])
+  @@index([appointmentId], map: "idx_order_appointment", where: raw("(\"appointmentId\" IS NOT NULL)"))
+  @@index([clientId], map: "idx_order_client", where: raw("(\"clientId\" IS NOT NULL)"))
+  @@index([locationId, orderNumber], map: "idx_order_location_number")
+  @@index([organizationId, createdAt(sort: Desc)], map: "idx_order_org_created")
+  @@index([organizationId, status], map: "idx_order_org_status")
+  @@map("Order")
+}
+
+model OrderItem {
+  id                String           @id @default(cuid())
+  orderId           String
+  itemType          String
+  displayName       String
+  serviceId         String?
+  appointmentItemId String?
+  staffId           String?
+  quantity          Int
+  unitPriceCents    Int
+  discountCents     Int              @default(0)
+  subtotalCents     Int
+  taxableFlag       Boolean
+  taxCents          Int              @default(0)
+  isAddOn           Boolean          @default(false)
+  displayOrder      Int              @default(0)
+  createdAt         DateTime         @default(now())
+  appointmentItem   AppointmentItem? @relation(fields: [appointmentItemId], references: [id], onUpdate: NoAction)
+  order             Order            @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  service           Service?         @relation(fields: [serviceId], references: [id], onUpdate: NoAction)
+  staff             Staff?           @relation("OrderItemStaff", fields: [staffId], references: [id], onUpdate: NoAction)
+
+  @@index([orderId], map: "idx_orderitem_order")
+  @@index([serviceId], map: "idx_orderitem_service", where: raw("(\"serviceId\" IS NOT NULL)"))
+  @@index([staffId], map: "idx_orderitem_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+}
+
+model Payment {
+  id                     String            @id @default(cuid())
+  organizationId         String
+  orderId                String
+  amountCents            Int
+  tipCents               Int               @default(0)
+  paymentMethod          String
+  paymentChannel         String
+  salonTransactPaymentId String?
+  preAuthHoldTxId        String?
+  cardBrand              String?
+  cardLast4              String?
+  status                 String            @default("PENDING")
+  failureCode            String?
+  failureReason          String?
+  processedAt            DateTime?
+  refundedCents          Int               @default(0)
+  deviceId               String?
+  ipAddress              String?
+  userAgent              String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @default(now()) @updatedAt
+  /// Idempotency key sent to SalonTransact for this payment. UUID v4. Per SD-K-005
+  /// (agent-native API design), all mutating Reyna Pay / SalonTransact calls require
+  /// idempotency keys. Stored here to enable dedupe audits.
+  idempotencyKey         String?
+  geolocationLogs        GeolocationLog[]
+  device                 Device?           @relation(fields: [deviceId], references: [id], onUpdate: NoAction)
+  order                  Order             @relation(fields: [orderId], references: [id], onUpdate: NoAction)
+  organization           Organization      @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
+  refunds                Refund[]
+  tipDistributions       TipDistribution[]
+
+  @@index([organizationId, idempotencyKey], map: "idx_payment_idem_org", where: raw("(\"idempotencyKey\" IS NOT NULL)"))
+  @@index([orderId], map: "idx_payment_order")
+  @@index([organizationId, createdAt(sort: Desc)], map: "idx_payment_org_created")
+  @@index([organizationId, status], map: "idx_payment_org_status")
+  @@index([salonTransactPaymentId], map: "idx_payment_salontx", where: raw("(\"salonTransactPaymentId\" IS NOT NULL)"))
+}
+
+model Refund {
+  id                    String       @id @default(cuid())
+  organizationId        String
+  paymentId             String
+  orderId               String
+  amountCents           Int
+  reason                String?
+  salonTransactRefundId String?
+  status                String       @default("PENDING")
+  failureCode           String?
+  failureReason         String?
+  processedAt           DateTime?
+  initiatedByUserId     String?
+  initiatedByStaffId    String?
+  isAiInitiated         Boolean      @default(false)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @default(now()) @updatedAt
+  /// Idempotency key sent to SalonTransact for this refund. Same rationale as Payment.
+  idempotencyKey        String?
+  initiatedByStaff      Staff?       @relation("RefundInitiatedByStaff", fields: [initiatedByStaffId], references: [id], onUpdate: NoAction)
+  initiatedByUser       User?        @relation("RefundInitiatedByUser", fields: [initiatedByUserId], references: [id], onUpdate: NoAction)
+  order                 Order        @relation(fields: [orderId], references: [id], onUpdate: NoAction)
+  organization          Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
+  payment               Payment      @relation(fields: [paymentId], references: [id], onUpdate: NoAction)
+
+  @@index([organizationId, idempotencyKey], map: "idx_refund_idem_org", where: raw("(\"idempotencyKey\" IS NOT NULL)"))
+  @@index([orderId], map: "idx_refund_order")
+  @@index([organizationId, status], map: "idx_refund_org_status")
+  @@index([paymentId], map: "idx_refund_payment")
+}
+
+model OfflineQueue {
+  id             String       @id @default(cuid())
+  organizationId String
+  deviceId       String
+  cartId         String?
+  actionType     String
+  actionPayload  Json
+  queuedAt       DateTime     @default(now())
+  syncedAt       DateTime?
+  syncStatus     String       @default("PENDING")
+  syncError      String?
+  syncAttempts   Int          @default(0)
+  cart           Cart?        @relation(fields: [cartId], references: [id], onUpdate: NoAction)
+  device         Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([deviceId, syncStatus], map: "idx_offlinequeue_device_status")
+  @@index([queuedAt], map: "idx_offlinequeue_pending", where: raw("(\"syncStatus\" = 'PENDING'::text)"))
+}
+
+model GeolocationLog {
+  id                       String       @id @default(cuid())
+  organizationId           String
+  locationId               String
+  cartId                   String?
+  paymentId                String?
+  deviceId                 String?
+  userId                   String?
+  staffId                  String?
+  lat                      Float?
+  lng                      Float?
+  accuracyMeters           Float?
+  distanceFromLocationFeet Float?
+  withinGeofence           Boolean
+  managerOverride          Boolean      @default(false)
+  managerOverrideUserId    String?
+  ipAddress                String?
+  ipDerivedLocation        Json?
+  isJailbroken             Boolean      @default(false)
+  userAgent                String?
+  createdAt                DateTime     @default(now())
+  cart                     Cart?        @relation(fields: [cartId], references: [id], onUpdate: NoAction)
+  device                   Device?      @relation(fields: [deviceId], references: [id], onUpdate: NoAction)
+  location                 Location     @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  managerOverrideUser      User?        @relation("GeolocationManagerOverride", fields: [managerOverrideUserId], references: [id], onUpdate: NoAction)
+  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  payment                  Payment?     @relation(fields: [paymentId], references: [id], onUpdate: NoAction)
+  staff                    Staff?       @relation("GeolocationStaff", fields: [staffId], references: [id], onUpdate: NoAction)
+  user                     User?        @relation("GeolocationUser", fields: [userId], references: [id], onUpdate: NoAction)
+
+  @@index([cartId], map: "idx_geolog_cart", where: raw("(\"cartId\" IS NOT NULL)"))
+  @@index([organizationId, createdAt(sort: Desc)], map: "idx_geolog_org_created")
+  @@index([organizationId, createdAt], map: "idx_geolog_outside", where: raw("(\"withinGeofence\" = false)"))
+  @@index([paymentId], map: "idx_geolog_payment", where: raw("(\"paymentId\" IS NOT NULL)"))
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String?
+  organizationId String?
+  action         String
+  entity         String?
+  entityId       String?
+  before         Json?
+  after          Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+  changedFields  String[]
+  metadata       Json?
+  requestId      String?
+  route          String?
+  user           User?    @relation(fields: [userId], references: [id])
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([entity, entityId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  keyHash        String       @unique
+  keyPrefix      String
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Webhook {
+  id              String       @id @default(cuid())
+  organizationId  String
+  url             String
+  events          String[]
+  secret          String
+  isActive        Boolean      @default(true)
+  lastTriggeredAt DateTime?
+  createdAt       DateTime     @default(now())
+  organization    Organization @relation(fields: [organizationId], references: [id])
+}
+
+model AiReceptionistConfig {
+  id               String       @id @default(cuid())
+  organizationId   String       @unique
+  isEnabled        Boolean      @default(false)
+  voiceId          String?
+  greeting         String?
+  businessHours    Json?
+  handoffNumber    String?
+  handoffEmail     String?
+  capabilities     Json         @default("{\"faq\": true, \"cancel\": true, \"booking\": true, \"reschedule\": true}")
+  callsHandled     Int          @default(0)
+  callsTransferred Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model AiReceptionistCall {
+  id             String   @id @default(cuid())
+  organizationId String
+  callerPhone    String?
+  callerName     String?
+  duration       Int?
+  outcome        String?
+  transcript     String?
+  summary        String?
+  rating         Int?
+  recordingUrl   String?
+  createdAt      DateTime @default(now())
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  organizationId String
+  clientId       String
+  direction      String
+  channel        String       @default("sms")
+  content        String
+  status         String       @default("sent")
+  staffId        String?
+  isRead         Boolean      @default(false)
+  sentAt         DateTime     @default(now())
+  readAt         DateTime?
+  client         Client       @relation(fields: [clientId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  staff          Staff?       @relation(fields: [staffId], references: [id])
+}
+
+model SavedResponse {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  content        String
+  category       String?
+  createdAt      DateTime @default(now())
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model BackgroundCheck {
+  id                String       @id @default(cuid())
+  organizationId    String
+  staffId           String
+  checkType         String
+  checkrCandidateId String?
+  checkrReportId    String?
+  status            String       @default("PENDING")
+  adverseFlags      Json?
+  requestedAt       DateTime?
+  completedAt       DateTime?
+  expiresAt         DateTime?
+  notes             String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @default(now())
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff             Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, staffId], map: "idx_bgcheck_org_staff")
+  @@index([organizationId, status], map: "idx_bgcheck_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Compensation {
+  id                            String       @id @default(cuid())
+  organizationId                String
+  staffId                       String       @unique
+  modelType                     String
+  baseHourlyRateCents           Int?
+  baseSalaryCentsMonthly        Int?
+  baseCommissionPct             Float?
+  perServiceCommissionOverrides Json?
+  tieredCommissionConfig        Json?
+  retailCommissionPct           Float?
+  boothRentCents                Int?
+  boothRentFrequency            String?
+  overtimeMultiplier            Float        @default(1.5)
+  overtimeThresholdHours        Int          @default(40)
+  includeTipsInCommission       Boolean      @default(false)
+  productDeductionEnabled       Boolean      @default(false)
+  notes                         String?
+  effectiveStartDate            DateTime     @db.Date
+  effectiveEndDate              DateTime?    @db.Date
+  createdAt                     DateTime     @default(now())
+  updatedAt                     DateTime     @default(now())
+  organization                  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff                         Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([staffId, effectiveStartDate, effectiveEndDate], map: "idx_comp_effective")
+  @@index([organizationId, staffId], map: "idx_comp_org_staff")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model EmailTemplate {
+  id                   String                @id @default(cuid())
+  organizationId       String
+  templateKey          String
+  subject              String
+  bodyHtml             String
+  bodyText             String?
+  variables            Json                  @default("[]")
+  senderName           String?
+  senderEmail          String?
+  aiGenerated          Boolean               @default(false)
+  isActive             Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @default(now())
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  marketingAutomations MarketingAutomation[]
+
+  @@unique([organizationId, templateKey])
+  @@index([organizationId, isActive], map: "idx_emailtpl_org_active")
+  @@index([organizationId, templateKey], map: "idx_emailtpl_org_key")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model EmploymentAgreement {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  staffId            String
+  templateType       String?
+  documentTitle      String
+  documentUrl        String
+  signedDocumentUrl  String?
+  signedAt           DateTime?
+  signatureDataUrl   String?
+  signatureIpAddress String?
+  signatureUserAgent String?
+  effectiveStartDate DateTime?    @db.Date
+  effectiveEndDate   DateTime?    @db.Date
+  status             String       @default("DRAFT")
+  sentAt             DateTime?
+  viewedAt           DateTime?
+  expiresAt          DateTime?
+  notes              String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff              Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, staffId], map: "idx_emp_org_staff")
+  @@index([organizationId, status], map: "idx_emp_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InventoryDeduction {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  locationId           String
+  productVariantId     String
+  quantityUsed         Float
+  valueCents           Int            @default(0)
+  source               String
+  appointmentId        String?
+  staffId              String?
+  colorFormulaId       String?
+  transferToLocationId String?
+  notes                String?
+  createdAt            DateTime       @default(now())
+  appointment          Appointment?   @relation(fields: [appointmentId], references: [id], onUpdate: NoAction)
+  colorFormula         ColorFormula?  @relation(fields: [colorFormulaId], references: [id], onUpdate: NoAction)
+  location             Location       @relation("DeductionLocation", fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productVariant       ProductVariant @relation(fields: [productVariantId], references: [id], onUpdate: NoAction)
+  staff                Staff?         @relation("DeductionStaff", fields: [staffId], references: [id], onUpdate: NoAction)
+  transferToLocation   Location?      @relation("DeductionTransferLocation", fields: [transferToLocationId], references: [id], onUpdate: NoAction)
+
+  @@index([appointmentId], map: "idx_invded_appointment", where: raw("(\"appointmentId\" IS NOT NULL)"))
+  @@index([colorFormulaId], map: "idx_invded_formula", where: raw("(\"colorFormulaId\" IS NOT NULL)"))
+  @@index([locationId, productVariantId, createdAt(sort: Desc)], map: "idx_invded_loc_variant_created")
+  @@index([staffId], map: "idx_invded_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InventoryLevel {
+  id                 String         @id @default(cuid())
+  organizationId     String
+  locationId         String
+  productVariantId   String
+  quantityOnHand     Float          @default(0)
+  reorderThreshold   Float?
+  autoReorderEnabled Boolean        @default(false)
+  reorderQuantity    Float?
+  lastCountedAt      DateTime?
+  lastDeductedAt     DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @default(now())
+  location           Location       @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productVariant     ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([locationId, productVariantId])
+  @@index([locationId, quantityOnHand], map: "idx_invlev_loc_threshold", where: raw("(\"reorderThreshold\" IS NOT NULL)"))
+  @@index([organizationId], map: "idx_invlev_org")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model InventoryReorderDraft {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  locationId          String
+  supplierName        String
+  status              String       @default("DRAFT")
+  items               Json
+  estimatedTotalCents Int
+  generatedAt         DateTime     @default(now())
+  approvedAt          DateTime?
+  approvedByUserId    String?
+  placedAt            DateTime?
+  receivedAt          DateTime?
+  pdfUrl              String?
+  externalOrderId     String?
+  notes               String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @default(now())
+  approvedByUser      User?        @relation("ReorderApprovedBy", fields: [approvedByUserId], references: [id], onUpdate: NoAction)
+  location            Location     @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([locationId, createdAt(sort: Desc)], map: "idx_invreord_loc_created")
+  @@index([organizationId, status], map: "idx_invreord_org_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model LicenseVerification {
+  id                 String       @id @default(cuid())
+  organizationId     String
+  staffId            String
+  state              String
+  licenseType        String
+  licenseNumber      String
+  issuedAt           DateTime?    @db.Date
+  expiresAt          DateTime?    @db.Date
+  lastVerifiedAt     DateTime?
+  verificationStatus String       @default("PENDING")
+  verificationSource String?
+  verificationData   Json?
+  alertDaysBefore    Int          @default(30)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now())
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff              Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([staffId, state, licenseType, licenseNumber])
+  @@index([expiresAt, verificationStatus], map: "idx_license_expires", where: raw("(\"verificationStatus\" = 'ACTIVE'::text)"))
+  @@index([organizationId, verificationStatus], map: "idx_license_org_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model MarketingAutomation {
+  id                    String               @id @default(cuid())
+  organizationId        String
+  name                  String
+  trigger               String
+  triggerConditions     Json
+  emailTemplateId       String?
+  smsContent            String?
+  channel               String
+  delayDaysAfterTrigger Int                  @default(0)
+  isActive              Boolean              @default(true)
+  audienceSize          Int                  @default(0)
+  lastRunAt             DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @default(now())
+  emailTemplate         EmailTemplate?       @relation(fields: [emailTemplateId], references: [id], onUpdate: NoAction)
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  marketingExecutions   MarketingExecution[]
+
+  @@index([organizationId, isActive], map: "idx_marketauto_org_active")
+  @@index([trigger, isActive], map: "idx_marketauto_trigger", where: raw("(\"isActive\" = true)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model MarketingExecution {
+  id                     String              @id @default(cuid())
+  organizationId         String
+  marketingAutomationId  String
+  clientId               String
+  channel                String
+  status                 String              @default("QUEUED")
+  queuedAt               DateTime            @default(now())
+  sentAt                 DateTime?
+  deliveredAt            DateTime?
+  openedAt               DateTime?
+  clickedAt              DateTime?
+  convertedAt            DateTime?
+  convertedAppointmentId String?
+  failureReason          String?
+  externalMessageId      String?
+  createdAt              DateTime            @default(now())
+  client                 Client              @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  convertedAppointment   Appointment?        @relation("ConvertedAppointment", fields: [convertedAppointmentId], references: [id], onUpdate: NoAction)
+  marketingAutomation    MarketingAutomation @relation(fields: [marketingAutomationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization           Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([marketingAutomationId, status], map: "idx_marketexec_automation_status")
+  @@index([clientId, queuedAt(sort: Desc)], map: "idx_marketexec_client")
+  @@index([status, queuedAt], map: "idx_marketexec_queued", where: raw("(status = 'QUEUED'::text)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Product {
+  id             String           @id @default(cuid())
+  organizationId String
+  categoryId     String?
+  name           String
+  brand          String?
+  description    String?
+  sku            String?
+  barcode        String?
+  isBackBar      Boolean          @default(true)
+  isRetail       Boolean          @default(false)
+  imageUrl       String?
+  isActive       Boolean          @default(true)
+  softDeletedAt  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now())
+  category       ProductCategory? @relation(fields: [categoryId], references: [id], onUpdate: NoAction)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  variants       ProductVariant[]
+
+  @@index([barcode], map: "idx_product_barcode", where: raw("(barcode IS NOT NULL)"))
+  @@index([organizationId, isActive], map: "idx_product_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([organizationId, isBackBar], map: "idx_product_org_backbar", where: raw("(\"isBackBar\" = true)"))
+  @@index([organizationId, isRetail], map: "idx_product_org_retail", where: raw("(\"isRetail\" = true)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ProductCategory {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  displayOrder   Int          @default(0)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now())
+  products       Product[]
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive], map: "idx_pcat_org_active")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ProductVariant {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  productId           String
+  name                String
+  sku                 String?
+  barcode             String?
+  unitType            String               @default("EACH")
+  unitQuantity        Float                @default(1)
+  retailPriceCents    Int?
+  wholesaleCostCents  Int?
+  isActive            Boolean              @default(true)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @default(now())
+  inventoryDeductions InventoryDeduction[]
+  inventoryLevels     InventoryLevel[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product             Product              @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, isActive], map: "idx_pvar_org_active")
+  @@index([productId], map: "idx_pvar_product")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PtoRequest {
+  id               String       @id @default(cuid())
+  organizationId   String
+  staffId          String
+  requestType      String
+  startDate        DateTime     @db.Date
+  endDate          DateTime     @db.Date
+  hoursRequested   Float
+  status           String       @default("PENDING")
+  reasonText       String?
+  decisionNote     String?
+  approvedByUserId String?
+  decidedAt        DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @default(now())
+  approvedByUser   User?        @relation("PtoApprovedBy", fields: [approvedByUserId], references: [id], onUpdate: NoAction)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff            Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organizationId, status], map: "idx_pto_org_status")
+  @@index([staffId, startDate], map: "idx_pto_staff")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TaxRate {
+  id                   String       @id @default(cuid())
+  organizationId       String
+  locationId           String
+  name                 String
+  ratePercent          Float
+  applicableToServices Boolean      @default(false)
+  applicableToProducts Boolean      @default(true)
+  effectiveStartDate   DateTime     @db.Date
+  effectiveEndDate     DateTime?    @db.Date
+  isActive             Boolean      @default(true)
+  jurisdiction         String?
+  jurisdictionCode     String?
+  notes                String?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @default(now())
+  location             Location     @relation(fields: [locationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([locationId, effectiveStartDate, effectiveEndDate], map: "idx_taxrate_effective")
+  @@index([locationId, isActive], map: "idx_taxrate_loc_active")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TipDistribution {
+  id             String       @id @default(cuid())
+  organizationId String
+  appointmentId  String
+  orderId        String?
+  paymentId      String?
+  staffId        String
+  amountCents    Int
+  methodUsed     String
+  splitWeight    Float?
+  createdAt      DateTime     @default(now())
+  appointment    Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  order          Order?       @relation(fields: [orderId], references: [id], onUpdate: NoAction)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  payment        Payment?     @relation(fields: [paymentId], references: [id], onUpdate: NoAction)
+  staff          Staff        @relation(fields: [staffId], references: [id], onUpdate: NoAction)
+
+  @@index([appointmentId], map: "idx_tipdist_appointment")
+  @@index([organizationId, staffId, createdAt(sort: Desc)], map: "idx_tipdist_org_staff")
+  @@index([paymentId], map: "idx_tipdist_payment", where: raw("(\"paymentId\" IS NOT NULL)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TipSplit {
+  id                     String       @id @default(cuid())
+  organizationId         String       @unique
+  splitMethod            String       @default("PRIMARY_ONLY")
+  explicitPercentsConfig Json?
+  includeNonStylistRoles Boolean      @default(false)
+  minimumPctPerStylist   Float        @default(0)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @default(now())
+  organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
 
 enum Role {
   SUPERADMIN
@@ -23,19 +2002,11 @@ enum Role {
   BUSINESS_PARTNER
 }
 
-// ═══════════════════════════════════════════
-// GROUP LEVEL ENUM (P0.A.13: organization hierarchy)
-// ═══════════════════════════════════════════
-
 enum GroupLevel {
   REGION
   BRAND
   CONCEPT
 }
-
-// ═══════════════════════════════════════════
-// VERTICAL ID ENUM (P0.C.1: vertical configuration system)
-// ═══════════════════════════════════════════
 
 enum VerticalId {
   salon
@@ -76,10 +2047,6 @@ enum VerticalId {
   general
 }
 
-// ═══════════════════════════════════════════
-// PLAN TIER ENUM (P0.D.1: plan tier system)
-// ═══════════════════════════════════════════
-
 enum PlanTier {
   FREE
   PLUS
@@ -87,1670 +2054,7 @@ enum PlanTier {
   ENTERPRISE
 }
 
-// ═══════════════════════════════════════════
-// DEPOSIT TYPE ENUM (P0.G.1: service deposit type)
-// ═══════════════════════════════════════════
-
 enum DepositType {
   FIXED_AMOUNT
   PERCENTAGE
-}
-
-// ═══════════════════════════════════════════
-// ORGANIZATION GROUPS (P0.A.13: multi-level hierarchy)
-// ═══════════════════════════════════════════
-
-model OrganizationGroup {
-  id              String              @id @default(cuid())
-  name            String
-  level           GroupLevel
-  parentGroupId   String?
-  parentGroup     OrganizationGroup?  @relation("GroupHierarchy", fields: [parentGroupId], references: [id], onDelete: SetNull)
-  childGroups     OrganizationGroup[] @relation("GroupHierarchy")
-  permissionSetId String?
-  permissionSet   PermissionSet?      @relation("GroupPermissionSet", fields: [permissionSetId], references: [id], onDelete: SetNull)
-  organizationId  String
-  organization    Organization        @relation("OrgGroups", fields: [organizationId], references: [id], onDelete: Cascade)
-  locations       Location[]
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-
-  @@index([parentGroupId])
-  @@index([level])
-  @@index([permissionSetId])
-  @@index([organizationId])
-}
-
-// ═══════════════════════════════════════════
-// ORGANIZATIONS & FRANCHISING
-// ═══════════════════════════════════════════
-
-model Organization {
-  id                     String                @id @default(cuid())
-  name                   String
-  slug                   String                @unique
-  logoUrl                String?
-  primaryColor           String?               @default("#606E74")
-  email                  String?
-  phone                  String?
-  website                String?
-  address                String?
-  city                   String?
-  state                  String?
-  zip                    String?
-  country                String                @default("US")
-  timezone               String                @default("America/Chicago")
-  language               String                @default("en")
-  isFranchise            Boolean               @default(false)
-  franchiseFeeType       String?
-  franchiseFeeValue      Float?
-  techFeeType            String?
-  techFeeValue           Float?
-  marketingFeeType       String?
-  marketingFeeValue      Float?
-  parentOrgId            String?
-  parentOrg              Organization?         @relation("FranchiseHierarchy", fields: [parentOrgId], references: [id])
-  childOrgs              Organization[]        @relation("FranchiseHierarchy")
-  plan                   String                @default("starter")
-  planStatus             String                @default("trial")
-  trialEndsAt            DateTime?
-  stripeCustomerId       String?
-  stripeSubId            String?
-  salonTransactId        String?
-  legalName              String?
-  businessStructure      String?
-  ein                    String?
-  stateOfFormation       String?
-  yearEstablished        Int?
-  businessType           String?
-  description            String?
-  teamSize               String?
-  sourceSystem           String?
-  dbaName                String?
-  ownerFirstName         String?
-  ownerLastName          String?
-  ownerDob               String?
-  ownerSsnLast4          String?
-  ownerTitle             String?
-  ownershipPercentage    Int?
-  ownerAddress           String?
-  bankAccountHolder      String?
-  bankRoutingNumber      String?
-  bankAccountNumber      String?
-  bankAccountType        String?
-  fundingSpeed           String?
-  monthlyVolume          String?
-  avgTransaction         String?
-  paymentMethods         String[]
-  applicationStatus      String?               @default("not_started")
-  applicationSubmittedAt DateTime?
-  onboardingStep         Int                   @default(0)
-  onboardingCompleted    Boolean               @default(false)
-  verticalId             VerticalId            @default(salon)
-  verticalConfigOverride Json?
-  themeOverride          Json?
-  planTier               PlanTier              @default(FREE)
-  enabledAddons          String[]              @default([])
-  planEffectiveAt        DateTime?
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  locations              Location[]
-  users                  User[]
-  staff                  Staff[]
-  clients                Client[]
-  services               Service[]
-  appointments           Appointment[]
-  transactions           Transaction[]
-  giftCards              GiftCard[]
-  loyaltyProgram         LoyaltyProgram?
-  memberships            Membership[]
-  campaigns              Campaign[]
-  waitlistEntries        WaitlistEntry[]
-  importJobs             ImportJob[]
-  permissionSets         PermissionSet[]
-  apiKeys                ApiKey[]
-  webhooks               Webhook[]
-  devices                Device[]
-  businessSettings       BusinessSettings?
-  aiReceptionistConfig   AiReceptionistConfig?
-  messages               Message[]
-  organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
-  colorFormulas          ColorFormula[]
-  consentSignatures      ConsentSignature[]
-  recurringSeries        RecurringSeries[]
-  cancellationPolicies   CancellationPolicy[]
-  chairs                 Chair[]
-  carts                  Cart[]
-  orders                 Order[]
-  payments               Payment[]
-  refunds                Refund[]
-  offlineQueues          OfflineQueue[]
-  geolocationLogs        GeolocationLog[]
-
-  @@index([verticalId])
-  @@index([planTier])
-}
-
-// ═══════════════════════════════════════════
-// AUTH & USERS
-// ═══════════════════════════════════════════
-
-model User {
-  id                          String                     @id @default(cuid())
-  name                        String?
-  email                       String                     @unique
-  emailVerified               DateTime?
-  emailVerifyToken            String?
-  emailVerifyExp              DateTime?
-  password                    String?
-  image                       String?
-  role                        Role                       @default(STAFF)
-  organizationId              String?
-  organization                Organization?              @relation(fields: [organizationId], references: [id])
-  locationId                  String?
-  customRoleId                String?
-  customRole                  PermissionSet?             @relation("UserCustomRole", fields: [customRoleId], references: [id], onDelete: SetNull)
-  isActive                    Boolean                    @default(true)
-  lastLoginAt                 DateTime?
-  passwordResetToken          String?
-  passwordResetExp            DateTime?
-  twoFactorEnabled            Boolean                    @default(false)
-  twoFactorSecret             String?
-  createdAt                   DateTime                   @default(now())
-  updatedAt                   DateTime                   @updatedAt
-  accounts                    Account[]
-  sessions                    Session[]
-  auditLogs                   AuditLog[]
-  notifications               Notification[]
-  staff                       Staff?                     @relation("UserStaff")
-  bookedAppointments          Appointment[]              @relation("BookedByUser")
-  statusChanges               AppointmentStatusHistory[] @relation("StatusChangedByUser")
-  refundsInitiated            Refund[]                   @relation("RefundInitiatedByUser")
-  geolocationLogs             GeolocationLog[]           @relation("GeolocationUser")
-  geolocationManagerOverrides GeolocationLog[]           @relation("GeolocationManagerOverride")
-
-  @@index([customRoleId])
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
-
-// ═══════════════════════════════════════════
-// LOCATIONS
-// ═══════════════════════════════════════════
-
-model Location {
-  id                      String               @id @default(cuid())
-  organizationId          String
-  organization            Organization         @relation(fields: [organizationId], references: [id])
-  name                    String
-  address                 String?
-  city                    String?
-  state                   String?
-  zip                     String?
-  phone                   String?
-  email                   String?
-  timezone                String               @default("America/Chicago")
-  isActive                Boolean              @default(true)
-  taxRate                 Float                @default(8.25)
-  logoUrl                 String?
-  coverImageUrl           String?
-  lat                     Float?
-  lng                     Float?
-  geofenceRadius          Int                  @default(100)
-  businessHours           Json?
-  groupId                 String?
-  group                   OrganizationGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  salonTransactLocationId String?
-  createdAt               DateTime             @default(now())
-  staff                   Staff[]
-  clients                 Client[]
-  services                Service[]
-  appointments            Appointment[]
-  transactions            Transaction[]
-  devices                 Device[]
-  waitlistEntries         WaitlistEntry[]
-  serviceLocations        ServiceLocation[]
-  stylistSchedules        StylistSchedule[]
-  bookingWindow           BookingWindow?
-  recurringSeries         RecurringSeries[]
-  cancellationPolicies    CancellationPolicy[]
-  chairs                  Chair[]
-  carts                   Cart[]
-  orders                  Order[]
-  geolocationLogs         GeolocationLog[]
-
-  @@index([groupId])
-}
-
-// ═══════════════════════════════════════════
-// STAFF
-// ═══════════════════════════════════════════
-
-model Staff {
-  id                    String                     @id @default(cuid())
-  organizationId        String
-  organization          Organization               @relation(fields: [organizationId], references: [id])
-  locationId            String
-  location              Location                   @relation(fields: [locationId], references: [id])
-  userId                String?                    @unique
-  user                  User?                      @relation("UserStaff", fields: [userId], references: [id], onDelete: SetNull)
-  name                  String
-  email                 String?
-  phone                 String?
-  role                  String                     @default("stylist")
-  jobTitle              String?
-  commissionType        String                     @default("percentage")
-  commissionRate        Float                      @default(40)
-  isActive              Boolean                    @default(true)
-  color                 String?
-  bio                   String?
-  avatarUrl             String?
-  licenseNumber         String?
-  licenseExpiry         DateTime?
-  hireDate              DateTime?
-  goals                 Json?
-  softDeletedAt         DateTime?
-  bufferOverrideMinutes Json?
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
-  appointments          Appointment[]
-  clockEvents           ClockEvent[]
-  performanceStats      PerformanceStat[]
-  messages              Message[]
-  serviceStaffOverrides ServiceStaffOverride[]
-  stylistServices       StylistService[]
-  stylistSchedules      StylistSchedule[]
-  scheduleExceptions    StylistScheduleException[]
-  colorFormulas         ColorFormula[]
-  appointmentItems      AppointmentItem[]
-  bookedAppointments    Appointment[]              @relation("BookedByStaff")
-  statusChanges         AppointmentStatusHistory[] @relation("StatusChangedByStaff")
-  recurringSeries       RecurringSeries[]
-  defaultChairs         Chair[]                    @relation("ChairDefaultStaff")
-  cartItems             CartItem[]                 @relation("CartItemStaff")
-  orderItems            OrderItem[]                @relation("OrderItemStaff")
-  refundsInitiated      Refund[]                   @relation("RefundInitiatedByStaff")
-  geolocationLogs       GeolocationLog[]           @relation("GeolocationStaff")
-
-  @@index([organizationId, isActive])
-}
-
-model ClockEvent {
-  id             String   @id @default(cuid())
-  staffId        String
-  staff          Staff    @relation(fields: [staffId], references: [id])
-  type           String
-  timestamp      DateTime @default(now())
-  lat            Float?
-  lng            Float?
-  withinGeofence Boolean  @default(false)
-  ipAddress      String?
-}
-
-model PerformanceStat {
-  id           String   @id @default(cuid())
-  staffId      String
-  staff        Staff    @relation(fields: [staffId], references: [id])
-  periodStart  DateTime
-  periodEnd    DateTime
-  revenue      Float    @default(0)
-  transactions Int      @default(0)
-  tips         Float    @default(0)
-  commission   Float    @default(0)
-  rebooks      Int      @default(0)
-  newClients   Int      @default(0)
-  retailSales  Float    @default(0)
-  createdAt    DateTime @default(now())
-}
-
-// ═══════════════════════════════════════════
-// CLIENTS
-// ═══════════════════════════════════════════
-
-model Client {
-  id                      String              @id @default(cuid())
-  organizationId          String
-  organization            Organization        @relation(fields: [organizationId], references: [id])
-  locationId              String?
-  location                Location?           @relation(fields: [locationId], references: [id])
-  name                    String
-  firstName               String?
-  lastName                String?
-  email                   String?
-  phone                   String?
-  altPhone                String?
-  dateOfBirth             DateTime?
-  gender                  String?
-  address                 String?
-  city                    String?
-  state                   String?
-  zip                     String?
-  notes                   String?
-  preferredStaffId        String?
-  genderPref              String?
-  referralSource          String?
-  referredById            String?
-  tags                    String[]
-  isActive                Boolean             @default(true)
-  marketingOptIn          Boolean             @default(false)
-  smsOptIn                Boolean             @default(false)
-  emailOptIn              Boolean             @default(false)
-  loyaltyPoints           Int                 @default(0)
-  totalSpent              Float               @default(0)
-  visitCount              Int                 @default(0)
-  lastVisitAt             DateTime?
-  cardOnFile              Boolean             @default(false)
-  stripeCustomerId        String?
-  allergies               Json?
-  vipStatus               Boolean             @default(false)
-  relationshipScore       Int                 @default(0)
-  preferredLanguage       String              @default("en")
-  preferredContactChannel String              @default("SMS")
-  totalLifetimeValue      Int                 @default(0)
-  softDeletedAt           DateTime?
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
-  familyMembers           FamilyMember[]
-  appointments            Appointment[]
-  transactions            Transaction[]
-  giftCards               GiftCard[]
-  memberships             ClientMembership[]
-  loyaltyHistory          LoyaltyEvent[]
-  formSubmissions         FormSubmission[]
-  waitlistEntries         WaitlistEntry[]
-  campaigns               CampaignRecipient[]
-  messages                Message[]
-  colorFormulas           ColorFormula[]
-  consentSignatures       ConsentSignature[]
-  recurringSeries         RecurringSeries[]
-  carts                   Cart[]
-  orders                  Order[]
-
-  @@index([organizationId, isActive])
-}
-
-model FamilyMember {
-  id              String    @id @default(cuid())
-  primaryClientId String
-  primaryClient   Client    @relation(fields: [primaryClientId], references: [id])
-  name            String
-  relationship    String?
-  dateOfBirth     DateTime?
-  notes           String?
-  createdAt       DateTime  @default(now())
-}
-
-// ═══════════════════════════════════════════
-// SERVICES
-// ═══════════════════════════════════════════
-
-model Service {
-  id                        String                 @id @default(cuid())
-  organizationId            String
-  organization              Organization           @relation(fields: [organizationId], references: [id])
-  locationId                String?
-  location                  Location?              @relation(fields: [locationId], references: [id])
-  name                      String
-  description               String?
-  category                  String?
-  price                     Float
-  duration                  Int
-  bufferTime                Int                    @default(0)
-  isAddon                   Boolean                @default(false)
-  addonAddsTime             Boolean                @default(false)
-  maxAddonTime              Int?
-  isActive                  Boolean                @default(true)
-  taxable                   Boolean                @default(true)
-  color                     String?
-  imageUrl                  String?
-  depositRequired           Boolean                @default(false)
-  depositType               DepositType?
-  depositValueCents         Int?
-  productCost               Int?
-  consumableCost            Int?
-  targetMarginPct           Int?
-  processingMinutes         Int?
-  addOnVisibleOnBookingMenu Boolean                @default(true)
-  bookableByCustomers       Boolean                @default(true)
-  bookableByStaff           Boolean                @default(true)
-  requiresConsultation      Boolean                @default(false)
-  requiresConsent           Boolean                @default(false)
-  softDeletedAt             DateTime?
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
-  appointments              Appointment[]
-  serviceLocations          ServiceLocation[]
-  serviceStaffOverrides     ServiceStaffOverride[]
-  stylistServices           StylistService[]
-  consentSignatures         ConsentSignature[]
-  appointmentItems          AppointmentItem[]
-  recurringSeries           RecurringSeries[]
-  cancellationPolicies      CancellationPolicy[]
-  cartItems                 CartItem[]
-  orderItems                OrderItem[]
-
-  @@index([organizationId, locationId, isActive])
-  @@index([organizationId, isAddon, isActive])
-}
-
-// ═══════════════════════════════════════════
-// SERVICE OVERRIDES (P0.G.1: per-location + per-staff pricing/duration)
-// ═══════════════════════════════════════════
-
-model ServiceLocation {
-  id                      String   @id @default(cuid())
-  serviceId               String
-  service                 Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  locationId              String
-  location                Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  priceOverrideCents      Int?
-  durationOverrideMinutes Int?
-  isAvailable             Boolean  @default(true)
-  pendingPriceApproval    Json?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @default(now()) @updatedAt
-
-  @@unique([serviceId, locationId])
-  @@index([serviceId])
-  @@index([locationId])
-}
-
-model ServiceStaffOverride {
-  id              String   @id @default(cuid())
-  serviceId       String
-  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  staffId         String
-  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  priceCents      Int?
-  durationMinutes Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @default(now()) @updatedAt
-
-  @@unique([serviceId, staffId])
-  @@index([serviceId])
-  @@index([staffId])
-}
-
-model StylistService {
-  id         String   @id @default(cuid())
-  staffId    String
-  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  serviceId  String
-  service    Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  skillLevel String?
-  createdAt  DateTime @default(now())
-
-  @@unique([staffId, serviceId])
-  @@index([staffId])
-  @@index([serviceId])
-}
-
-// ═══════════════════════════════════════════
-// COLOR FORMULAS (P0.G.1: per-client formula history)
-// ═══════════════════════════════════════════
-
-model ColorFormula {
-  id                 String       @id @default(cuid())
-  organizationId     String
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  clientId           String
-  client             Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  appointmentId      String?
-  appointment        Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  staffId            String
-  staff              Staff        @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  formulaVersion     Int          @default(1)
-  formulaIngredients Json
-  processingMinutes  Int?
-  resultNotes        String?
-  beforePhotoUrl     String?
-  afterPhotoUrl      String?
-  allergyChecked     Boolean      @default(false)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @default(now()) @updatedAt
-
-  @@index([clientId, createdAt(sort: Desc)])
-  @@index([organizationId])
-  @@index([appointmentId])
-}
-
-// ═══════════════════════════════════════════
-// CONSENT SIGNATURES (P0.G.1: chemical service waivers)
-// ═══════════════════════════════════════════
-
-/// Immutable audit record — signatures don't change after creation. No updatedAt field intentional.
-model ConsentSignature {
-  id               String       @id @default(cuid())
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  clientId         String
-  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  serviceId        String?
-  service          Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  consentType      String
-  signedAt         DateTime     @default(now())
-  signedDocUrl     String?
-  signatureDataUrl String?
-  ipAddress        String?
-  userAgent        String?
-  expiresAt        DateTime?
-
-  @@index([clientId, signedAt(sort: Desc)])
-  @@index([organizationId])
-}
-
-// ═══════════════════════════════════════════
-// STYLIST SCHEDULING (P0.G.1: weekly recurring + exceptions)
-// ═══════════════════════════════════════════
-
-model StylistSchedule {
-  id                 String    @id @default(cuid())
-  staffId            String
-  staff              Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  locationId         String
-  location           Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  dayOfWeek          Int
-  startTime          DateTime  @db.Time()
-  endTime            DateTime  @db.Time()
-  isWorking          Boolean   @default(true)
-  effectiveStartDate DateTime  @db.Date
-  effectiveEndDate   DateTime? @db.Date
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @default(now()) @updatedAt
-
-  @@unique([staffId, dayOfWeek, effectiveStartDate])
-  @@index([staffId, dayOfWeek])
-  @@index([staffId, effectiveStartDate, effectiveEndDate])
-  @@index([locationId])
-}
-
-model StylistScheduleException {
-  id        String    @id @default(cuid())
-  staffId   String
-  staff     Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  date      DateTime  @db.Date
-  startTime DateTime? @db.Time()
-  endTime   DateTime? @db.Time()
-  isWorking Boolean   @default(false)
-  reason    String?
-  createdAt DateTime  @default(now())
-
-  @@unique([staffId, date])
-  @@index([staffId, date])
-}
-
-// ═══════════════════════════════════════════
-// APPOINTMENTS
-// ═══════════════════════════════════════════
-
-model Appointment {
-  id                          String                     @id @default(cuid())
-  organizationId              String
-  organization                Organization               @relation(fields: [organizationId], references: [id])
-  locationId                  String
-  location                    Location                   @relation(fields: [locationId], references: [id])
-  clientId                    String?
-  client                      Client?                    @relation(fields: [clientId], references: [id])
-  staffId                     String
-  staff                       Staff                      @relation(fields: [staffId], references: [id])
-  serviceId                   String?
-  service                     Service?                   @relation(fields: [serviceId], references: [id])
-  clientName                  String?
-  serviceName                 String?
-  price                       Float?
-  depositPaid                 Float                      @default(0)
-  status                      String                     @default("scheduled")
-  startTime                   DateTime
-  endTime                     DateTime
-  notes                       String?
-  internalNotes               String?
-  isWalkIn                    Boolean                    @default(false)
-  checkoutCode                String?                    @unique
-  checkedInAt                 DateTime?
-  completedAt                 DateTime?
-  cancelledAt                 DateTime?
-  cancelReason                String?
-  reminderSent                Boolean                    @default(false)
-  confirmationSent            Boolean                    @default(false)
-  rebookedFrom                String?
-  seriesId                    String?
-  series                      RecurringSeries?           @relation(fields: [seriesId], references: [id], onDelete: SetNull)
-  bookingSource               String                     @default("STAFF")
-  bookedByUserId              String?
-  bookedByUser                User?                      @relation("BookedByUser", fields: [bookedByUserId], references: [id], onDelete: SetNull)
-  bookedByStaffId             String?
-  bookedByStaff               Staff?                     @relation("BookedByStaff", fields: [bookedByStaffId], references: [id], onDelete: SetNull)
-  preAuthHoldCents            Int?
-  preAuthHoldStatus           String?
-  /// Pre-auth transaction ID from SalonTransact (which routes to Payroc or future processors).
-  /// Processor-agnostic naming intentional — Kasse calls SalonTransact, not Payroc directly.
-  preAuthHoldTxId             String?
-  noShowFeeAppliedCents       Int?
-  cancellationFeeAppliedCents Int?
-  consentSignatureIds         String[]                   @default([])
-  estimatedTotalCents         Int?
-  estimatedTotalMinutes       Int?
-  isFirstVisit                Boolean                    @default(false)
-  formulaIds                  String[]                   @default([])
-  softDeletedAt               DateTime?
-  addons                      AppointmentAddon[]
-  items                       AppointmentItem[]
-  statusHistory               AppointmentStatusHistory[]
-  formSubmissions             FormSubmission[]
-  colorFormulas               ColorFormula[]
-  carts                       Cart[]
-  orders                      Order[]
-  createdAt                   DateTime                   @default(now())
-  updatedAt                   DateTime                   @updatedAt
-
-  @@index([organizationId, locationId, startTime])
-  @@index([organizationId, staffId, startTime])
-  @@index([clientId])
-  @@index([seriesId])
-  @@index([organizationId, bookingSource])
-}
-
-model AppointmentItem {
-  id                       String      @id @default(cuid())
-  appointmentId            String
-  appointment              Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  serviceId                String
-  service                  Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
-  staffId                  String
-  staff                    Staff       @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  scheduledStart           DateTime
-  scheduledEnd             DateTime
-  actualStart              DateTime?
-  actualEnd                DateTime?
-  priceAtBookingCents      Int
-  durationAtBookingMinutes Int
-  isPrimary                Boolean     @default(false)
-  isAddOn                  Boolean     @default(false)
-  displayOrder             Int         @default(0)
-  notes                    String?
-  status                   String      @default("SCHEDULED")
-  completedAt              DateTime?
-  createdAt                DateTime    @default(now())
-  updatedAt                DateTime    @default(now()) @updatedAt
-  cartItems                CartItem[]
-  orderItems               OrderItem[]
-
-  @@index([appointmentId])
-  @@index([serviceId])
-  @@index([staffId, scheduledStart])
-  @@index([appointmentId, status])
-}
-
-model AppointmentStatusHistory {
-  id               String      @id @default(cuid())
-  appointmentId    String
-  appointment      Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  previousStatus   String?
-  newStatus        String
-  changedByUserId  String?
-  changedByUser    User?       @relation("StatusChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
-  changedByStaffId String?
-  changedByStaff   Staff?      @relation("StatusChangedByStaff", fields: [changedByStaffId], references: [id], onDelete: SetNull)
-  changeReason     String?
-  changeSource     String      @default("STAFF")
-  createdAt        DateTime    @default(now())
-
-  @@index([appointmentId, createdAt(sort: Desc)])
-}
-
-model AppointmentAddon {
-  id            String      @id @default(cuid())
-  appointmentId String
-  appointment   Appointment @relation(fields: [appointmentId], references: [id])
-  name          String
-  price         Float
-  duration      Int         @default(0)
-  addedBy       String?
-  createdAt     DateTime    @default(now())
-}
-
-// ═══════════════════════════════════════════
-// RECURRING SERIES (P0.G.2: recurring appointments)
-// ═══════════════════════════════════════════
-
-model RecurringSeries {
-  id                   String        @id @default(cuid())
-  organizationId       String
-  organization         Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId           String
-  location             Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  clientId             String
-  client               Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  staffId              String
-  staff                Staff         @relation(fields: [staffId], references: [id], onDelete: Restrict)
-  primaryServiceId     String
-  primaryService       Service       @relation(fields: [primaryServiceId], references: [id], onDelete: Restrict)
-  frequency            String
-  customIntervalDays   Int?
-  dayOfWeek            Int?
-  preferredTime        DateTime      @db.Time()
-  startDate            DateTime      @db.Date
-  endDate              DateTime?     @db.Date
-  maxOccurrences       Int?
-  occurrencesGenerated Int           @default(0)
-  lastGeneratedThrough DateTime?     @db.Date
-  status               String        @default("ACTIVE")
-  pausedReason         String?
-  pausedUntil          DateTime?     @db.Date
-  notes                String?
-  appointments         Appointment[]
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @default(now()) @updatedAt
-
-  @@index([organizationId, status])
-  @@index([clientId])
-  @@index([staffId, status])
-  @@index([lastGeneratedThrough])
-}
-
-// ═══════════════════════════════════════════
-// CANCELLATION POLICY (P0.G.2: per-service cancellation rules)
-// ═══════════════════════════════════════════
-
-model CancellationPolicy {
-  id                        String       @id @default(cuid())
-  organizationId            String
-  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  serviceId                 String?
-  service                   Service?     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  locationId                String?
-  location                  Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  windowHours               Int          @default(24)
-  cancellationFeeFixedCents Int?
-  cancellationFeePercentage Int?
-  cancellationFeeChargeType String       @default("FIXED")
-  noShowFeeFixedCents       Int?
-  noShowFeePercentage       Int?
-  noShowFeeChargeType       String       @default("FIXED")
-  policyText                String?
-  requirePreAuth            Boolean      @default(false)
-  preAuthAmountCents        Int?
-  isActive                  Boolean      @default(true)
-  createdAt                 DateTime     @default(now())
-  updatedAt                 DateTime     @default(now()) @updatedAt
-
-  @@index([organizationId, isActive])
-  @@index([serviceId])
-  @@index([locationId])
-}
-
-// ═══════════════════════════════════════════
-// BOOKING WINDOW (P0.G.2: per-location booking constraints)
-// ═══════════════════════════════════════════
-
-model BookingWindow {
-  id                               String   @id @default(cuid())
-  locationId                       String   @unique
-  location                         Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  maxDaysAhead                     Int      @default(60)
-  minHoursAhead                    Int      @default(1)
-  slotGranularityMinutes           Int      @default(15)
-  allowSameDayBooking              Boolean  @default(true)
-  allowOnlineBooking               Boolean  @default(true)
-  requireDepositForNewClients      Boolean  @default(false)
-  requireConsultationForNewClients Boolean  @default(false)
-  bufferBetweenAppointmentsMinutes Int      @default(0)
-  maxConcurrentBookingsPerClient   Int      @default(5)
-  createdAt                        DateTime @default(now())
-  updatedAt                        DateTime @default(now()) @updatedAt
-}
-
-// ═══════════════════════════════════════════
-// TRANSACTIONS & PAYMENTS
-// ═══════════════════════════════════════════
-
-model Transaction {
-  id              String            @id @default(cuid())
-  organizationId  String
-  organization    Organization      @relation(fields: [organizationId], references: [id])
-  locationId      String
-  location        Location          @relation(fields: [locationId], references: [id])
-  appointmentId   String?
-  clientId        String?
-  client          Client?           @relation(fields: [clientId], references: [id])
-  staffId         String?
-  clientName      String?
-  subtotal        Float
-  tax             Float             @default(0)
-  tip             Float             @default(0)
-  discount        Float             @default(0)
-  giftCardAmount  Float             @default(0)
-  loyaltyAmount   Float             @default(0)
-  depositApplied  Float             @default(0)
-  total           Float
-  paymentMethod   String?
-  salonTransactId String?
-  stripePaymentId String?
-  status          String            @default("completed")
-  receiptSent     Boolean           @default(false)
-  receiptEmail    String?
-  notes           String?
-  items           TransactionItem[]
-  createdAt       DateTime          @default(now())
-}
-
-model TransactionItem {
-  id             String      @id @default(cuid())
-  transactionId  String
-  transaction    Transaction @relation(fields: [transactionId], references: [id])
-  name           String
-  type           String
-  price          Float
-  quantity       Int         @default(1)
-  staffId        String?
-  commissionRate Float?
-  createdAt      DateTime    @default(now())
-}
-
-// ═══════════════════════════════════════════
-// GIFT CARDS
-// ═══════════════════════════════════════════
-
-model GiftCard {
-  id             String               @id @default(cuid())
-  organizationId String
-  organization   Organization         @relation(fields: [organizationId], references: [id])
-  clientId       String?
-  client         Client?              @relation(fields: [clientId], references: [id])
-  code           String               @unique
-  initialBalance Float
-  balance        Float
-  isActive       Boolean              @default(true)
-  expiresAt      DateTime?
-  purchasedAt    DateTime             @default(now())
-  redemptions    GiftCardRedemption[]
-}
-
-model GiftCardRedemption {
-  id            String   @id @default(cuid())
-  giftCardId    String
-  giftCard      GiftCard @relation(fields: [giftCardId], references: [id])
-  amount        Float
-  transactionId String?
-  redeemedAt    DateTime @default(now())
-}
-
-// ═══════════════════════════════════════════
-// LOYALTY
-// ═══════════════════════════════════════════
-
-model LoyaltyProgram {
-  id              String       @id @default(cuid())
-  organizationId  String       @unique
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  name            String       @default("Rewards")
-  pointsPerDollar Float        @default(1)
-  dollarPerPoint  Float        @default(0.01)
-  minRedemption   Int          @default(100)
-  isActive        Boolean      @default(true)
-  createdAt       DateTime     @default(now())
-}
-
-model LoyaltyEvent {
-  id        String   @id @default(cuid())
-  clientId  String
-  client    Client   @relation(fields: [clientId], references: [id])
-  type      String
-  points    Int
-  balance   Int
-  note      String?
-  createdAt DateTime @default(now())
-}
-
-// ═══════════════════════════════════════════
-// MEMBERSHIPS
-// ═══════════════════════════════════════════
-
-model Membership {
-  id               String             @id @default(cuid())
-  organizationId   String
-  organization     Organization       @relation(fields: [organizationId], references: [id])
-  name             String
-  description      String?
-  price            Float
-  billingCycle     String             @default("monthly")
-  discountType     String?
-  discountValue    Float?
-  servicesIncluded Json?
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  clients          ClientMembership[]
-}
-
-model ClientMembership {
-  id              String     @id @default(cuid())
-  clientId        String
-  client          Client     @relation(fields: [clientId], references: [id])
-  membershipId    String
-  membership      Membership @relation(fields: [membershipId], references: [id])
-  status          String     @default("active")
-  startDate       DateTime   @default(now())
-  nextBillingDate DateTime?
-  stripeSubId     String?
-  createdAt       DateTime   @default(now())
-}
-
-// ═══════════════════════════════════════════
-// WAITLIST
-// ═══════════════════════════════════════════
-
-model WaitlistEntry {
-  id               String       @id @default(cuid())
-  organizationId   String
-  organization     Organization @relation(fields: [organizationId], references: [id])
-  locationId       String
-  location         Location     @relation(fields: [locationId], references: [id])
-  clientId         String?
-  client           Client?      @relation(fields: [clientId], references: [id])
-  clientName       String?
-  clientPhone      String?
-  clientEmail      String?
-  serviceId        String?
-  serviceName      String?
-  preferredStaffId String?
-  preferredDate    DateTime?
-  flexibleDates    Boolean      @default(true)
-  status           String       @default("waiting")
-  notifiedAt       DateTime?
-  expiresAt        DateTime?
-  notes            String?
-  createdAt        DateTime     @default(now())
-}
-
-// ═══════════════════════════════════════════
-// MARKETING & CAMPAIGNS
-// ═══════════════════════════════════════════
-
-model Campaign {
-  id             String              @id @default(cuid())
-  organizationId String
-  organization   Organization        @relation(fields: [organizationId], references: [id])
-  name           String
-  type           String
-  channel        String
-  status         String              @default("draft")
-  subject        String?
-  content        String?
-  htmlContent    String?
-  segmentRules   Json?
-  scheduledAt    DateTime?
-  sentAt         DateTime?
-  sentCount      Int                 @default(0)
-  openCount      Int                 @default(0)
-  clickCount     Int                 @default(0)
-  triggerType    String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  recipients     CampaignRecipient[]
-}
-
-model CampaignRecipient {
-  id         String    @id @default(cuid())
-  campaignId String
-  campaign   Campaign  @relation(fields: [campaignId], references: [id])
-  clientId   String
-  client     Client    @relation(fields: [clientId], references: [id])
-  status     String    @default("pending")
-  sentAt     DateTime?
-  openedAt   DateTime?
-  clickedAt  DateTime?
-}
-
-// ═══════════════════════════════════════════
-// REPUTATION MANAGEMENT
-// ═══════════════════════════════════════════
-
-model ReviewRequest {
-  id             String    @id @default(cuid())
-  organizationId String
-  locationId     String?
-  clientId       String?
-  clientName     String?
-  clientEmail    String?
-  clientPhone    String?
-  transactionId  String?
-  channel        String
-  status         String    @default("sent")
-  rating         Int?
-  feedback       String?
-  pushedToGoogle Boolean   @default(false)
-  pushedToYelp   Boolean   @default(false)
-  sentAt         DateTime  @default(now())
-  respondedAt    DateTime?
-}
-
-// ═══════════════════════════════════════════
-// FORMS & WAIVERS
-// ═══════════════════════════════════════════
-
-model FormTemplate {
-  id                String           @id @default(cuid())
-  organizationId    String
-  name              String
-  type              String
-  fields            Json
-  isActive          Boolean          @default(true)
-  requiresSignature Boolean          @default(false)
-  createdAt         DateTime         @default(now())
-  submissions       FormSubmission[]
-}
-
-model FormSubmission {
-  id             String       @id @default(cuid())
-  formTemplateId String
-  formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
-  clientId       String?
-  client         Client?      @relation(fields: [clientId], references: [id])
-  appointmentId  String?
-  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
-  data           Json
-  signature      String?
-  submittedAt    DateTime     @default(now())
-}
-
-// ═══════════════════════════════════════════
-// PERMISSIONS
-// ═══════════════════════════════════════════
-
-model PermissionSet {
-  id                 String              @id @default(cuid())
-  organizationId     String?
-  name               String
-  permissions        String[]
-  isSystem           Boolean             @default(false)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  organization       Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  users              User[]              @relation("UserCustomRole")
-  groupsUsingThisSet OrganizationGroup[] @relation("GroupPermissionSet")
-
-  @@unique([organizationId, name])
-  @@index([organizationId])
-}
-
-// ═══════════════════════════════════════════
-// SETTINGS
-// ═══════════════════════════════════════════
-
-model BusinessSettings {
-  id                   String       @id @default(cuid())
-  organizationId       String       @unique
-  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  onlineBookingEnabled Boolean      @default(true)
-  bookingLeadTime      Int          @default(60)
-  bookingMaxAdvance    Int          @default(60)
-  allowWalkIns         Boolean      @default(true)
-  requireDeposit       Boolean      @default(false)
-  depositPercentage    Float        @default(25)
-  cancellationPolicy   String?
-  cancellationWindow   Int          @default(24)
-  cancellationFee      Float?
-  sendConfirmations    Boolean      @default(true)
-  sendReminders        Boolean      @default(true)
-  reminderHours        Int          @default(24)
-  sendReviewRequests   Boolean      @default(true)
-  reviewRequestDelay   Int          @default(2)
-  acceptCash           Boolean      @default(true)
-  acceptCard           Boolean      @default(true)
-  acceptGiftCard       Boolean      @default(true)
-  taxRate              Float        @default(8.25)
-  tipPromptEnabled     Boolean      @default(true)
-  tipOptions           Json         @default("[15, 20, 25]")
-  receiptFooter        String?
-  receiptLogo          Boolean      @default(true)
-  autoSendReceipt      Boolean      @default(true)
-  loyaltyEnabled       Boolean      @default(false)
-  googlePlaceId        String?
-  yelpBusinessId       String?
-  autoRequestReviews   Boolean      @default(true)
-  minRatingForGoogle   Int          @default(4)
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
-}
-
-// ═══════════════════════════════════════════
-// DATA IMPORT / MIGRATION
-// ═══════════════════════════════════════════
-
-model ImportJob {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  type           String
-  status         String       @default("pending")
-  fileName       String?
-  totalRows      Int          @default(0)
-  processedRows  Int          @default(0)
-  successRows    Int          @default(0)
-  failedRows     Int          @default(0)
-  errors         Json?
-  sourceSystem   String?
-  createdAt      DateTime     @default(now())
-  completedAt    DateTime?
-}
-
-// ═══════════════════════════════════════════
-// DEVICES & KIOSK
-// ═══════════════════════════════════════════
-
-model Device {
-  id                 String           @id @default(cuid())
-  organizationId     String
-  organization       Organization     @relation(fields: [organizationId], references: [id])
-  locationId         String
-  location           Location         @relation(fields: [locationId], references: [id])
-  name               String
-  type               String
-  deviceCode         String           @unique
-  isActive           Boolean          @default(true)
-  lastSeenAt         DateTime?
-  role               String           @default("STANDALONE_POS")
-  payrocTerminalId   String?
-  pairedChairId      String?
-  pairedChair        Chair?           @relation("DevicePairedChair", fields: [pairedChairId], references: [id], onDelete: SetNull)
-  realtimeChannelId  String?
-  lastHeartbeat      DateTime?
-  platformOs         String?
-  platformVersion    String?
-  isJailbroken       Boolean          @default(false)
-  ipAddressLastSeen  String?
-  softDeletedAt      DateTime?
-  createdAt          DateTime         @default(now())
-  pairingsAsCustomer DevicePairing[]  @relation("PairingCustomerDisplay")
-  pairingsAsStylist  DevicePairing[]  @relation("PairingStylist")
-  pairingsAsTerminal DevicePairing[]  @relation("PairingTerminal")
-  carts              Cart[]           @relation("CartStylistDevice")
-  payments           Payment[]
-  offlineQueues      OfflineQueue[]
-  geolocationLogs    GeolocationLog[]
-
-  @@index([organizationId, role])
-  @@index([locationId, role])
-  @@index([lastHeartbeat])
-}
-
-// ═══════════════════════════════════════════
-// CHAIRS (P0.G.3: per-chair physical seating)
-// ═══════════════════════════════════════════
-
-model Chair {
-  id             String          @id @default(cuid())
-  organizationId String
-  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId     String
-  location       Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  chairNumber    Int
-  name           String?
-  defaultStaffId String?
-  defaultStaff   Staff?          @relation("ChairDefaultStaff", fields: [defaultStaffId], references: [id], onDelete: SetNull)
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @default(now()) @updatedAt
-  devices        Device[]        @relation("DevicePairedChair")
-  pairings       DevicePairing[]
-  carts          Cart[]
-
-  @@unique([locationId, chairNumber])
-  @@index([organizationId, locationId])
-  @@index([defaultStaffId])
-}
-
-model DevicePairing {
-  id                      String    @id @default(cuid())
-  chairId                 String
-  chair                   Chair     @relation(fields: [chairId], references: [id], onDelete: Cascade)
-  customerDisplayDeviceId String?
-  customerDisplayDevice   Device?   @relation("PairingCustomerDisplay", fields: [customerDisplayDeviceId], references: [id], onDelete: SetNull)
-  stylistDeviceId         String?
-  stylistDevice           Device?   @relation("PairingStylist", fields: [stylistDeviceId], references: [id], onDelete: SetNull)
-  terminalDeviceId        String?
-  terminalDevice          Device?   @relation("PairingTerminal", fields: [terminalDeviceId], references: [id], onDelete: SetNull)
-  pairedAt                DateTime  @default(now())
-  unpairedAt              DateTime?
-  isActive                Boolean   @default(true)
-
-  @@index([chairId, isActive])
-  @@index([customerDisplayDeviceId], map: "idx_pairing_customer_display")
-  @@index([stylistDeviceId], map: "idx_pairing_stylist")
-  @@index([terminalDeviceId], map: "idx_pairing_terminal")
-}
-
-// ═══════════════════════════════════════════
-// CART + ORDER + PAYMENT (P0.G.3: iPad POS architecture)
-// ═══════════════════════════════════════════
-
-model Cart {
-  id                    String           @id @default(cuid())
-  organizationId        String
-  organization          Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId            String
-  location              Location         @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  appointmentId         String?
-  appointment           Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  clientId              String?
-  client                Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  chairId               String?
-  chair                 Chair?           @relation(fields: [chairId], references: [id], onDelete: SetNull)
-  activeStylistDeviceId String?
-  activeStylistDevice   Device?          @relation("CartStylistDevice", fields: [activeStylistDeviceId], references: [id], onDelete: SetNull)
-  realtimeChannelId     String           @unique
-  status                String           @default("OPEN")
-  subtotalCents         Int              @default(0)
-  discountCents         Int              @default(0)
-  taxCents              Int              @default(0)
-  tipCents              Int              @default(0)
-  giftCardAppliedCents  Int              @default(0)
-  loyaltyAppliedCents   Int              @default(0)
-  depositAppliedCents   Int              @default(0)
-  totalCents            Int              @default(0)
-  expiresAt             DateTime?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @default(now()) @updatedAt
-  items                 CartItem[]
-  order                 Order?
-  offlineQueues         OfflineQueue[]
-  geolocationLogs       GeolocationLog[]
-
-  @@index([organizationId, status])
-  @@index([appointmentId])
-  @@index([chairId, status])
-  @@index([expiresAt])
-}
-
-model CartItem {
-  id                String           @id @default(cuid())
-  cartId            String
-  cart              Cart             @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  itemType          String
-  displayName       String
-  serviceId         String?
-  service           Service?         @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  appointmentItemId String?
-  appointmentItem   AppointmentItem? @relation(fields: [appointmentItemId], references: [id], onDelete: SetNull)
-  staffId           String?
-  staff             Staff?           @relation("CartItemStaff", fields: [staffId], references: [id], onDelete: SetNull)
-  quantity          Int              @default(1)
-  unitPriceCents    Int
-  discountCents     Int              @default(0)
-  subtotalCents     Int
-  taxableFlag       Boolean          @default(true)
-  taxCents          Int              @default(0)
-  isAddOn           Boolean          @default(false)
-  notes             String?
-  displayOrder      Int              @default(0)
-  createdAt         DateTime         @default(now())
-
-  @@index([cartId])
-  @@index([serviceId])
-  @@index([staffId])
-}
-
-model Order {
-  id                   String       @id @default(cuid())
-  organizationId       String
-  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  locationId           String
-  location             Location     @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  cartId               String       @unique
-  cart                 Cart         @relation(fields: [cartId], references: [id], onDelete: Restrict)
-  orderNumber          String
-  appointmentId        String?
-  appointment          Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  clientId             String?
-  client               Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  clientNameSnapshot   String?
-  subtotalCents        Int
-  discountCents        Int          @default(0)
-  taxCents             Int          @default(0)
-  tipCents             Int          @default(0)
-  giftCardAppliedCents Int          @default(0)
-  loyaltyAppliedCents  Int          @default(0)
-  depositAppliedCents  Int          @default(0)
-  totalCents           Int
-  paidCents            Int          @default(0)
-  balanceDueCents      Int
-  status               String       @default("OPEN")
-  closedAt             DateTime?
-  receiptSentAt        DateTime?
-  receiptEmail         String?
-  receiptPhone         String?
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @default(now()) @updatedAt
-  items                OrderItem[]
-  payments             Payment[]
-  refunds              Refund[]
-
-  @@unique([locationId, orderNumber])
-  @@index([organizationId, status])
-  @@index([organizationId, createdAt(sort: Desc)])
-  @@index([locationId, orderNumber])
-  @@index([clientId])
-  @@index([appointmentId])
-  @@map("Order")
-}
-
-model OrderItem {
-  id                String           @id @default(cuid())
-  orderId           String
-  order             Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  itemType          String
-  displayName       String
-  serviceId         String?
-  service           Service?         @relation(fields: [serviceId], references: [id], onDelete: SetNull)
-  appointmentItemId String?
-  appointmentItem   AppointmentItem? @relation(fields: [appointmentItemId], references: [id], onDelete: SetNull)
-  staffId           String?
-  staff             Staff?           @relation("OrderItemStaff", fields: [staffId], references: [id], onDelete: SetNull)
-  quantity          Int
-  unitPriceCents    Int
-  discountCents     Int              @default(0)
-  subtotalCents     Int
-  taxableFlag       Boolean
-  taxCents          Int              @default(0)
-  isAddOn           Boolean          @default(false)
-  displayOrder      Int              @default(0)
-  createdAt         DateTime         @default(now())
-
-  @@index([orderId])
-  @@index([staffId])
-  @@index([serviceId])
-}
-
-model Payment {
-  id                     String           @id @default(cuid())
-  organizationId         String
-  organization           Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  orderId                String
-  order                  Order            @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  amountCents            Int
-  tipCents               Int              @default(0)
-  paymentMethod          String
-  paymentChannel         String
-  salonTransactPaymentId String?
-  preAuthHoldTxId        String?
-  cardBrand              String?
-  cardLast4              String?
-  status                 String           @default("PENDING")
-  failureCode            String?
-  failureReason          String?
-  processedAt            DateTime?
-  refundedCents          Int              @default(0)
-  deviceId               String?
-  device                 Device?          @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  ipAddress              String?
-  userAgent              String?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @default(now()) @updatedAt
-  /// Idempotency key sent to SalonTransact for this payment. UUID v4. Per SD-K-005
-  /// (agent-native API design), all mutating Reyna Pay / SalonTransact calls require
-  /// idempotency keys. Stored here to enable dedupe audits.
-  idempotencyKey         String?
-  refunds                Refund[]
-  geolocationLogs        GeolocationLog[]
-
-  @@index([organizationId, status])
-  @@index([orderId])
-  @@index([salonTransactPaymentId])
-  @@index([organizationId, createdAt(sort: Desc)])
-  @@index([organizationId, idempotencyKey], map: "idx_payment_idem_org")
-}
-
-model Refund {
-  id                    String       @id @default(cuid())
-  organizationId        String
-  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  paymentId             String
-  payment               Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  orderId               String
-  order                 Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  amountCents           Int
-  reason                String?
-  salonTransactRefundId String?
-  status                String       @default("PENDING")
-  failureCode           String?
-  failureReason         String?
-  processedAt           DateTime?
-  initiatedByUserId     String?
-  initiatedByUser       User?        @relation("RefundInitiatedByUser", fields: [initiatedByUserId], references: [id], onDelete: SetNull)
-  initiatedByStaffId    String?
-  initiatedByStaff      Staff?       @relation("RefundInitiatedByStaff", fields: [initiatedByStaffId], references: [id], onDelete: SetNull)
-  isAiInitiated         Boolean      @default(false)
-  /// Idempotency key sent to SalonTransact for this refund. Same rationale as Payment.
-  idempotencyKey        String?
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @default(now()) @updatedAt
-
-  @@index([organizationId, status])
-  @@index([paymentId])
-  @@index([orderId])
-  @@index([organizationId, idempotencyKey], map: "idx_refund_idem_org")
-}
-
-model OfflineQueue {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  deviceId       String
-  device         Device       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  cartId         String?
-  cart           Cart?        @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  actionType     String
-  actionPayload  Json
-  queuedAt       DateTime     @default(now())
-  syncedAt       DateTime?
-  syncStatus     String       @default("PENDING")
-  syncError      String?
-  syncAttempts   Int          @default(0)
-
-  @@index([deviceId, syncStatus])
-  @@index([queuedAt])
-}
-
-model GeolocationLog {
-  id                       String       @id @default(cuid())
-  organizationId           String
-  organization             Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  locationId               String
-  location                 Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  cartId                   String?
-  cart                     Cart?        @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  paymentId                String?
-  payment                  Payment?     @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  deviceId                 String?
-  device                   Device?      @relation(fields: [deviceId], references: [id], onDelete: SetNull)
-  userId                   String?
-  user                     User?        @relation("GeolocationUser", fields: [userId], references: [id], onDelete: SetNull)
-  staffId                  String?
-  staff                    Staff?       @relation("GeolocationStaff", fields: [staffId], references: [id], onDelete: SetNull)
-  lat                      Float?
-  lng                      Float?
-  accuracyMeters           Float?
-  distanceFromLocationFeet Float?
-  withinGeofence           Boolean
-  managerOverride          Boolean      @default(false)
-  managerOverrideUserId    String?
-  managerOverrideUser      User?        @relation("GeolocationManagerOverride", fields: [managerOverrideUserId], references: [id], onDelete: SetNull)
-  ipAddress                String?
-  ipDerivedLocation        Json?
-  isJailbroken             Boolean      @default(false)
-  userAgent                String?
-  createdAt                DateTime     @default(now())
-
-  @@index([organizationId, createdAt(sort: Desc)])
-  @@index([cartId])
-  @@index([paymentId])
-}
-
-// ═══════════════════════════════════════════
-// NOTIFICATIONS
-// ═══════════════════════════════════════════
-
-model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  type      String
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  link      String?
-  createdAt DateTime @default(now())
-}
-
-// ═══════════════════════════════════════════
-// AUDIT LOG
-// ═══════════════════════════════════════════
-
-model AuditLog {
-  id             String   @id @default(cuid())
-  userId         String?
-  user           User?    @relation(fields: [userId], references: [id])
-  organizationId String?
-  action         String
-  entity         String?
-  entityId       String?
-  before         Json?
-  after          Json?
-  ipAddress      String?
-  userAgent      String?
-  createdAt      DateTime @default(now())
-  route          String?
-  requestId      String?
-  changedFields  String[]
-  metadata       Json?
-
-  @@index([organizationId, createdAt(sort: Desc)])
-  @@index([entity, entityId])
-  @@index([userId, createdAt(sort: Desc)])
-}
-
-// ═══════════════════════════════════════════
-// API KEYS & WEBHOOKS
-// ═══════════════════════════════════════════
-
-model ApiKey {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  name           String
-  keyHash        String       @unique
-  keyPrefix      String
-  lastUsedAt     DateTime?
-  expiresAt      DateTime?
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-}
-
-model Webhook {
-  id              String       @id @default(cuid())
-  organizationId  String
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  url             String
-  events          String[]
-  secret          String
-  isActive        Boolean      @default(true)
-  lastTriggeredAt DateTime?
-  createdAt       DateTime     @default(now())
-}
-
-// ═══════════════════════════════════════════
-// AI RECEPTIONIST
-// ═══════════════════════════════════════════
-
-model AiReceptionistConfig {
-  id               String       @id @default(cuid())
-  organizationId   String       @unique
-  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  isEnabled        Boolean      @default(false)
-  voiceId          String?
-  greeting         String?
-  businessHours    Json?
-  handoffNumber    String?
-  handoffEmail     String?
-  capabilities     Json         @default("{\"booking\": true, \"reschedule\": true, \"cancel\": true, \"faq\": true}")
-  callsHandled     Int          @default(0)
-  callsTransferred Int          @default(0)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-}
-
-model AiReceptionistCall {
-  id             String   @id @default(cuid())
-  organizationId String
-  callerPhone    String?
-  callerName     String?
-  duration       Int?
-  outcome        String?
-  transcript     String?
-  summary        String?
-  rating         Int?
-  recordingUrl   String?
-  createdAt      DateTime @default(now())
-}
-
-// ═══════════════════════════════════════════
-// MESSAGING
-// ═══════════════════════════════════════════
-
-model Message {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  clientId       String
-  client         Client       @relation(fields: [clientId], references: [id])
-  direction      String
-  channel        String       @default("sms")
-  content        String
-  status         String       @default("sent")
-  staffId        String?
-  staff          Staff?       @relation(fields: [staffId], references: [id], onDelete: SetNull)
-  isRead         Boolean      @default(false)
-  sentAt         DateTime     @default(now())
-  readAt         DateTime?
-}
-
-model SavedResponse {
-  id             String   @id @default(cuid())
-  organizationId String
-  title          String
-  content        String
-  category       String?
-  createdAt      DateTime @default(now())
 }
