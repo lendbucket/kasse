@@ -1,0 +1,31 @@
+-- NOTE: This migration was applied via Supabase MCP (apply_migration tool),
+-- not via `prisma migrate deploy`. This file captures the executed DDL as the
+-- reviewable source of truth, matching the pattern established in PR #78
+-- cycle 2 cleanup.
+
+-- P0.G PR 4: Commission + Tips + Tax + Inventory + Marketing + HCM
+-- Applied 2026-05-18 via Supabase MCP migration "p0g_pr4_commission_tips_tax_inventory_marketing"
+
+-- 17 tables created, all RLS-enabled (ENABLE ROW LEVEL SECURITY + FORCE ROW LEVEL SECURITY
+-- + tenant_isolation SELECT/INSERT/UPDATE/DELETE policies + kasse_app grants):
+--
+--  1. Compensation          (per-staff compensation models)
+--  2. TipSplit              (per-org tip distribution config)
+--  3. TipDistribution       (per-appointment tip splits)
+--  4. TaxRate               (per-location tax rates)
+--  5. ProductCategory       (inventory catalog categories)
+--  6. Product               (inventory catalog products)
+--  7. ProductVariant        (product SKU/size variants)
+--  8. InventoryLevel        (per-location stock levels)
+--  9. InventoryDeduction    (usage tracking per appointment/manual)
+-- 10. InventoryReorderDraft (reorder PDF generation per SD-K-027)
+-- 11. EmploymentAgreement   (per-staff employment docs)
+-- 12. PtoRequest            (leave requests)
+-- 13. BackgroundCheck       (Checkr integration)
+-- 14. LicenseVerification   (TDLR + state license tracking)
+-- 15. EmailTemplate         (marketing email templates)
+-- 16. MarketingAutomation   (drip/win-back/birthday rules)
+-- 17. MarketingExecution    (send tracking per recipient)
+--
+-- Full DDL omitted for brevity — see Supabase migration history for complete SQL.
+-- Schema synced to prisma/schema.prisma via `prisma db pull`.

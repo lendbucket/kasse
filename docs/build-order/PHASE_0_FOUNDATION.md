@@ -136,7 +136,7 @@ engine endpoints are deployed by Christopher / Matt.
 clients, formula tracking, devices, carts, POS, commission, inventory, geolocation, 
 multi-location, HCM, and more.
 
-**Status:** PRs 1-3 of 4 shipped. PR 4 remaining.
+**Status:** All 4 PRs shipped.
 
 **Architectural decisions locked for P0.G:**
 - SD-K-016: Dual-iPad POS architecture (Stylist iPad + Customer iPad + Payroc terminal)
@@ -196,7 +196,7 @@ New tables/fields:
 
 Estimated: 10-12 commits.
 
-### P0.G PR 4 — Commission + Tips + Tax + Inventory + Marketing Hooks
+### P0.G PR 4 — Commission + Tips + Tax + Inventory + Marketing Hooks ✅ SHIPPED
 
 New tables/fields:
 - `Compensation`: per-stylist compensation models (staff, modelType enum [W2_COMMISSION / W2_HOURLY / W2_SALARY / CONTRACTOR_1099 / BOOTH_RENTAL / HYBRID], hourlyRateCents, salaryCentsMonthly, baseCommissionPct, perServiceOverrides JSONB array, tieredCommissionConfig JSONB, boothRentCents, boothRentFrequency)
