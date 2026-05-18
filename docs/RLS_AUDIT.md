@@ -625,3 +625,34 @@ found 19 WARN-level findings, all addressed in migration
 - The read-only helpers (app_current_org_id, app_is_superadmin, app_actor_user_id, app_request_id) keep PUBLIC EXECUTE since they only return the caller's own session variables.
 - The `kasse_app` Prisma connection role keeps EXECUTE on all mutating functions via explicit GRANT — app code unaffected.
 - Post-migration: `get_advisors(type='security')` returns ZERO findings.
+
+## P0.G.1 Tables — RLS Classification (2026-05-18)
+
+All 7 new tables from P0.G PR 1 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `ServiceLocation` | JOIN via `Service.organizationId` | EXISTS subquery on Service |
+| `ServiceStaffOverride` | JOIN via `Service.organizationId` | EXISTS subquery on Service |
+| `StylistService` | JOIN via `Staff.organizationId` | EXISTS subquery on Staff |
+| `ColorFormula` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `ConsentSignature` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `StylistSchedule` | JOIN via `Staff.organizationId` | EXISTS subquery on Staff |
+| `StylistScheduleException` | JOIN via `Staff.organizationId` | EXISTS subquery on Staff |
+
+All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.G.1 Helper Functions
+
+The following helpers in `lib/` require TENANT_SCOPED context (must be called inside `withTenantScope`):
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `getServicePriceForBooking` | `lib/services/pricing` | Resolves effective price with staff > location > base override priority |
+| `getServiceDurationForBooking` | `lib/services/pricing` | Resolves effective duration + buffer + processing |
+| `resolveStylistAvailability` | `lib/scheduling/availability` | Resolves schedule for a date (exception > schedule > none) |
+| `getClientFormulaHistory` | `lib/formulas/history` | Returns formula history for a client, newest first |
+| `nextFormulaVersionForClient` | `lib/formulas/history` | Auto-increments formula version per client |
+| `softDeleteClient` | `lib/clients/soft-delete` | Sets softDeletedAt + writes audit log entry |
+
+All helpers take `tx: Prisma.TransactionClient` as first argument. Future route authors: do NOT import bare prisma into route code. Pass the scoped `tx` from `withTenantScope`.

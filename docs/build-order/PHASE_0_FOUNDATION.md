@@ -130,13 +130,13 @@ engine endpoints are deployed by Christopher / Matt.
 
 ---
 
-## P0.G — Schema Foundations (15 PRs) — NEXT
+## P0.G — Schema Foundations (4 PRs) — IN PROGRESS
 
 **Goal:** Add the schema needed by P1-P12. Includes onboarding, services, scheduling, 
 clients, formula tracking, devices, carts, POS, commission, inventory, geolocation, 
 multi-location, HCM, and more.
 
-**Status:** Not started. **This is the next sub-phase.**
+**Status:** PR 1 of 4 shipped. PRs 2-4 remaining.
 
 **Architectural decisions locked for P0.G:**
 - SD-K-016: Dual-iPad POS architecture (Stylist iPad + Customer iPad + Payroc terminal)
@@ -157,7 +157,7 @@ multi-location, HCM, and more.
 
 **PR breakdown (4 atomic PRs):**
 
-### P0.G PR 1 — Service Catalog + Client + Stylist Scheduling
+### P0.G PR 1 — Service Catalog + Client + Stylist Scheduling ✅ SHIPPED
 
 New tables/fields:
 - `Service`: extend existing with `productCost`, `consumableCost`, `targetMarginPct`, `processingMinutes` (for color services), `addOnVisibleOnBookingMenu` (boolean)
