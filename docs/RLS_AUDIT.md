@@ -853,6 +853,33 @@ Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `getValues` | `lib/custom-fields/values` | Read all custom field values for an entity |
 | `deleteValue` | `lib/custom-fields/values` | Remove a value (field cleared) |
 
+## P1.A.1 Tables — RLS Classification (2026-05-18)
+
+Both new tables from P1.A.1 have RLS ENABLED + FORCE ROW LEVEL SECURITY. These are SUPERADMIN_PROTECTED tables (same pattern as FeatureFlag/FeatureFlagAudit): all writes go through `prismaAdmin` helpers; DB-level policies restrict to SUPERADMIN only for writes.
+
+| Table | Scoping Strategy | Read Policy | Write Policy |
+|-------|-----------------|-------------|--------------|
+| `OnboardingSession` | PRE_ACCOUNT (no orgId initially) | Session owner (`userId` = `app.actor_user_id`) OR SUPERADMIN | SUPERADMIN only |
+| `OnboardingStateTransition` | JOIN via OnboardingSession | SUPERADMIN only | SUPERADMIN only |
+
+Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+**Deployment note:** The migration includes `GRANT ... TO kasse_app` statements that require the `postgres` role (the migration role), not `kasse_app`. When running `prisma migrate deploy` in CI/CD, ensure `MIGRATION_DATABASE_URL` is set (postgres-role connection), not just `DATABASE_URL` (kasse_app-role connection). Same pattern as P0.I PR 2 (Tags).
+
+### P1.A.1 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `getOrCreateSession` | `lib/onboarding/sessions` | Idempotent session entry point |
+| `getSessionById` | `lib/onboarding/sessions` | Direct lookup |
+| `getSessionByEmail` | `lib/onboarding/sessions` | Find active session by email |
+| `transitionTo` | `lib/onboarding/sessions` | Forward-only state transition + audit |
+| `skipStep` | `lib/onboarding/sessions` | Skip a skippable step |
+| `patchData` | `lib/onboarding/sessions` | Save scratch data without state change |
+| `linkResource` | `lib/onboarding/sessions` | Attach userId/orgId/locationId |
+| `signResumeToken` | `lib/onboarding/resume-token` | Issue JWT resume token |
+| `verifyResumeToken` | `lib/onboarding/resume-token` | Verify + load session from token |
+
 ## P0.I.3 — Audit Extension (2026-05-18)
 
 No new tables. Added performance indexes on existing AuditLog table:

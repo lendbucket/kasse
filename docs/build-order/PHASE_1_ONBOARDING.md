@@ -1,8 +1,9 @@
 # PHASE 1 — ONBOARDING
 
+**Status:** In progress (P1.A.1 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
-**Depends on:** P0 (foundation must be merged)
+**Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
 **Gates:** P1.C.4.2 (embedded Reyna Pay application iframe) requires REYNA_PAY engine ready.
 
 **Reference docs:** KASSE_ONBOARDING.md (full 8-step spec + 30-day email sequence), KASSE_PORTALS.md, KASSE_PORTAL_ARCHITECTURE.md.
@@ -11,9 +12,13 @@
 
 ## P1.A — Signup Foundation (15 PRs)
 
-### P1.A.1 — `app/signup/page.tsx`: signup form with vertical selector
+### P1.A.1 — Onboarding state machine + resume tokens ✅ COMPLETE
 
-Form fields: email, password, businessName, verticalId (33-vertical picker), country (US default). Submit creates User + Organization + Location + OnboardingSession in transaction.
+OnboardingSession table (per-email signup tracking with 10-state forward-only machine),
+OnboardingStateTransition table (audit trail), JWT-based resume tokens (ONBOARDING_RESUME_SECRET,
+7-day TTL). Helpers: getOrCreateSession, transitionTo, skipStep, patchData, linkResource,
+signResumeToken, verifyResumeToken. Both tables RLS-enabled (SUPERADMIN-only writes via
+prismaAdmin). No UI or API routes — pure infrastructure for P1.A.2+.
 
 ### P1.A.2 — Vertical picker UI (categorized)
 

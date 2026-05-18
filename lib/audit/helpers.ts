@@ -27,6 +27,11 @@ export const AuditAction = {
   TAG_ATTACH: "tag.attach",
   TAG_DETACH: "tag.detach",
   AUDIT_RETENTION_COMPLETED: "audit_retention.completed",
+  ONBOARDING_SESSION_CREATED: "onboarding_session.created",
+  ONBOARDING_SESSION_TRANSITIONED: "onboarding_session.transitioned",
+  ONBOARDING_SESSION_SKIPPED_STEP: "onboarding_session.skipped_step",
+  ONBOARDING_SESSION_COMPLETED: "onboarding_session.completed",
+  ONBOARDING_RESUME_LINK_SENT: "onboarding_session.resume_link_sent",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
