@@ -123,14 +123,14 @@ These library helpers must be called inside a `withTenantScope` block — they a
 
 ## Summary
 
-- TENANT_SCOPED: **26**
+- TENANT_SCOPED: **28**
 - BYPASS_NEEDED: **13**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **8** (admin portal operations — 5 original + 3 feature-flag routes)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 40**
+**Total routes: 42**
 
 ## What happens next
 
@@ -811,6 +811,38 @@ variable (set by `app_set_actor`). Returns true only if the user's role is `SUPE
 
 The evaluate helpers are called inside `withTenantScope` in the dashboard layout for
 flag hydration. The admin helpers are called inside `withAdminScope` in admin API routes.
+
+## P0.I.1 Tables — RLS Classification (2026-05-18)
+
+Both new tables from P0.I PR 1 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `CustomFieldDefinition` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `CustomFieldValue` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+
+Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.I.1 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/custom-fields/definitions` | GET, POST | TENANT_SCOPED | Lists/creates definitions; uses `requireTenantContext` + `withTenantScope`; POST restricted to OWNER/MANAGER/SUPERADMIN |
+| `/api/custom-fields/definitions/[id]` | PATCH, DELETE | TENANT_SCOPED | Updates/soft-deletes definitions; uses `requireTenantContext` + `withTenantScope`; restricted to OWNER/MANAGER/SUPERADMIN |
+
+### P0.I.1 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createDefinition` | `lib/custom-fields/definitions` | Create field definition + audit log |
+| `updateDefinition` | `lib/custom-fields/definitions` | Update definition (immutable key/fieldType/targetEntity) + audit log |
+| `softDeleteDefinition` | `lib/custom-fields/definitions` | Soft-delete definition + audit log |
+| `listDefinitions` | `lib/custom-fields/definitions` | List active definitions by org + targetEntity |
+| `validateValue` | `lib/custom-fields/validate` | Type-discriminated validation with rule enforcement |
+| `setValue` | `lib/custom-fields/values` | Upsert single field value with validation |
+| `setValues` | `lib/custom-fields/values` | Batch upsert with all-or-nothing validation + required field check |
+| `getValues` | `lib/custom-fields/values` | Read all custom field values for an entity |
+| `deleteValue` | `lib/custom-fields/values` | Remove a value (field cleared) |
 
 ## P0.H.3 Column Additions — RLS Note (2026-05-18)
 

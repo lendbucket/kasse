@@ -110,6 +110,8 @@ model Organization {
   colorFormulas          ColorFormula[]
   compensations          Compensation[]
   consentSignatures      ConsentSignature[]
+  customFieldDefinitions CustomFieldDefinition[]
+  customFieldValues      CustomFieldValue[]
   devices                Device[]
   emailTemplates         EmailTemplate[]
   employmentAgreements   EmploymentAgreement[]
@@ -179,6 +181,8 @@ model User {
   bookedAppointments          Appointment[]              @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[] @relation("StatusChangedByUser")
   auditLogs                   AuditLog[]
+  createdCustomFieldDefs      CustomFieldDefinition[]    @relation("CustomFieldDefinitionCreatedBy")
+  updatedCustomFieldValues    CustomFieldValue[]         @relation("CustomFieldValueUpdatedBy")
   createdFeatureFlags         FeatureFlag[]              @relation("FeatureFlagCreatedBy")
   updatedFeatureFlags         FeatureFlag[]              @relation("FeatureFlagUpdatedBy")
   featureFlagAudits           FeatureFlagAudit[]
@@ -2028,6 +2032,56 @@ model FeatureFlagAudit {
 
   @@index([flagId, createdAt(sort: Desc)], map: "idx_featureflagaudit_flag")
   @@index([changedByUserId], map: "idx_featureflagaudit_user", where: raw("(\"changedByUserId\" IS NOT NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model CustomFieldDefinition {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  targetEntity       String
+  key                String
+  displayName        String
+  description        String?
+  fieldType          String
+  isRequired         Boolean            @default(false)
+  displayOrder       Int                @default(0)
+  validationRules    Json               @default("{}")
+  defaultValue       Json?
+  visibleToCustomers Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId    String?
+  softDeletedAt      DateTime?          @db.Timestamptz(6)
+  createdBy          User?              @relation("CustomFieldDefinitionCreatedBy", fields: [createdByUserId], references: [id], onUpdate: NoAction)
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  values             CustomFieldValue[]
+
+  @@unique([organizationId, targetEntity, key])
+  @@index([isActive], map: "idx_cfd_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([organizationId, targetEntity], map: "idx_cfd_org_entity", where: raw("((\"isActive\" = true) AND (\"softDeletedAt\" IS NULL))"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model CustomFieldValue {
+  id              String                @id @default(cuid())
+  organizationId  String
+  definitionId    String
+  entityId        String
+  value           Json
+  createdAt       DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId String?
+  definition      CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updatedBy       User?                 @relation("CustomFieldValueUpdatedBy", fields: [updatedByUserId], references: [id], onUpdate: NoAction)
+
+  @@unique([definitionId, entityId])
+  @@index([definitionId], map: "idx_cfv_definition")
+  @@index([entityId], map: "idx_cfv_entity")
+  @@index([organizationId, entityId], map: "idx_cfv_org_entity")
+  @@index([value], map: "idx_cfv_value_gin", type: Gin)
 }
 
 enum Role {
