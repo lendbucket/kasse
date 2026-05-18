@@ -656,3 +656,39 @@ The following helpers in `lib/` require TENANT_SCOPED context (must be called in
 | `softDeleteClient` | `lib/clients/soft-delete` | Sets softDeletedAt + writes audit log entry |
 
 All helpers take `tx: Prisma.TransactionClient` as first argument. Future route authors: do NOT import bare prisma into route code. Pass the scoped `tx` from `withTenantScope`.
+
+## Migration Pattern Note
+
+All schema migrations from P0.G onward are applied via Supabase MCP (`apply_migration` tool)
+and recorded locally in `prisma/migrations/` as the source-of-truth DDL file. Prisma does NOT
+execute these migrations — `prisma db pull` syncs the schema.prisma from the live DB. This
+pattern is intentional: Supabase is the single deployment target, and the MCP tool provides
+transactional guarantees.
+
+## P0.G.2 Tables — RLS Classification (2026-05-18)
+
+All 5 new tables from P0.G PR 2 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `AppointmentItem` | JOIN via `Appointment.organizationId` | EXISTS subquery on Appointment |
+| `RecurringSeries` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `CancellationPolicy` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `BookingWindow` | Two-hop via `Location.organizationId` (no direct orgId column) | EXISTS subquery on Location |
+| `AppointmentStatusHistory` | JOIN via `Appointment.organizationId` | EXISTS subquery on Appointment |
+
+All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.G.2 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createAppointmentWithItems` | `lib/appointments/booking` | Atomic appointment + items + status history + audit |
+| `updateAppointmentStatus` | `lib/appointments/booking` | Status change with audit trail + auto-timestamps |
+| `resolveCancellationPolicy` | `lib/booking/cancellation-policy` | SERVICE > LOCATION > ORG > DEFAULT priority resolution |
+| `calculateCancellationFee` | `lib/booking/cancellation-policy` | FIXED/PERCENTAGE fee math with no-show vs window logic |
+| `validateBookingWindow` | `lib/booking/validation` | Checks all per-location booking window constraints |
+| `staffCanPerformService` | `lib/booking/validation` | StylistService link check |
+| `hasTimeConflict` | `lib/booking/validation` | Overlap detection on stylist schedule items |
+| `nextOccurrenceDate` | `lib/recurring/generate` | Frequency-aware date math |
+| `generateNextOccurrences` | `lib/recurring/generate` | Idempotent batch generation for recurring series |

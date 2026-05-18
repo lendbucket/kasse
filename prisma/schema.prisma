@@ -217,6 +217,8 @@ model Organization {
   organizationGroups     OrganizationGroup[]   @relation("OrgGroups")
   colorFormulas          ColorFormula[]
   consentSignatures      ConsentSignature[]
+  recurringSeries        RecurringSeries[]
+  cancellationPolicies   CancellationPolicy[]
 
   @@index([verticalId])
   @@index([planTier])
@@ -227,33 +229,35 @@ model Organization {
 // ═══════════════════════════════════════════
 
 model User {
-  id                 String         @id @default(cuid())
+  id                 String                     @id @default(cuid())
   name               String?
-  email              String         @unique
+  email              String                     @unique
   emailVerified      DateTime?
   emailVerifyToken   String?
   emailVerifyExp     DateTime?
   password           String?
   image              String?
-  role               Role           @default(STAFF)
+  role               Role                       @default(STAFF)
   organizationId     String?
-  organization       Organization?  @relation(fields: [organizationId], references: [id])
+  organization       Organization?              @relation(fields: [organizationId], references: [id])
   locationId         String?
   customRoleId       String?
-  customRole         PermissionSet? @relation("UserCustomRole", fields: [customRoleId], references: [id], onDelete: SetNull)
-  isActive           Boolean        @default(true)
+  customRole         PermissionSet?             @relation("UserCustomRole", fields: [customRoleId], references: [id], onDelete: SetNull)
+  isActive           Boolean                    @default(true)
   lastLoginAt        DateTime?
   passwordResetToken String?
   passwordResetExp   DateTime?
-  twoFactorEnabled   Boolean        @default(false)
+  twoFactorEnabled   Boolean                    @default(false)
   twoFactorSecret    String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
   accounts           Account[]
   sessions           Session[]
   auditLogs          AuditLog[]
   notifications      Notification[]
-  staff              Staff?         @relation("UserStaff")
+  staff              Staff?                     @relation("UserStaff")
+  bookedAppointments Appointment[]              @relation("BookedByUser")
+  statusChanges      AppointmentStatusHistory[] @relation("StatusChangedByUser")
 
   @@index([customRoleId])
 }
@@ -297,9 +301,9 @@ model VerificationToken {
 // ═══════════════════════════════════════════
 
 model Location {
-  id                      String             @id @default(cuid())
+  id                      String               @id @default(cuid())
   organizationId          String
-  organization            Organization       @relation(fields: [organizationId], references: [id])
+  organization            Organization         @relation(fields: [organizationId], references: [id])
   name                    String
   address                 String?
   city                    String?
@@ -307,19 +311,19 @@ model Location {
   zip                     String?
   phone                   String?
   email                   String?
-  timezone                String             @default("America/Chicago")
-  isActive                Boolean            @default(true)
-  taxRate                 Float              @default(8.25)
+  timezone                String               @default("America/Chicago")
+  isActive                Boolean              @default(true)
+  taxRate                 Float                @default(8.25)
   logoUrl                 String?
   coverImageUrl           String?
   lat                     Float?
   lng                     Float?
-  geofenceRadius          Int                @default(100)
+  geofenceRadius          Int                  @default(100)
   businessHours           Json?
   groupId                 String?
-  group                   OrganizationGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  group                   OrganizationGroup?   @relation(fields: [groupId], references: [id], onDelete: SetNull)
   salonTransactLocationId String?
-  createdAt               DateTime           @default(now())
+  createdAt               DateTime             @default(now())
   staff                   Staff[]
   clients                 Client[]
   services                Service[]
@@ -329,6 +333,9 @@ model Location {
   waitlistEntries         WaitlistEntry[]
   serviceLocations        ServiceLocation[]
   stylistSchedules        StylistSchedule[]
+  bookingWindow           BookingWindow?
+  recurringSeries         RecurringSeries[]
+  cancellationPolicies    CancellationPolicy[]
 
   @@index([groupId])
 }
@@ -373,6 +380,10 @@ model Staff {
   stylistSchedules      StylistSchedule[]
   scheduleExceptions    StylistScheduleException[]
   colorFormulas         ColorFormula[]
+  appointmentItems      AppointmentItem[]
+  bookedAppointments    Appointment[]              @relation("BookedByStaff")
+  statusChanges         AppointmentStatusHistory[] @relation("StatusChangedByStaff")
+  recurringSeries       RecurringSeries[]
 
   @@index([organizationId, isActive])
 }
@@ -464,6 +475,7 @@ model Client {
   messages                Message[]
   colorFormulas           ColorFormula[]
   consentSignatures       ConsentSignature[]
+  recurringSeries         RecurringSeries[]
 
   @@index([organizationId, isActive])
 }
@@ -522,6 +534,9 @@ model Service {
   serviceStaffOverrides     ServiceStaffOverride[]
   stylistServices           StylistService[]
   consentSignatures         ConsentSignature[]
+  appointmentItems          AppointmentItem[]
+  recurringSeries           RecurringSeries[]
+  cancellationPolicies      CancellationPolicy[]
 
   @@index([organizationId, locationId, isActive])
   @@index([organizationId, isAddon, isActive])
@@ -678,44 +693,114 @@ model StylistScheduleException {
 // ═══════════════════════════════════════════
 
 model Appointment {
-  id               String             @id @default(cuid())
-  organizationId   String
-  organization     Organization       @relation(fields: [organizationId], references: [id])
-  locationId       String
-  location         Location           @relation(fields: [locationId], references: [id])
-  clientId         String?
-  client           Client?            @relation(fields: [clientId], references: [id])
-  staffId          String
-  staff            Staff              @relation(fields: [staffId], references: [id])
-  serviceId        String?
-  service          Service?           @relation(fields: [serviceId], references: [id])
-  clientName       String?
-  serviceName      String?
-  price            Float?
-  depositPaid      Float              @default(0)
-  status           String             @default("scheduled")
-  startTime        DateTime
-  endTime          DateTime
-  notes            String?
-  internalNotes    String?
-  isWalkIn         Boolean            @default(false)
-  checkoutCode     String?            @unique
-  checkedInAt      DateTime?
-  completedAt      DateTime?
-  cancelledAt      DateTime?
-  cancelReason     String?
-  reminderSent     Boolean            @default(false)
-  confirmationSent Boolean            @default(false)
-  rebookedFrom     String?
-  addons           AppointmentAddon[]
-  formSubmissions  FormSubmission[]
-  colorFormulas    ColorFormula[]
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  id                          String                     @id @default(cuid())
+  organizationId              String
+  organization                Organization               @relation(fields: [organizationId], references: [id])
+  locationId                  String
+  location                    Location                   @relation(fields: [locationId], references: [id])
+  clientId                    String?
+  client                      Client?                    @relation(fields: [clientId], references: [id])
+  staffId                     String
+  staff                       Staff                      @relation(fields: [staffId], references: [id])
+  serviceId                   String?
+  service                     Service?                   @relation(fields: [serviceId], references: [id])
+  clientName                  String?
+  serviceName                 String?
+  price                       Float?
+  depositPaid                 Float                      @default(0)
+  status                      String                     @default("scheduled")
+  startTime                   DateTime
+  endTime                     DateTime
+  notes                       String?
+  internalNotes               String?
+  isWalkIn                    Boolean                    @default(false)
+  checkoutCode                String?                    @unique
+  checkedInAt                 DateTime?
+  completedAt                 DateTime?
+  cancelledAt                 DateTime?
+  cancelReason                String?
+  reminderSent                Boolean                    @default(false)
+  confirmationSent            Boolean                    @default(false)
+  rebookedFrom                String?
+  seriesId                    String?
+  series                      RecurringSeries?           @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  bookingSource               String                     @default("STAFF")
+  bookedByUserId              String?
+  bookedByUser                User?                      @relation("BookedByUser", fields: [bookedByUserId], references: [id], onDelete: SetNull)
+  bookedByStaffId             String?
+  bookedByStaff               Staff?                     @relation("BookedByStaff", fields: [bookedByStaffId], references: [id], onDelete: SetNull)
+  preAuthHoldCents            Int?
+  preAuthHoldStatus           String?
+  /// Pre-auth transaction ID from SalonTransact (which routes to Payroc or future processors).
+  /// Processor-agnostic naming intentional — Kasse calls SalonTransact, not Payroc directly.
+  preAuthHoldTxId             String?
+  noShowFeeAppliedCents       Int?
+  cancellationFeeAppliedCents Int?
+  consentSignatureIds         String[]                   @default([])
+  estimatedTotalCents         Int?
+  estimatedTotalMinutes       Int?
+  isFirstVisit                Boolean                    @default(false)
+  formulaIds                  String[]                   @default([])
+  softDeletedAt               DateTime?
+  addons                      AppointmentAddon[]
+  items                       AppointmentItem[]
+  statusHistory               AppointmentStatusHistory[]
+  formSubmissions             FormSubmission[]
+  colorFormulas               ColorFormula[]
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
 
   @@index([organizationId, locationId, startTime])
   @@index([organizationId, staffId, startTime])
   @@index([clientId])
+  @@index([seriesId])
+  @@index([organizationId, bookingSource])
+}
+
+model AppointmentItem {
+  id                       String      @id @default(cuid())
+  appointmentId            String
+  appointment              Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  serviceId                String
+  service                  Service     @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staffId                  String
+  staff                    Staff       @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  scheduledStart           DateTime
+  scheduledEnd             DateTime
+  actualStart              DateTime?
+  actualEnd                DateTime?
+  priceAtBookingCents      Int
+  durationAtBookingMinutes Int
+  isPrimary                Boolean     @default(false)
+  isAddOn                  Boolean     @default(false)
+  displayOrder             Int         @default(0)
+  notes                    String?
+  status                   String      @default("SCHEDULED")
+  completedAt              DateTime?
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @default(now()) @updatedAt
+
+  @@index([appointmentId])
+  @@index([serviceId])
+  @@index([staffId, scheduledStart])
+  @@index([appointmentId, status])
+}
+
+model AppointmentStatusHistory {
+  id               String      @id @default(cuid())
+  appointmentId    String
+  appointment      Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  previousStatus   String?
+  newStatus        String
+  changedByUserId  String?
+  changedByUser    User?       @relation("StatusChangedByUser", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  changedByStaffId String?
+  changedByStaff   Staff?      @relation("StatusChangedByStaff", fields: [changedByStaffId], references: [id], onDelete: SetNull)
+  changeReason     String?
+  changeSource     String      @default("STAFF")
+  createdAt        DateTime    @default(now())
+
+  @@index([appointmentId, createdAt(sort: Desc)])
 }
 
 model AppointmentAddon {
@@ -727,6 +812,97 @@ model AppointmentAddon {
   duration      Int         @default(0)
   addedBy       String?
   createdAt     DateTime    @default(now())
+}
+
+// ═══════════════════════════════════════════
+// RECURRING SERIES (P0.G.2: recurring appointments)
+// ═══════════════════════════════════════════
+
+model RecurringSeries {
+  id                   String        @id @default(cuid())
+  organizationId       String
+  organization         Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  locationId           String
+  location             Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  clientId             String
+  client               Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  staffId              String
+  staff                Staff         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  primaryServiceId     String
+  primaryService       Service       @relation(fields: [primaryServiceId], references: [id], onDelete: Restrict)
+  frequency            String
+  customIntervalDays   Int?
+  dayOfWeek            Int?
+  preferredTime        DateTime      @db.Time()
+  startDate            DateTime      @db.Date
+  endDate              DateTime?     @db.Date
+  maxOccurrences       Int?
+  occurrencesGenerated Int           @default(0)
+  lastGeneratedThrough DateTime?     @db.Date
+  status               String        @default("ACTIVE")
+  pausedReason         String?
+  pausedUntil          DateTime?     @db.Date
+  notes                String?
+  appointments         Appointment[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @default(now()) @updatedAt
+
+  @@index([organizationId, status])
+  @@index([clientId])
+  @@index([staffId, status])
+  @@index([lastGeneratedThrough])
+}
+
+// ═══════════════════════════════════════════
+// CANCELLATION POLICY (P0.G.2: per-service cancellation rules)
+// ═══════════════════════════════════════════
+
+model CancellationPolicy {
+  id                        String       @id @default(cuid())
+  organizationId            String
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  serviceId                 String?
+  service                   Service?     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  locationId                String?
+  location                  Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  windowHours               Int          @default(24)
+  cancellationFeeFixedCents Int?
+  cancellationFeePercentage Int?
+  cancellationFeeChargeType String       @default("FIXED")
+  noShowFeeFixedCents       Int?
+  noShowFeePercentage       Int?
+  noShowFeeChargeType       String       @default("FIXED")
+  policyText                String?
+  requirePreAuth            Boolean      @default(false)
+  preAuthAmountCents        Int?
+  isActive                  Boolean      @default(true)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @default(now()) @updatedAt
+
+  @@index([organizationId, isActive])
+  @@index([serviceId])
+  @@index([locationId])
+}
+
+// ═══════════════════════════════════════════
+// BOOKING WINDOW (P0.G.2: per-location booking constraints)
+// ═══════════════════════════════════════════
+
+model BookingWindow {
+  id                               String   @id @default(cuid())
+  locationId                       String   @unique
+  location                         Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  maxDaysAhead                     Int      @default(60)
+  minHoursAhead                    Int      @default(1)
+  slotGranularityMinutes           Int      @default(15)
+  allowSameDayBooking              Boolean  @default(true)
+  allowOnlineBooking               Boolean  @default(true)
+  requireDepositForNewClients      Boolean  @default(false)
+  requireConsultationForNewClients Boolean  @default(false)
+  bufferBetweenAppointmentsMinutes Int      @default(0)
+  maxConcurrentBookingsPerClient   Int      @default(5)
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @default(now()) @updatedAt
 }
 
 // ═══════════════════════════════════════════

@@ -12,6 +12,9 @@ export const AuditAction = {
   ORGANIZATION_GROUP_UPDATE: "organization_group.update",
   ORGANIZATION_GROUP_DELETE: "organization_group.delete",
   CLIENT_SOFT_DELETE: "client.soft_delete",
+  APPOINTMENT_CREATE: "appointment.create",
+  APPOINTMENT_STATUS_CHANGE: "appointment.status_change",
+  APPOINTMENT_CREATE_RECURRING: "appointment.create_recurring",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
