@@ -26,6 +26,7 @@ export const AuditAction = {
   TAG_DELETE: "tag.delete",
   TAG_ATTACH: "tag.attach",
   TAG_DETACH: "tag.detach",
+  AUDIT_RETENTION_COMPLETED: "audit_retention.completed",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

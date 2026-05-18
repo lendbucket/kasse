@@ -1,8 +1,8 @@
 # PHASE 0 — FOUNDATION
 
-**Status:** In progress (P0.A–P0.D complete, P0.G–P0.J remaining)
-**Total PRs shipped:** 32 (P0.A: 21, P0.B: 4, P0.C: 3, Security: 1, P0.D: 3)
-**Remaining PRs estimate:** ~18–22 across P0.G/H/I/J
+**Status:** COMPLETE
+**Total PRs shipped:** 47 (P0.A: 21, P0.B: 4, P0.C: 3, Security: 1, P0.D: 3, P0.G: 4, P0.H: 3, P0.I: 3, Doc Reconciliation: 4, P0.J: 1)
+**Remaining PRs:** 0 (P0.E + P0.F gated until Reyna Pay engine ships)
 **Authority:** KASSE_STRATEGIC_DECISIONS.md v2.0 — every architectural decision
 referenced here is locked.
 
@@ -301,22 +301,19 @@ Estimated: 12-15 commits.
 
 ---
 
-## P0.J — Status Page (1-2 PRs)
+## P0.J — Status Page (1 PR) ✅ COMPLETE
 
-**Status:** Not started. Lands last in P0.
+**Status:** Complete.
 
-**Components on status page:**
-- Web Portal (portal.kasseapp.com)
-- API (api.kasseapp.com once shipped)
-- Webhooks
-- Mobile Apps (iOS + Android)
-- AI Receptionist (Twilio + OpenAI Realtime)
-- Email/SMS Delivery (Resend + Twilio)
-- Payment Processing (linked from SalonTransact)
+### P0.J PR 1 — Status Page + Internal Health Endpoint ✅ COMPLETE
 
-**Provider options:** BetterStack ($29/mo for 10 components, supports email subscribers, custom domain, branded). Alternative: build minimal page in Next.js as a side route.
-
-**Recommended:** BetterStack v1 for speed; migrate to own infrastructure as part of v2 trust/scale work.
+- BetterStack ($29/mo) handles public uptime monitoring, status page hosting, incident management
+- `/api/health` — public health endpoint with 5 parallel checks: database (SELECT 1), sentry (DSN format), resend (API key), storage (Supabase env vars), cron heartbeat (audit_retention.completed entry freshness)
+- Returns 200 `{ok: true}` or 503 `{ok: false}` — informationally minimal, no version strings/IPs/stack traces
+- `/status` — public server-rendered page showing live health + BetterStack link (when NEXT_PUBLIC_BETTERSTACK_STATUS_URL is set)
+- Inline styles only — page renders even when global CSS fails
+- `runAuditRetention` (P0.I.3) now writes `audit_retention.completed` audit entry for heartbeat detection
+- AUDIT_RETENTION_COMPLETED added to AuditAction constants
 
 ---
 
@@ -330,10 +327,10 @@ Estimated: 12-15 commits.
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
 - ✅ P0.H — observability, feature flags, i18n scaffolding (3/3 shipped)
 - ✅ P0.I — custom fields + tags + audit extension (3/3 shipped)
-- ⏳ P0.J — status page
+- ✅ P0.J — status page + health endpoint (1/1 shipped)
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships
 
-**After P0:** Phase 1 (Onboarding) starts. Foundation is locked. ~250 product PRs to v1 launch.
+**FOUNDATION PHASE COMPLETE.** Phase 1 (Onboarding) starts next. ~250 product PRs to v1 launch.
 
 ---
 
