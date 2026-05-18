@@ -262,16 +262,21 @@ Estimated: 12-15 commits.
 
 ## P0.I — Custom Fields + Tags + Audit Extension (2-3 PRs)
 
-**Status:** Not started. Lands after P0.H.
+**Status:** In progress (1 of 3 PRs shipped)
 
-### P0.I PR 1 — Custom Fields
+### P0.I PR 1 — Custom Fields ✅ COMPLETE
 
-- `CustomField` table (org, entityType, name, type enum, options JSONB, required, order)
-- `CustomFieldValue` table (customField, entityId, value JSONB)
-- Builder UI in Settings → Custom Fields (OWNER only)
-- Rendering in entity create/edit forms
-- Filtering in list views
-- Reporting/segmentation by custom field value
+- `CustomFieldDefinition` table — per-org field schema with key, displayName, fieldType, validationRules JSONB, isRequired, displayOrder, visibleToCustomers, isActive, softDeletedAt
+- `CustomFieldValue` table — JSONB value storage with unique (definitionId, entityId), GIN index on value for searchability
+- Supported field types (v1): TEXT, TEXTAREA, NUMBER, DATE, DATETIME, BOOLEAN, SELECT, MULTI_SELECT, URL, EMAIL, PHONE
+- Supported target entities (v1): CLIENT, SERVICE, APPOINTMENT, STAFF, PRODUCT
+- Both tables RLS-enabled (FORCE ROW LEVEL SECURITY) with standard tenant scope policy + SUPERADMIN override
+- Type-safe validation helpers (validateValue with discriminated union)
+- CRUD helpers: createDefinition / updateDefinition / softDeleteDefinition / listDefinitions
+- Value helpers: setValue / setValues (transactional batch) / getValues / deleteValue
+- API routes: GET/POST /api/custom-fields/definitions, PATCH/DELETE /api/custom-fields/definitions/[id]
+- OWNER/MANAGER permission required for definition management
+- No UI in this PR — admin UI lands in P1+ per consuming surface
 
 ### P0.I PR 2 — Tags (Polymorphic)
 
@@ -319,7 +324,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
 - ✅ P0.H — observability, feature flags, i18n scaffolding (3/3 shipped)
-- ⏳ P0.I — custom fields, tags
+- ⏳ P0.I — custom fields (1/3 shipped), tags, audit extension
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships
 
