@@ -262,7 +262,7 @@ Estimated: 12-15 commits.
 
 ## P0.I — Custom Fields + Tags + Audit Extension (2-3 PRs)
 
-**Status:** In progress (1 of 3 PRs shipped)
+**Status:** In progress (2 of 3 PRs shipped)
 
 ### P0.I PR 1 — Custom Fields ✅ COMPLETE
 
@@ -278,13 +278,15 @@ Estimated: 12-15 commits.
 - OWNER/MANAGER permission required for definition management
 - No UI in this PR — admin UI lands in P1+ per consuming surface
 
-### P0.I PR 2 — Tags (Polymorphic)
+### P0.I PR 2 — Tags (Polymorphic) ✅ COMPLETE
 
-- `Tag` table (org, name, color)
-- `TagAssignment` table (tag, entityType, entityId)
-- Tag picker on entity detail views
-- Tag-based filtering in list views
-- Tag-based marketing segmentation
+- `Tag` table — per-org definition: name (1-50 chars), slug (kebab-case unique per org), color (#RRGGBB hex), description, isActive, displayOrder, softDeletedAt
+- `EntityTag` table — polymorphic join: tagId + entityType + entityId, unique (tagId, entityType, entityId), CASCADE on tag delete
+- Both tables RLS-enabled (FORCE ROW LEVEL SECURITY) with standard tenant scope policy + SUPERADMIN override
+- CRUD helpers: createTag / updateTag (updateMany with org guard) / softDeleteTag / listTags
+- Attach helpers: attachTag (idempotent upsert) / detachTag / setTagsForEntity (diff-based add/remove) / getTagsForEntity / getEntitiesForTag / getTagsForEntities (bulk loader)
+- API routes: GET/POST /api/tags, PATCH/DELETE /api/tags/[id] — OWNER/MANAGER permission required
+- No UI in this PR — tag picker UI lands in P1+ per consuming surface
 
 ### P0.I PR 3 — Audit Extension (if needed)
 
@@ -324,7 +326,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
 - ✅ P0.H — observability, feature flags, i18n scaffolding (3/3 shipped)
-- ⏳ P0.I — custom fields (1/3 shipped), tags, audit extension
+- ⏳ P0.I — custom fields + tags (2/3 shipped), audit extension
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships
 

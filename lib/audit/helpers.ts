@@ -21,6 +21,11 @@ export const AuditAction = {
   CUSTOM_FIELD_DEFINITION_CREATE: "custom_field_definition.create",
   CUSTOM_FIELD_DEFINITION_UPDATE: "custom_field_definition.update",
   CUSTOM_FIELD_DEFINITION_DELETE: "custom_field_definition.delete",
+  TAG_CREATE: "tag.create",
+  TAG_UPDATE: "tag.update",
+  TAG_DELETE: "tag.delete",
+  TAG_ATTACH: "tag.attach",
+  TAG_DETACH: "tag.detach",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

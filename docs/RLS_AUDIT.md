@@ -123,14 +123,14 @@ These library helpers must be called inside a `withTenantScope` block — they a
 
 ## Summary
 
-- TENANT_SCOPED: **28**
+- TENANT_SCOPED: **30**
 - BYPASS_NEEDED: **13**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
   - SUPERADMIN: **8** (admin portal operations — 5 original + 3 feature-flag routes)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 42**
+**Total routes: 44**
 
 ## What happens next
 
@@ -843,6 +843,39 @@ Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `setValues` | `lib/custom-fields/values` | Batch upsert with all-or-nothing validation + required field check |
 | `getValues` | `lib/custom-fields/values` | Read all custom field values for an entity |
 | `deleteValue` | `lib/custom-fields/values` | Remove a value (field cleared) |
+
+## P0.I.2 Tables — RLS Classification (2026-05-18)
+
+Both new tables from P0.I PR 2 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `Tag` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `EntityTag` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+
+Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.I.2 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/tags` | GET, POST | TENANT_SCOPED | Lists/creates tags; uses `requireTenantContext` + `withTenantScope`; POST restricted to OWNER/MANAGER/SUPERADMIN |
+| `/api/tags/[id]` | PATCH, DELETE | TENANT_SCOPED | Updates/soft-deletes tags; uses `requireTenantContext` + `withTenantScope`; restricted to OWNER/MANAGER/SUPERADMIN |
+
+### P0.I.2 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createTag` | `lib/tags/definitions` | Create tag + audit log |
+| `updateTag` | `lib/tags/definitions` | Update tag (updateMany with org guard) + audit log |
+| `softDeleteTag` | `lib/tags/definitions` | Soft-delete tag + audit log |
+| `listTags` | `lib/tags/definitions` | List active tags by org |
+| `attachTag` | `lib/tags/attach` | Idempotent tag attachment via upsert |
+| `detachTag` | `lib/tags/attach` | Remove tag from entity |
+| `setTagsForEntity` | `lib/tags/attach` | Diff-based bulk replace (add missing, remove extra) |
+| `getTagsForEntity` | `lib/tags/attach` | Get tags for a single entity (filters inactive/deleted) |
+| `getEntitiesForTag` | `lib/tags/attach` | Get entity IDs for a tag |
+| `getTagsForEntities` | `lib/tags/attach` | Bulk-load tags for many entities (N+1 prevention) |
 
 ## P0.H.3 Column Additions — RLS Note (2026-05-18)
 
