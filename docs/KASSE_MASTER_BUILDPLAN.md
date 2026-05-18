@@ -1,3 +1,19 @@
+> **ARCHIVED — SEE docs/build-order/KASSE_REAL_BUILD_ORDER.md**
+>
+> **Status:** ARCHIVED 2026-05-17
+> **Reason:** Superseded by the more granular phase plan in docs/build-order/.
+> This document remains for historical reference but is NOT the source of truth
+> for build sequencing.
+>
+> **Current build plan:**
+> - Foundation: docs/build-order/PHASE_0_FOUNDATION.md
+> - Onboarding: docs/build-order/PHASE_1_ONBOARDING.md
+> - ...all 22 phase docs in docs/build-order/
+>
+> ---
+> **ORIGINAL CONTENT BELOW**
+> ---
+
 # KASSE_MASTER_BUILDPLAN.md
 ## Unified Strategic Build Plan — Every Feature, Every Phase, Every Decision
 ### Version 1.0 | Kasse Platform | 36 West Holdings
