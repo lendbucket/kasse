@@ -1502,6 +1502,8 @@ model AuditLog {
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([entity, entityId])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([action], map: "idx_auditlog_action")
+  @@index([requestId], map: "idx_auditlog_request", where: raw("(\"requestId\" IS NOT NULL)"))
 }
 
 model ApiKey {
