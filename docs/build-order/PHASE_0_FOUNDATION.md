@@ -220,11 +220,11 @@ Estimated: 12-15 commits.
 
 ## P0.H — Observability + Feature Flags + i18n (3 PRs)
 
-**Status:** Not started. Lands after P0.G.
+**Status:** In progress — 1 of 3 PRs shipped.
 
 **Reference:** SD-K-032 (Spanish customer surfaces v1), SD-K-026 (AI bug detection reactive v1)
 
-### P0.H PR 1 — Sentry + Structured Logging + Request ID
+### P0.H PR 1 — Sentry + Structured Logging + Request ID ✅ COMPLETE
 
 - Sentry client/server/edge configs with per-org tagging
 - Pino-based structured logger
@@ -310,7 +310,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ Security hardening complete (zero advisor findings)
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
-- ⏳ P0.H — observability, feature flags, i18n scaffolding
+- ⏳ P0.H — observability, feature flags, i18n scaffolding (1/3 shipped)
 - ⏳ P0.I — custom fields, tags
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships
