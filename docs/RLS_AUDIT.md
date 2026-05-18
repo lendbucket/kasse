@@ -809,5 +809,17 @@ variable (set by `app_set_actor`). Returns true only if the user's role is `SUPE
 | `updateFlag` | `lib/feature-flags/admin` | Update flag + write typed audit entry |
 | `setFlagOverride` | `lib/feature-flags/admin` | Set/remove per-org override + write audit entry |
 
-The evaluate helpers are called inside `withAdminScope` in the dashboard layout for
+The evaluate helpers are called inside `withTenantScope` in the dashboard layout for
 flag hydration. The admin helpers are called inside `withAdminScope` in admin API routes.
+
+## P0.H.3 Column Additions — RLS Note (2026-05-18)
+
+Two columns added to existing tables:
+
+| Table | Column | Type | RLS Impact |
+|-------|--------|------|-----------|
+| `User` | `locale` | TEXT (nullable) | Inherits existing User table policies (auth tables, accessed via prismaAdmin) |
+| `Organization` | `defaultLocale` | TEXT NOT NULL DEFAULT 'en-US' | Inherits existing Organization policies (app-logic protected, not RLS-scoped — see Organization note in Tables NOT covered section) |
+
+No new RLS policies needed. The locale fields are read via `prismaAdmin` in `i18n/request.ts`
+(runs outside tenant scope during locale detection, before withTenantScope is established).

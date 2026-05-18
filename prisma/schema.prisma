@@ -96,6 +96,7 @@ model Organization {
   planTier               PlanTier                @default(FREE)
   enabledAddons          String[]                @default([])
   planEffectiveAt        DateTime?
+  defaultLocale          String                  @default("en-US")
   aiReceptionistConfig   AiReceptionistConfig?
   apiKeys                ApiKey[]
   appointments           Appointment[]
@@ -173,6 +174,7 @@ model User {
   updatedAt                   DateTime                   @updatedAt
   role                        Role                       @default(STAFF)
   customRoleId                String?
+  locale                      String?
   accounts                    Account[]
   bookedAppointments          Appointment[]              @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[] @relation("StatusChangedByUser")

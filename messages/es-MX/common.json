@@ -1,0 +1,16 @@
+{
+  "welcome": "Bienvenido",
+  "save": "Guardar",
+  "cancel": "Cancelar",
+  "delete": "Eliminar",
+  "edit": "Editar",
+  "loading": "Cargando...",
+  "error": "Ocurrió un error",
+  "yes": "Sí",
+  "no": "No",
+  "back": "Atrás",
+  "next": "Siguiente",
+  "submit": "Enviar",
+  "search": "Buscar",
+  "close": "Cerrar"
+}
