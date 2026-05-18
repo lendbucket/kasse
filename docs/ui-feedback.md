@@ -45,3 +45,20 @@ Thoughts on direction: Optional notes for the designer.
 Status: Deferred to P12.
 
 Keep entries factual and concrete. "The dashboard feels bad" is not actionable; "the four metric cards have equal visual weight even though MRR matters most" is actionable.
+
+---
+
+## 2026-05-18 — Admin / Feature Flags
+
+**Where:** `/admin/feature-flags/[id]` flag detail page
+
+**What felt wrong:** The reason text field is shared state between the main
+"Save changes" form and the "Add override" form. If a user types a reason for
+a flag-level change, then switches to add a per-org override, the reason gets
+attached to the override action instead. Functional but fragile UX.
+
+**Thoughts on direction:** Split into separate `flagReason` and `overrideReason`
+fields. Or, when toggling between forms, clear the reason. Tooltip explaining
+which action each field applies to.
+
+**Status:** Deferred to P12 (UI polish phase).

@@ -124,13 +124,13 @@ These library helpers must be called inside a `withTenantScope` block — they a
 ## Summary
 
 - TENANT_SCOPED: **26**
-- BYPASS_NEEDED: **10**
+- BYPASS_NEEDED: **13**
   - PRE_SESSION: **5** (auth handlers + NextAuth)
-  - SUPERADMIN: **5** (admin portal operations)
+  - SUPERADMIN: **8** (admin portal operations — 5 original + 3 feature-flag routes)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 37**
+**Total routes: 40**
 
 ## What happens next
 
@@ -769,3 +769,45 @@ All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 - Inventory deduction routes
 - Tax rate management routes
 - License verification cron jobs
+
+## P0.H.2 Tables — RLS Classification (2026-05-18)
+
+Both tables are PLATFORM_SCOPED (not tenant-scoped). They do not have an `organizationId`
+column. Access is controlled by role-based RLS policies using `is_current_user_superadmin()`,
+a SECURITY DEFINER function that queries the User table via `app.actor_user_id`.
+
+| Table | Scoping Strategy | Read Policy | Write Policy |
+|-------|-----------------|-------------|--------------|
+| `FeatureFlag` | PLATFORM_SCOPED | `featureflag_read`: SELECT allowed for all (`USING (true)`) so `evaluateFlag()` works without elevation | `featureflag_write_superadmin` / `featureflag_update_superadmin` / `featureflag_delete_superadmin`: SUPERADMIN only via `is_current_user_superadmin()` |
+| `FeatureFlagAudit` | PLATFORM_SCOPED | `featureflagaudit_read_superadmin`: SELECT SUPERADMIN only | `featureflagaudit_write_superadmin` / `featureflagaudit_update_superadmin` / `featureflagaudit_delete_superadmin`: SUPERADMIN only via `is_current_user_superadmin()` |
+
+Both tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.H.2 SECURITY DEFINER Function
+
+`is_current_user_superadmin()` — looks up the User's role via `app.actor_user_id` session
+variable (set by `app_set_actor`). Returns true only if the user's role is `SUPERADMIN`.
+`REVOKE EXECUTE FROM PUBLIC` applied; `GRANT EXECUTE TO kasse_app` applied.
+`SET search_path = ''` applied per standing security rule.
+
+### P0.H.2 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/admin/feature-flags` | GET, POST | BYPASS_NEEDED — SUPERADMIN | Lists/creates feature flags; uses `requireSuperadminContext` + `withAdminScope(prismaAdmin, ...)` |
+| `/api/admin/feature-flags/[id]` | GET, PATCH | BYPASS_NEEDED — SUPERADMIN | Reads/updates individual flag + audit log; uses `requireSuperadminContext` + `withAdminScope(prismaAdmin, ...)` |
+| `/api/admin/feature-flags/[id]/overrides` | POST | BYPASS_NEEDED — SUPERADMIN | Sets/removes per-org overrides; uses `requireSuperadminContext` + `withAdminScope(prismaAdmin, ...)` |
+
+### P0.H.2 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `computeFlagBucket` | `lib/feature-flags/hash` | Stable sha256-based 0-99 bucket per (flag, org) pair |
+| `evaluateFlag` | `lib/feature-flags/evaluate` | Single flag evaluation: MISSING > INACTIVE > OVERRIDE > ROLLOUT > DEFAULT |
+| `evaluateFlags` | `lib/feature-flags/evaluate` | Batch evaluation, single DB query |
+| `createFlag` | `lib/feature-flags/admin` | Create flag + write CREATE audit entry |
+| `updateFlag` | `lib/feature-flags/admin` | Update flag + write typed audit entry |
+| `setFlagOverride` | `lib/feature-flags/admin` | Set/remove per-org override + write audit entry |
+
+The evaluate helpers are called inside `withAdminScope` in the dashboard layout for
+flag hydration. The admin helpers are called inside `withAdminScope` in admin API routes.

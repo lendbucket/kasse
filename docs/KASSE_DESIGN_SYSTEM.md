@@ -1533,6 +1533,30 @@ Total time: 2 minutes. Completely paperless.
 
 ---
 
+---
+
+## ADMIN / COMMAND CENTER THEME
+
+The `/admin/*` routes use a distinct dark theme to signal platform-admin context. This is intentional — SUPERADMIN users frequently switch between admin and tenant views, and the visual contrast prevents accidental cross-context actions.
+
+### Admin color tokens
+
+```
+BACKGROUND (deepest):   #0d1117
+CARD SURFACE:           #161b22
+BORDERS:                #30363d (or rgba(255,255,255,0.06))
+TEXT PRIMARY:            #c9d1d9
+TEXT SECONDARY:          #8b949e
+ACCENT (success):       #3fb950
+ACCENT (danger):        #f85149
+ACCENT (info):          #60a5fa
+MUTED ACCENT:           #606e74
+```
+
+This is a deliberate design system carve-out. Do NOT change `/admin/*` pages to match the main Kasse light theme. The dark palette mirrors GitHub's UI language, which is familiar to technical operators and reinforces the "you're in platform-admin territory" signal.
+
+---
+
 *Document version 1.0 — For internal use only. Last updated: May 2026.*
 *Owner: Robert Reyna, CEO, 36 West Holdings*
 *Design tokens are the source of truth — all component code must reference these variables, never hardcode hex values.*
