@@ -692,3 +692,36 @@ All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `hasTimeConflict` | `lib/booking/validation` | Overlap detection on stylist schedule items |
 | `nextOccurrenceDate` | `lib/recurring/generate` | Frequency-aware date math |
 | `generateNextOccurrences` | `lib/recurring/generate` | Idempotent batch generation for recurring series |
+
+## P0.G.3 Tables — RLS Classification (2026-05-18)
+
+All 10 new tables from P0.G PR 3 have RLS ENABLED + FORCE ROW LEVEL SECURITY + tenant_isolation policies.
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `Chair` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `DevicePairing` | JOIN via `Chair.organizationId` | EXISTS subquery on Chair |
+| `Cart` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `CartItem` | JOIN via `Cart.organizationId` | EXISTS subquery on Cart |
+| `Order` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `OrderItem` | JOIN via `Order.organizationId` | EXISTS subquery on Order |
+| `Payment` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `Refund` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `OfflineQueue` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+| `GeolocationLog` | Direct `organizationId` column | Direct match on `app.current_org_id` |
+
+All tables granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P0.G.3 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createCartForAppointment` | `lib/carts/lifecycle` | Creates cart with realtime channel ID (SD-K-028) |
+| `addCartItem` | `lib/carts/lifecycle` | Adds item + recomputes totals atomically |
+| `recomputeCartTotals` | `lib/carts/lifecycle` | Single source of truth for cart math |
+| `voidCart` | `lib/carts/lifecycle` | Soft cancel with audit log |
+| `finalizeCartToOrder` | `lib/orders/finalize` | Atomic Cart→Order conversion with per-location numbering |
+| `recordPaymentOnOrder` | `lib/orders/finalize` | Incremental payment with status transitions |
+| `checkGeolocationAndLog` | `lib/geolocation/check` | Haversine distance check + always-log pattern (SD-K-030) |
+| `pairCustomerDisplayToChair` | `lib/devices/pairing` | Chair pairing with role enforcement (SD-K-016) |
+| `getActiveCustomerDisplay` | `lib/devices/pairing` | Lookup current chair pairing |
