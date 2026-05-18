@@ -340,3 +340,13 @@ Estimated: 12-15 commits.
 - Domain docs: `docs/KASSE_HCM.md`, `docs/KASSE_COMPLIANCE.md`, `docs/KASSE_FEATURES.md`, etc.
 - Feature bible: `docs/KASSE_FEATURES.md`
 - Contradictions resolved: `docs/architecture/CONVERSATION_VS_DOCS_CONTRADICTIONS.md`
+
+---
+
+## NEXT PHASE
+
+**Phase 1 — Onboarding** (`docs/build-order/PHASE_1_ONBOARDING.md`)
+
+P1.A.1 (onboarding state machine) shipped 2026-05-18, starting the product phase.
+The foundation is locked — no more foundation-level architectural PRs. All
+subsequent work builds product features on top of P0.
