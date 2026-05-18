@@ -136,7 +136,7 @@ engine endpoints are deployed by Christopher / Matt.
 clients, formula tracking, devices, carts, POS, commission, inventory, geolocation, 
 multi-location, HCM, and more.
 
-**Status:** PRs 1-2 of 4 shipped. PRs 3-4 remaining.
+**Status:** PRs 1-3 of 4 shipped. PR 4 remaining.
 
 **Architectural decisions locked for P0.G:**
 - SD-K-016: Dual-iPad POS architecture (Stylist iPad + Customer iPad + Payroc terminal)
@@ -183,7 +183,7 @@ New tables/fields:
 
 Estimated: 6-8 commits.
 
-### P0.G PR 3 — Cart + Device + Order + Payment
+### P0.G PR 3 — Cart + Device + Order + Payment ✅ SHIPPED
 
 New tables/fields:
 - `Device`: register iPads/terminals (organization, location, name, role enum [STYLIST_DEVICE / CUSTOMER_DISPLAY / MANAGER_DEVICE / STANDALONE_POS], payrocTerminalId, pairedChairId, lastHeartbeat)

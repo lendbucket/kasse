@@ -15,6 +15,9 @@ export const AuditAction = {
   APPOINTMENT_CREATE: "appointment.create",
   APPOINTMENT_STATUS_CHANGE: "appointment.status_change",
   APPOINTMENT_CREATE_RECURRING: "appointment.create_recurring",
+  CART_CREATE: "cart.create",
+  CART_VOID: "cart.void",
+  ORDER_CREATE: "order.create",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
