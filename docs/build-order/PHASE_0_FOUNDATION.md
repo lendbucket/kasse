@@ -220,7 +220,7 @@ Estimated: 12-15 commits.
 
 ## P0.H — Observability + Feature Flags + i18n (3 PRs)
 
-**Status:** In progress — 2 of 3 PRs shipped.
+**Status:** COMPLETE — all 3 of 3 PRs shipped.
 
 **Reference:** SD-K-032 (Spanish customer surfaces v1), SD-K-026 (AI bug detection reactive v1)
 
@@ -243,15 +243,20 @@ Estimated: 12-15 commits.
 - API routes: GET/POST /flags, GET/PATCH /flags/[id], POST /flags/[id]/overrides
 - Note: `Organization.enabledAddons` already shipped in P0.D handles addon-level gating; FeatureFlag is for experiment-level rollout
 
-### P0.H PR 3 — i18n Scaffolding (Spanish for Customer Surfaces)
+### P0.H PR 3 — i18n Scaffolding (Spanish for Customer Surfaces) ✅ COMPLETE
 
-- next-i18next setup
+- next-intl 4.x setup (App Router compatible — next-i18next does NOT support App Router)
 - Locale detection: User.locale → Organization.defaultLocale → Accept-Language → "en-US"
-- English (en-US) translations for all P0-P12 strings (created as keys exist)
-- Spanish (es-MX, es-US) translation files seeded empty (content populated per phase)
-- `<T id="key">` wrapper component
-- `useTranslation()` hook
+- Schema: User.locale (nullable), Organization.defaultLocale (default 'en-US')
+- Supported locales: en-US, es-MX, es-US
+- English (en-US) translations for common + customer + stub owner/stylist/admin namespaces
+- Spanish (es-MX) common.json fully translated, customer.json empty (content per phase)
+- Spanish (es-US) empty stubs, fall through to es-MX then en-US
+- `<T id="namespace:key">` wrapper component
+- `useTranslations()` hook via next-intl
 - `formatDate`/`formatCurrency`/`formatNumber`/`formatRelativeTime` using Intl API
+- NextIntlClientProvider wired in root layout
+- i18n/request.ts bridge for server-side locale detection
 
 ---
 
@@ -313,7 +318,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ Security hardening complete (zero advisor findings)
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
-- ⏳ P0.H — observability, feature flags, i18n scaffolding (2/3 shipped)
+- ✅ P0.H — observability, feature flags, i18n scaffolding (3/3 shipped)
 - ⏳ P0.I — custom fields, tags
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships

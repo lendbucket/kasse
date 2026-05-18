@@ -1,0 +1,16 @@
+{
+  "booking": {
+    "title": "Book Your Appointment",
+    "select_service": "Select a service",
+    "select_staff": "Select a stylist",
+    "select_time": "Select a time",
+    "confirm": "Confirm booking",
+    "success": "Booking confirmed",
+    "your_appointment": "Your appointment is on {date}"
+  },
+  "consent": {
+    "title": "Service Consent",
+    "agree": "I agree to the terms"
+  },
+  "thanks": "Thank you for choosing {salon_name}"
+}
