@@ -220,7 +220,7 @@ Estimated: 12-15 commits.
 
 ## P0.H — Observability + Feature Flags + i18n (3 PRs)
 
-**Status:** In progress — 1 of 3 PRs shipped.
+**Status:** In progress — 2 of 3 PRs shipped.
 
 **Reference:** SD-K-032 (Spanish customer surfaces v1), SD-K-026 (AI bug detection reactive v1)
 
@@ -231,13 +231,16 @@ Estimated: 12-15 commits.
 - Request ID middleware (UUID per request, set in X-Request-Id response header)
 - Vercel + Supabase log shipping
 
-### P0.H PR 2 — Feature Flags
+### P0.H PR 2 — Feature Flags ✅ COMPLETE
 
 - `FeatureFlag` table (id, description, defaultValue, rolloutPct, overrides JSONB)
+- `FeatureFlagAudit` table (full change history per flag with before/after JSON)
+- `is_current_user_superadmin()` SECURITY DEFINER function for RLS write policies
 - `evaluate(flagKey, context)` with stable hash percentage rollout
 - Per-org overrides
-- `useFlag(key)` hook
-- Admin UI for SUPERADMIN to manage flags
+- `useFlag(key)` hook + `FlagProvider` context (server-hydrated)
+- Admin UI at `/admin/feature-flags` for SUPERADMIN to manage flags
+- API routes: GET/POST /flags, GET/PATCH /flags/[id], POST /flags/[id]/overrides
 - Note: `Organization.enabledAddons` already shipped in P0.D handles addon-level gating; FeatureFlag is for experiment-level rollout
 
 ### P0.H PR 3 — i18n Scaffolding (Spanish for Customer Surfaces)
@@ -310,7 +313,7 @@ P0.A.14 already shipped audit log. This PR extends if needed:
 - ✅ Security hardening complete (zero advisor findings)
 - ✅ P0.D complete
 - ⏳ P0.G — services, scheduling, clients, formulas, devices, cart, POS, commission, inventory, HCM, geolocation, marketing
-- ⏳ P0.H — observability, feature flags, i18n scaffolding (1/3 shipped)
+- ⏳ P0.H — observability, feature flags, i18n scaffolding (2/3 shipped)
 - ⏳ P0.I — custom fields, tags
 - ⏳ P0.J — status page
 - ⏸ P0.E + P0.F — gated until Reyna Pay engine ships

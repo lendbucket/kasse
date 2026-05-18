@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
-  LayoutDashboard, Building2, Users, CreditCard, Upload,
+  LayoutDashboard, Building2, Users, CreditCard, Upload, Flag,
 } from "lucide-react"
 
 // NAV — admin sidebar nav items.
@@ -18,6 +18,7 @@ const NAV = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/billing", label: "Billing", icon: CreditCard },
   { href: "/admin/import-jobs", label: "Import Jobs", icon: Upload },
+  { href: "/admin/feature-flags", label: "Feature Flags", icon: Flag },
 ]
 
 export default function AdminSidebar() {

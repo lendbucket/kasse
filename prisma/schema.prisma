@@ -1,7 +1,3 @@
-// partialIndexes is a Prisma preview feature used extensively in P0.G PR 1-4
-// for `WHERE ... IS NOT NULL` and similar partial index conditions.
-// Must be verified non-breaking before any Prisma version upgrade.
-// Tested with: Prisma 7.x against Supabase Postgres 17.6 (us-east-2).
 generator client {
   provider        = "prisma-client-js"
   output          = "../node_modules/.prisma/client"
@@ -181,6 +177,9 @@ model User {
   bookedAppointments          Appointment[]              @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[] @relation("StatusChangedByUser")
   auditLogs                   AuditLog[]
+  createdFeatureFlags         FeatureFlag[]              @relation("FeatureFlagCreatedBy")
+  updatedFeatureFlags         FeatureFlag[]              @relation("FeatureFlagUpdatedBy")
+  featureFlagAudits           FeatureFlagAudit[]
   geolocationManagerOverrides GeolocationLog[]           @relation("GeolocationManagerOverride")
   geolocationLogs             GeolocationLog[]           @relation("GeolocationUser")
   inventoryReorderApprovals   InventoryReorderDraft[]    @relation("ReorderApprovedBy")
@@ -320,7 +319,6 @@ model Staff {
   orderItems            OrderItem[]                @relation("OrderItemStaff")
   performanceStats      PerformanceStat[]
   ptoRequests           PtoRequest[]
-  tipDistributions      TipDistribution[]
   recurringSeries       RecurringSeries[]
   refundsInitiated      Refund[]                   @relation("RefundInitiatedByStaff")
   serviceStaffOverrides ServiceStaffOverride[]
@@ -330,6 +328,7 @@ model Staff {
   stylistSchedules      StylistSchedule[]
   scheduleExceptions    StylistScheduleException[]
   stylistServices       StylistService[]
+  tipDistributions      TipDistribution[]
 
   @@index([organizationId, isActive], map: "idx_staff_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
 }
@@ -1988,6 +1987,45 @@ model TipSplit {
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @default(now())
   organization           Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model FeatureFlag {
+  id              String             @id @default(dbgenerated("(gen_random_uuid())::text"))
+  key             String             @unique
+  description     String
+  defaultValue    Boolean            @default(false)
+  rolloutPct      Int                @default(0)
+  overrides       Json               @default("{}")
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @db.Timestamptz(6)
+  createdByUserId String?
+  updatedByUserId String?
+  createdBy       User?              @relation("FeatureFlagCreatedBy", fields: [createdByUserId], references: [id], onUpdate: NoAction)
+  updatedBy       User?              @relation("FeatureFlagUpdatedBy", fields: [updatedByUserId], references: [id], onUpdate: NoAction)
+  auditEntries    FeatureFlagAudit[]
+
+  @@index([isActive], map: "idx_featureflag_active")
+  @@index([key], map: "idx_featureflag_key", where: raw("(\"isActive\" = true)"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model FeatureFlagAudit {
+  id              String      @id @default(dbgenerated("(gen_random_uuid())::text"))
+  flagId          String
+  changedByUserId String?
+  changeType      String
+  before          Json?
+  after           Json?
+  reason          String?
+  createdAt       DateTime    @default(now()) @db.Timestamptz(6)
+  changedBy       User?       @relation(fields: [changedByUserId], references: [id], onUpdate: NoAction)
+  flag            FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([flagId, createdAt(sort: Desc)], map: "idx_featureflagaudit_flag")
+  @@index([changedByUserId], map: "idx_featureflagaudit_user", where: raw("(\"changedByUserId\" IS NOT NULL)"))
 }
 
 enum Role {
