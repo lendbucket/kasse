@@ -43,7 +43,7 @@ describe("diffChangedFields (P0.A.14)", () => {
 });
 
 describe("AuditAction enum (P0.A.14)", () => {
-  it("contains all 23 canonical actions", () => {
+  it("contains all 24 canonical actions", () => {
     const expected = [
       "permission_set.create",
       "permission_set.update",
@@ -68,6 +68,7 @@ describe("AuditAction enum (P0.A.14)", () => {
       "tag.delete",
       "tag.attach",
       "tag.detach",
+      "audit_retention.completed",
     ];
     const actual = Object.values(AuditAction).sort();
     assert.deepEqual(actual.sort(), expected.sort());

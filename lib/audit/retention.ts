@@ -40,6 +40,28 @@ export async function runAuditRetention(): Promise<RetentionResult> {
     'audit retention sweep completed'
   );
 
+  // Write a heartbeat audit entry so checkCronHeartbeat can detect staleness.
+  // If this fails after the delete succeeded, the system is still consistent —
+  // we just lose this run's heartbeat record.
+  try {
+    await prismaAdmin.auditLog.create({
+      data: {
+        action: 'audit_retention.completed',
+        entity: 'AuditLog',
+        entityId: null,
+        organizationId: null,
+        userId: null,
+        after: {
+          deletedCount: result.count,
+          cutoffDate: cutoffDate.toISOString(),
+          durationMs,
+        },
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'failed to write audit retention heartbeat — non-fatal');
+  }
+
   return {
     deletedCount: result.count,
     cutoffDate,
