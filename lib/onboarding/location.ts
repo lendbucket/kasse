@@ -1,8 +1,7 @@
-import { getSessionById, linkResource, transitionTo } from './sessions';
+import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import type { OnboardingLocationCreateInput } from './types';
 import type { Prisma } from '@prisma/client';
-import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 
 const DEFAULT_GEOFENCE_RADIUS_FT = 100;
 
@@ -84,8 +83,13 @@ export function validateAddress(args: {
  *
  * Accepts a tenant-scoped transaction client (tx) from withTenantScope for
  * Location/User/Organization writes (RLS-enforced tenant isolation).
- * OnboardingSession state writes go through the established sessions.ts
- * helpers (linkResource + transitionTo) which use prismaAdmin internally.
+ *
+ * OnboardingSession state writes (linkResource + transitionTo + audit) are
+ * the CALLER's responsibility — they must run AFTER withTenantScope returns
+ * (after the tenant tx commits) so the Location row is visible on the
+ * prismaAdmin connection that sessions.ts helpers use. Doing them inside
+ * args.tx would fail with a FK constraint violation because prismaAdmin
+ * runs on a separate connection pool and can't see uncommitted rows.
  */
 export async function createLocationForOnboarding(args: {
   tx: Prisma.TransactionClient;
@@ -136,30 +140,9 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // Three-phase write sequence:
-  //
-  // Phase 1 — tenant-scoped (args.tx, withTenantScope): Location.create,
-  //   User.update(locationId), Organization.update(timezone). RLS-enforced.
-  //   These writes commit when the withTenantScope callback returns.
-  //
-  // Phase 2 — superadmin via helpers (linkResource + transitionTo, both in
-  //   lib/onboarding/sessions.ts): OnboardingSession.locationId, state
-  //   advance, StateTransition row, ONBOARDING_SESSION_TRANSITIONED audit.
-  //   These write through prismaAdmin but NOT inside a single $transaction
-  //   — that pattern is broken under the prismaAdmin $extends wrapper
-  //   (see lib/prismaAdmin.ts comment block and GitHub issue #95).
-  //
-  // Phase 3 — audit (writeAuditLog): LOCATION_CREATED entry. Fail-soft.
-  //
-  // Atomicity: writes are NOT atomic across phases. Same gap exists in
-  // every other onboarding helper. Tracked in GitHub issue #95. The pre-tx
-  // state guard above and transitionTo's own ALLOWED_TRANSITIONS validation
-  // guard against most retry failure modes; the residual risk is a process
-  // crash between phases 1 and 2, leaving a Location with no
-  // OnboardingSession progression. Operationally recoverable: a follow-up
-  // call from the same user would hit the ORG_CREATED state guard in
-  // transitionTo and create a new Location (the orphaned first Location
-  // is detectable by orgId + recent createdAt for janitor cleanup).
+  // Tenant-scoped writes only: Location.create, User.update(locationId),
+  // Organization.update(timezone). RLS-enforced via withTenantScope. These
+  // commit when the withTenantScope callback returns.
 
   const locationTimezone = args.input.timezone ?? DEFAULT_TIMEZONE;
   const newLocation = await args.tx.location.create({
@@ -190,36 +173,10 @@ export async function createLocationForOnboarding(args: {
     data: { timezone: locationTimezone },
   });
 
-  // OnboardingSession.locationId + state transition via established helpers.
-  // These run after the tenant tx callback returns but the atomicity gap
-  // is the same as all other onboarding state transitions in the codebase
-  // (sessions.ts transitionTo / linkResource / skipStep all use this pattern).
-  await linkResource({
-    sessionId: args.input.sessionId,
-    locationId: newLocation.id,
-  });
-
-  await transitionTo({
-    sessionId: args.input.sessionId,
-    toState: 'LOCATION_CREATED',
-    triggeredByUserId: args.authenticatedUserId,
-    metadata: { locationId: newLocation.id },
-  });
-
-  await writeAuditLog({
-    userId: args.authenticatedUserId,
-    organizationId: newLocation.organizationId,
-    action: AuditAction.LOCATION_CREATED,
-    entity: 'Location',
-    entityId: newLocation.id,
-    metadata: { via: 'onboarding', sessionId: args.input.sessionId },
-  });
-
   return {
     locationId: newLocation.id,
-    // organizationId read from the created entity (round-trip to args.input.organizationId).
-    // Kept this way for defense-in-depth: if Prisma ever transforms the FK on write,
-    // we'd surface the actual stored value rather than the input.
+    // organizationId read from the created entity (round-trip to
+    // args.input.organizationId). Kept for defense-in-depth.
     organizationId: newLocation.organizationId,
   };
 }

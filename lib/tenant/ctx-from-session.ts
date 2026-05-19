@@ -1,13 +1,13 @@
-import { Role } from '@prisma/client';
+import type { Role } from '@prisma/client';
 import type { TenantContext } from './context';
 
 /**
  * Build a withTenantScope TenantContext from a NextAuth session user.
  *
- * Caller must verify session.user.id, session.user.email, and
- * session.user.organizationId are present BEFORE calling — this helper
- * asserts them but doesn't return error responses. Routes should fail
- * with appropriate 401/409 responses upstream.
+ * Caller must verify session.user.id, session.user.email,
+ * session.user.organizationId, and session.user.role are present BEFORE
+ * calling. This helper throws if role is null rather than silently
+ * defaulting (which would be a privilege escalation footgun).
  *
  * isSuperadmin is always false for tenant-scoped routes (by definition).
  */
@@ -15,7 +15,7 @@ export function tenantCtxFromSession(user: {
   id: string;
   email: string;
   name?: string | null;
-  role?: Role | null;
+  role: Role;
   organizationId: string;
   locationId?: string | null;
 }): TenantContext {
@@ -23,7 +23,7 @@ export function tenantCtxFromSession(user: {
     userId: user.id,
     email: user.email,
     name: user.name ?? null,
-    role: user.role ?? Role.OWNER,
+    role: user.role,
     organizationId: user.organizationId,
     locationId: user.locationId ?? null,
     isSuperadmin: false,

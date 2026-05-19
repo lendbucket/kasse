@@ -1034,7 +1034,7 @@ No new tables. Uses existing Organization, Location, BusinessSettings, User tabl
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
 | `/api/onboarding/org` | POST | BYPASS_NEEDED — ORG_BOOTSTRAP | Creates Organization + BusinessSettings + links User as OWNER via prismaAdmin. The ONLY non-admin Organization.create. |
-| `/api/onboarding/location` | POST | TENANT_SCOPED (P1.A.3b) | Creates first Location via `withTenantScope`. OnboardingSession writes still use prismaAdmin (RLS requires superadmin). Was ORG_BOOTSTRAP in P1.A.3. |
+| `/api/onboarding/location` | POST | TENANT_SCOPED (P1.A.3b) | Dual-client: Location/User/Org writes via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (in sessions.ts helpers) AFTER the tenant tx commits. Was ORG_BOOTSTRAP in P1.A.3. |
 | `/api/onboarding/refresh-session` | POST | BYPASS_NEEDED — SELF_READ | Returns user's own DB state for JWT refresh. Read-only, no mutations. |
 
 ### P1.A.3 Helper Functions

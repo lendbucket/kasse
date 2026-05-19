@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import { withTenantScope } from '@/lib/tenant/db-scope';
 import { tenantCtxFromSession } from '@/lib/tenant/ctx-from-session';
 import { createLocationForOnboarding } from '@/lib/onboarding/location';
+import { linkResource, transitionTo } from '@/lib/onboarding/sessions';
+import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 import { OnboardingError } from '@/lib/onboarding/types';
 
 export const dynamic = 'force-dynamic';
@@ -17,8 +19,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
     }
     if (!session.user.organizationId) {
-      // JWT staleness: user has org in DB but JWT not yet refreshed.
-      // Client must call /api/onboarding/refresh-session first.
       return NextResponse.json(
         {
           error: 'org_not_in_session',
@@ -30,6 +30,12 @@ export async function POST(req: Request) {
     if (!session.user.email) {
       return NextResponse.json(
         { error: 'invalid_session', message: 'session missing email' },
+        { status: 401 }
+      );
+    }
+    if (!session.user.role) {
+      return NextResponse.json(
+        { error: 'invalid_session', message: 'session missing role' },
         { status: 401 }
       );
     }
@@ -48,7 +54,7 @@ export async function POST(req: Request) {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
-      role: session.user.role ?? null,
+      role: session.user.role,
       organizationId: session.user.organizationId,
       locationId: session.user.locationId ?? null,
     });
@@ -70,8 +76,39 @@ export async function POST(req: Request) {
       });
     });
 
-    // Audit logs emitted by the helper (transitionTo writes
-    // ONBOARDING_SESSION_TRANSITIONED, helper writes LOCATION_CREATED).
+    // withTenantScope tx has now COMMITTED. The Location row is visible to
+    // all connections. Now safe to update OnboardingSession.locationId — the
+    // FK check on OnboardingSession_locationId_fkey will resolve.
+    //
+    // IMPORTANT: writes below are NOT atomic with the tenant-scoped writes
+    // above. If linkResource or transitionTo fails here, the Location is
+    // orphaned (committed but not linked from the session). User.locationId
+    // also points at the orphan until retry overwrites it. The retry path
+    // through transitionTo's ALLOWED_TRANSITIONS guard will create a new
+    // Location on next call. The orphan is detectable by orgId + recent
+    // createdAt for janitor cleanup. Same atomicity gap as all other
+    // onboarding state transitions. Tracked in issue #95 for codebase-wide
+    // fix via withAdminTx.
+    await linkResource({
+      sessionId,
+      locationId: result.locationId,
+    });
+
+    await transitionTo({
+      sessionId,
+      toState: 'LOCATION_CREATED',
+      triggeredByUserId: session.user.id,
+      metadata: { locationId: result.locationId },
+    });
+
+    await writeAuditLog({
+      userId: session.user.id,
+      organizationId: result.organizationId,
+      action: AuditAction.LOCATION_CREATED,
+      entity: 'Location',
+      entityId: result.locationId,
+      metadata: { via: 'onboarding', sessionId },
+    });
 
     return NextResponse.json(
       {
