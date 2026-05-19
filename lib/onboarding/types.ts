@@ -92,6 +92,29 @@ export interface VerificationTokenRecord {
   createdAt: Date;
 }
 
+export type OnboardingPlanTier = 'FREE' | 'PREMIUM';
+
+export const V1_LAUNCH_PLAN_TIERS: readonly OnboardingPlanTier[] =
+  ['FREE', 'PREMIUM'] as const;
+
+export interface OnboardingOrgCreateInput {
+  sessionId: string;
+  orgName: string;
+  vertical: 'SALON';
+  planTier: string;  // Validated at runtime via V1_LAUNCH_PLAN_TIERS
+}
+
+export interface OnboardingLocationCreateInput {
+  sessionId: string;
+  organizationId: string;
+  locationName: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  timezone?: string;
+}
+
 export class OnboardingError extends Error {
   constructor(
     public code:
@@ -108,7 +131,17 @@ export class OnboardingError extends Error {
       | 'TOKEN_ALREADY_CONSUMED'
       | 'WRONG_TOKEN_PURPOSE'
       | 'PASSWORD_TOO_WEAK'
-      | 'EMAIL_ALREADY_REGISTERED',
+      | 'EMAIL_ALREADY_REGISTERED'
+      | 'INVALID_PLAN_TIER'
+      | 'INVALID_VERTICAL'
+      | 'NOT_AUTHENTICATED'
+      | 'ORG_SCOPE_MISMATCH'
+      | 'INVALID_ADDRESS'
+      | 'INVALID_ORG_NAME'
+      | 'INVALID_LOCATION_NAME'
+      | 'INVALID_TIMEZONE'
+      | 'ORG_NOT_YET_CREATED'
+      | 'SLUG_COLLISION',
     message: string
   ) {
     super(message);

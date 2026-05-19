@@ -35,6 +35,9 @@ export const AuditAction = {
   USER_CREATED: "user.created",
   ONBOARDING_TOKEN_ISSUED: "onboarding_token.issued",
   ONBOARDING_TOKEN_CONSUMED: "onboarding_token.consumed",
+  ORG_BOOTSTRAPPED: "organization.bootstrapped",
+  LOCATION_CREATED: "location.created",
+  SESSION_REFRESHED: "session.refreshed",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

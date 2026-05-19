@@ -154,9 +154,120 @@ onboarding password endpoint does NOT issue a session itself -- the UI calls
 NextAuth signIn() separately. This keeps the password creation endpoint
 cleanly testable and separable from session machinery.
 
+## Org + Location creation (P1.A.3)
+
+After ACCOUNT_CREATED, the owner is logged in via NextAuth. The flow:
+
+1. **POST /api/onboarding/org** -- owner submits orgName + planTier (FREE |
+   PREMIUM). Vertical is locked to SALON for v1. The handler uses
+   `prismaAdmin` for the Organization.create call (the ONLY legitimate
+   non-SUPERADMIN Organization.create -- documented in RLS_AUDIT.md as
+   ORG_BOOTSTRAP). After creation: user.role = OWNER, user.organizationId
+   set, BusinessSettings created, session.organizationId + vertical set,
+   transition to ORG_CREATED.
+
+2. **POST /api/onboarding/location** -- owner submits address. Handler also
+   uses `prismaAdmin` because the owner's NextAuth JWT was minted at sign-in
+   time before the org existed (organizationId is null in the JWT until re-auth).
+   Ownership verified via OnboardingSession (session.userId must match caller).
+   Geofence radius defaults to 100ft. Lat/lng default to null (no geocoder
+   integrated yet -- TODO before launch). First location required.
+
+3. Session is now at LOCATION_CREATED. Next step (P1.A.4): seed the
+   vertical-specific service catalog.
+
+### The bootstrap problem
+
+The org-create endpoint is the only legitimate non-admin Organization.create
+call in the codebase. The owner is authenticated (NextAuth session) but has
+no org yet -- `withTenantScope` would have no tenant to scope by. The
+solution: use `prismaAdmin` for that one specific bootstrap moment, with
+explicit audit logging (`ORG_BOOTSTRAPPED` action).
+
+The location-create endpoint shares the same bootstrap window because the
+NextAuth JWT callback only enriches organizationId at sign-in time (`if (user)`
+guard in jwt callback). After org-create updates User.organizationId in the
+DB, the JWT still carries the old null value until the user re-authenticates.
+Both routes therefore use `prismaAdmin` with ownership verified via the
+OnboardingSession row. Documented in RLS_AUDIT.md as ORG_BOOTSTRAP.
+
+### JWT refresh after org-create
+
+NextAuth's JWT cookie is issued at sign-in time and persists until expiry
+or sign-out. The `jwt` callback only enriches the token with user fields
+when `user` is present (initial sign-in). After org-create updates
+User.organizationId in the DB, the JWT cookie still carries the old
+(null) value until something triggers regeneration.
+
+We use NextAuth's `trigger === "update"` mechanism:
+
+1. **Server-side helper**: POST /api/onboarding/refresh-session returns
+   the user's current organizationId/role/locationId from the DB.
+
+2. **JWT callback update branch**: when called with `trigger === "update"`,
+   the callback re-fetches the user from the DB and replaces the cached
+   fields on the token.
+
+3. **Client-side trigger** (P1.A.8 UI): after org-create succeeds, the
+   client calls `useSession().update()` which fires the callback with
+   the update trigger. The new token is written back to the cookie.
+   Subsequent requests carry the fresh organizationId.
+
+This unblocks the use of `withTenantScope` for post-org-create onboarding
+routes, which currently use `prismaAdmin` as a workaround (documented in
+RLS_AUDIT.md as ORG_BOOTSTRAP classification). The flip to
+`withTenantScope` will happen in **P1.A.3b** (small cleanup PR) once we
+can manually test the refresh path end-to-end.
+
+#### Manual test path
+
+```bash
+# 1. Sign in (gets JWT cookie with organizationId: null)
+curl -c cookies.txt -X POST $BASE_URL/api/auth/callback/credentials \
+  -d 'email=test@example.com&password=...'
+
+# 2. Create org (updates DB but NOT the JWT)
+curl -b cookies.txt -X POST $BASE_URL/api/onboarding/org \
+  -H 'Content-Type: application/json' \
+  -d '{"sessionId":"...","orgName":"Test Salon","planTier":"FREE"}'
+
+# 3. Refresh session (DB lookup returns fresh organizationId)
+curl -b cookies.txt -X POST $BASE_URL/api/onboarding/refresh-session
+# Response: {"userId":"...","organizationId":"org_abc123","role":"OWNER",...}
+
+# In real client code, useSession().update() would now write the new JWT
+# to the cookie. Subsequent requests would carry organizationId.
+```
+
+### Handling 429 from refresh-session in the UI
+
+POST /api/onboarding/refresh-session is rate-limited to 1 call per 30
+seconds per authenticated user. During fast onboarding flows (typical
+user clicks through email → password → org → location in well under 30s),
+the UI may hit 429 if it calls refresh-session aggressively.
+
+**Required UI behavior** (P1.A.8 implementation):
+- Catch 429 responses from /api/onboarding/refresh-session
+- Read the Retry-After header (in seconds) or retryAfterMs from the body
+- Wait the suggested delay, then retry once
+- If still 429 after retry, surface as "session refresh delayed — please
+  wait a moment" and let the user continue. The JWT cookie is still valid —
+  only the org/role/locationId fields are temporarily stale, and the next
+  API call that requires those fields will fail with a clearer error from
+  the downstream route.
+
+### V1 vertical and plan tier scope
+
+- Vertical: SALON only at launch (BARBERSHOP, NAIL_SALON, MED_SPA ship
+  2-3 months post-launch)
+- Plan tier: FREE or PREMIUM at signup. ENTERPRISE skips this flow entirely
+  (concierge path per SD-K-019). PLUS is a schema-level enum value but not
+  offered in the onboarding picker.
+
 ## What this PR doesn't include
 
 - UI pages -- P1.A.8
+- Geocoding service integration -- TODO before launch
 - signup.kasseapp.com DNS -- operational task
 - Session cleanup cron (delete expired) -- later deployment PR
 

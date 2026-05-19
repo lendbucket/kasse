@@ -100,6 +100,33 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/onboarding/verify` | POST | Consumes verification token, transitions to EMAIL_VERIFIED via prismaAdmin (PRE_SESSION — P1.A.2) |
 | `/api/onboarding/password` | POST | Creates User row with password hash, transitions to ACCOUNT_CREATED via prismaAdmin (PRE_SESSION — P1.A.2) |
 
+### BYPASS_NEEDED — SELF_READ (authenticated user reads own row)
+
+Routes that use `prismaAdmin` to read the authenticated user's OWN row (via `session.user.id` from NextAuth). RLS isn't bypassed for tenant data — the query is naturally scoped to a single user the caller has already proven they own. The justification for `prismaAdmin` here is operational, not architectural: these routes need to read user fields like organizationId and role that may not yet be reflected in the JWT (post-org-create staleness window), so they cannot rely on `session.user.organizationId` to scope a tenant query.
+
+**Security property**: `session.user.id` is server-verified by NextAuth. The query uses `where: { id: session.user.id }` exclusively — no other filter, no other access. The user can only read their own row.
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/onboarding/refresh-session` | POST | Returns the caller's current organizationId, role, locationId for JWT refresh (SELF_READ — P1.A.3) |
+
+**Rate limit caveat**: refresh-session has a per-user 30-second rate limit implemented in-memory. Per-instance state means a multi-instance Vercel deployment can allow up to N concurrent calls per window (N = warm instances). This is acceptable DoS hardening for an onboarding-only endpoint with low blast radius; the rate limit is best-effort, not a security boundary. For production hardening at scale, replace with a shared store (Redis / Supabase row counter).
+
+This bucket persists past P1.A.3b (the location-route TENANT_SCOPED flip that closes most ORG_BOOTSTRAP usage). refresh-session stays because the JWT staleness scenario isn't unique to onboarding.
+
+### BYPASS_NEEDED — ORG_BOOTSTRAP (authenticated, no org yet)
+
+Used during the bootstrap window of onboarding — for two operations: org-create (no org yet) and location-create (org exists but JWT staleness prevents withTenantScope). Both are removed from this bucket in P1.A.3b once the JWT refresh foundation is exercised end-to-end. The bootstrap calls use `prismaAdmin` because there's no tenant to scope by (`withTenantScope` would throw NO_TENANT since the NextAuth JWT was minted before the org existed). Ownership is verified via the OnboardingSession row (session.userId must match the authenticated caller). Mandatory audit logging of the bootstrap event.
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/onboarding/org` | POST | Creates Organization + BusinessSettings + links User as OWNER via prismaAdmin (ORG_BOOTSTRAP — P1.A.3). The ONLY legitimate non-admin Organization.create in the codebase. |
+| `/api/onboarding/location` | POST | Creates first Location via prismaAdmin (ORG_BOOTSTRAP — P1.A.3). Same bootstrap window — JWT lacks organizationId until re-auth. |
+
+**Forward-looking**: post-org-create onboarding routes currently use prismaAdmin (this classification). P1.A.3b will flip them to TENANT_SCOPED using `withTenantScope` once JWT refresh end-to-end testing confirms the NextAuth `update()` flow works. The `/api/onboarding/refresh-session` endpoint shipped in P1.A.3 is the foundation for that flip.
+
+**Not in this bucket**: POST /api/onboarding/refresh-session — see SELF_READ section above. It uses prismaAdmin to read the caller's own user row, not to bypass tenant scope for cross-tenant writes.
+
 ### BYPASS_NEEDED — SUPERADMIN (cross-tenant operations)
 
 | Route | Method(s) | Reason |
@@ -135,14 +162,16 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 ## Summary
 
 - TENANT_SCOPED: **30**
-- BYPASS_NEEDED: **17**
+- BYPASS_NEEDED: **20**
   - PRE_SESSION: **8** (auth handlers + NextAuth + 3 onboarding pre-account routes)
+  - SELF_READ: **1** (refresh-session — authenticated user reads own row)
+  - ORG_BOOTSTRAP: **2** (onboarding org + location creation — authenticated but no org yet)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
 - CRON: **1** (audit retention, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 49**
+**Total routes: 52**
 
 ## What happens next
 
@@ -995,3 +1024,25 @@ Three columns added to existing `OnboardingSession` table:
 | `validatePassword` | `lib/onboarding/account` | Password strength validation (12+ chars, letters + nums/specials) |
 | `createAccount` | `lib/onboarding/account` | Bcrypt hash + User creation + state transition |
 | `renderMagicLinkEmail` | `lib/onboarding/emails/magic-link` | HTML + text email template |
+
+## P1.A.3 — Org + Location Bootstrap (2026-05-18)
+
+No new tables. Uses existing Organization, Location, BusinessSettings, User tables.
+
+### P1.A.3 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/org` | POST | BYPASS_NEEDED — ORG_BOOTSTRAP | Creates Organization + BusinessSettings + links User as OWNER via prismaAdmin. The ONLY non-admin Organization.create. |
+| `/api/onboarding/location` | POST | BYPASS_NEEDED — ORG_BOOTSTRAP | Creates first Location via prismaAdmin. Same bootstrap window — JWT lacks organizationId until re-auth. |
+| `/api/onboarding/refresh-session` | POST | BYPASS_NEEDED — SELF_READ | Returns user's own DB state for JWT refresh. Read-only, no mutations. |
+
+### P1.A.3 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `validateOrgName` | `lib/onboarding/org` | Org name validation (2-100 chars) |
+| `createOrgForOnboarding` | `lib/onboarding/org` | Bootstrap: org + user link + business settings + state transition |
+| `validateLocationName` | `lib/onboarding/location` | Location name validation (2-100 chars) |
+| `validateAddress` | `lib/onboarding/location` | US address validation (state code, ZIP format) |
+| `createLocationForOnboarding` | `lib/onboarding/location` | First location creation + state transition |

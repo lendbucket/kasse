@@ -1,6 +1,6 @@
 # PHASE 1 — ONBOARDING
 
-**Status:** In progress (P1.A.1, P1.A.2 shipped)
+**Status:** In progress (P1.A.1, P1.A.2, P1.A.3 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
 **Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
@@ -30,11 +30,23 @@ POST /api/onboarding/email, POST /api/onboarding/verify, POST /api/onboarding/pa
 All PRE_SESSION (prismaAdmin). Email template with Kasse design system colors.
 NextAuth signIn integration deferred to P1.A.8 UI PR.
 
-### P1.A.3 — Email verification endpoint + token
+### P1.A.3 — Org + first location creation ✅ COMPLETE
 
-Files: `app/api/auth/verify-email/route.ts`, `lib/auth/verification.ts`
+Authenticated salon owner creates Organization (name + planTier FREE|PREMIUM, vertical
+locked to SALON) and first Location (address, city, state, zip). Uses prismaAdmin for
+both (ORG_BOOTSTRAP classification — NextAuth JWT lacks organizationId until re-auth).
+Creates BusinessSettings, sets User.role=OWNER, User.organizationId, User.locationId.
+Transitions ACCOUNT_CREATED → ORG_CREATED → LOCATION_CREATED. No schema changes —
+all tables from P0.G. No geocoder integrated yet (lat/lng null, TODO before launch).
+JWT refresh mechanism shipped: jwt callback handles `trigger === "update"` to
+re-fetch organizationId/role/locationId from DB. POST /api/onboarding/refresh-session
+returns current user state for client-side `useSession().update()` calls.
 
-24-hour-expiring token. Magic link emailed via Resend. On verify, set `User.emailVerifiedAt`.
+### P1.A.3b — TENANT_SCOPED flip for onboarding routes
+
+Switch location-create (and any post-org-create routes) from prismaAdmin to
+withTenantScope now that JWT refresh is shipped. Small cleanup PR. Requires
+manual end-to-end test of the refresh flow first.
 
 ### P1.A.4 — Verification email template
 
