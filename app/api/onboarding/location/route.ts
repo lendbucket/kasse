@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { withTenantScope } from '@/lib/tenant/db-scope';
+import { tenantCtxFromSession } from '@/lib/tenant/ctx-from-session';
 import { createLocationForOnboarding } from '@/lib/onboarding/location';
+import { linkResource, transitionTo } from '@/lib/onboarding/sessions';
+import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 import { OnboardingError } from '@/lib/onboarding/types';
 
 export const dynamic = 'force-dynamic';
@@ -13,50 +18,97 @@ export async function POST(req: Request) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'not_authenticated' }, { status: 401 });
     }
+    if (!session.user.organizationId) {
+      return NextResponse.json(
+        {
+          error: 'org_not_in_session',
+          message: 'Call /api/onboarding/refresh-session before creating a location.',
+        },
+        { status: 409 }
+      );
+    }
+    if (!session.user.email) {
+      return NextResponse.json(
+        { error: 'invalid_session', message: 'session missing email' },
+        { status: 401 }
+      );
+    }
+    if (!session.user.role) {
+      return NextResponse.json(
+        { error: 'invalid_session', message: 'session missing role' },
+        { status: 401 }
+      );
+    }
 
     const body = await req.json();
-
-    // Trust chain for organizationId verification:
-    // 1. authenticatedUserId comes from the NextAuth session (server-verified)
-    // 2. organizationId comes from the request body (CLIENT-controlled)
-    // 3. createLocationForOnboarding loads the OnboardingSession via sessionId
-    //    (also client-controlled) but enforces:
-    //      a. session.userId === authenticatedUserId  → user owns the session
-    //      b. session.organizationId === input.organizationId  → org match
-    // (a) prevents using a session that belongs to someone else.
-    // (b) prevents creating a Location under an org that isn't the session's.
-    // Future refactor: pull organizationId from the OnboardingSession directly
-    // once JWT staleness is solved in P1.A.8, eliminating the body parameter.
-    const {
-      sessionId,
-      organizationId,
-      locationName,
-      address,
-      city,
-      state,
-      zip,
-      timezone,
-    } = body;
+    const { sessionId, locationName, address, city, state, zip, timezone } = body;
 
     if (typeof sessionId !== 'string' || !sessionId) {
       return NextResponse.json({ error: 'session_id_required' }, { status: 400 });
     }
-    if (typeof organizationId !== 'string' || !organizationId) {
-      return NextResponse.json({ error: 'organization_id_required' }, { status: 400 });
-    }
 
-    const result = await createLocationForOnboarding({
-      input: {
-        sessionId,
-        organizationId,
-        locationName,
-        address,
-        city,
-        state,
-        zip,
-        timezone,
-      },
-      authenticatedUserId: session.user.id,
+    // Tenant-scoped: organizationId comes from the NextAuth JWT, which was
+    // refreshed via /api/onboarding/refresh-session after org-create. The
+    // JWT is server-verified and withTenantScope sets Postgres RLS context.
+    const ctx = tenantCtxFromSession({
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
+      organizationId: session.user.organizationId,
+      locationId: session.user.locationId ?? null,
+    });
+
+    const result = await withTenantScope(prisma, ctx, async (tx) => {
+      return createLocationForOnboarding({
+        tx,
+        input: {
+          sessionId,
+          organizationId: session.user.organizationId!,
+          locationName,
+          address,
+          city,
+          state,
+          zip,
+          timezone,
+        },
+        authenticatedUserId: session.user.id,
+      });
+    });
+
+    // withTenantScope tx has now committed. The Location row is visible to
+    // all connections. The claim updateMany inside createLocationForOnboarding
+    // already advanced the session from ORG_CREATED → LOCATION_PENDING,
+    // which guarantees no concurrent caller reaches this point (their claim
+    // sees state='LOCATION_PENDING', not 'ORG_CREATED', and fails).
+    //
+    // Atomicity gap: writes below are NOT atomic with the tenant-scoped
+    // writes above. If linkResource or transitionTo fails after args.tx
+    // committed, the session is left at LOCATION_PENDING with locationId
+    // still null and the Location is orphaned. Retries are blocked (claim
+    // sees state != 'ORG_CREATED'). Recovery requires SUPERADMIN state
+    // reset or a janitor job for stuck PENDING sessions. This is a
+    // deliberate trade: blocking retries prevents orphan-Location
+    // accumulation. Tracked in issue #95 for codebase-wide fix.
+    await linkResource({
+      sessionId,
+      locationId: result.locationId,
+    });
+
+    await transitionTo({
+      sessionId,
+      toState: 'LOCATION_CREATED',
+      triggeredByUserId: session.user.id,
+      metadata: { locationId: result.locationId },
+    });
+
+    await writeAuditLog({
+      userId: session.user.id,
+      organizationId: result.organizationId,
+      action: AuditAction.LOCATION_CREATED,
+      entity: 'Location',
+      entityId: result.locationId,
+      metadata: { via: 'onboarding', sessionId },
     });
 
     return NextResponse.json(

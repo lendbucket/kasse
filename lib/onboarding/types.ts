@@ -3,6 +3,7 @@ export const ONBOARDING_STATES = [
   'EMAIL_VERIFIED',
   'ACCOUNT_CREATED',
   'ORG_CREATED',
+  'LOCATION_PENDING',
   'LOCATION_CREATED',
   'SERVICES_SEEDED',
   'STAFF_INVITED',
@@ -15,12 +16,24 @@ export type OnboardingState = typeof ONBOARDING_STATES[number];
 
 /**
  * Forward-only state machine. Maps each state to its single allowed next state.
+ *
+ * LOCATION_PENDING is a transient sentinel set during location creation by
+ * createLocationForOnboarding's claim updateMany. It exists for concurrency
+ * serialization only — concurrent POSTs to /api/onboarding/location both
+ * attempt to UPDATE state from ORG_CREATED to LOCATION_PENDING; only the
+ * first succeeds (Postgres row-level lock + state-change-as-claim-token).
+ * The route handler then advances to LOCATION_CREATED via transitionTo
+ * after the tenant tx commits. Sessions should not be observed in
+ * LOCATION_PENDING for more than ~100ms in practice — if you see one
+ * stuck there, the previous request crashed between the claim and
+ * transitionTo (recovery is a manual state reset or janitor job).
  */
 export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null> = {
   STARTED: 'EMAIL_VERIFIED',
   EMAIL_VERIFIED: 'ACCOUNT_CREATED',
   ACCOUNT_CREATED: 'ORG_CREATED',
-  ORG_CREATED: 'LOCATION_CREATED',
+  ORG_CREATED: 'LOCATION_PENDING',
+  LOCATION_PENDING: 'LOCATION_CREATED',
   LOCATION_CREATED: 'SERVICES_SEEDED',
   SERVICES_SEEDED: 'STAFF_INVITED',
   STAFF_INVITED: 'AGREEMENTS_CONFIGURED',

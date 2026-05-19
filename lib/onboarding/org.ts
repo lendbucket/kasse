@@ -171,11 +171,13 @@ export async function createOrgForOnboarding(args: {
       data: { organizationId: newOrg.id },
     });
 
+    // Map API-level 'SALON' (uppercase) to DB-level 'salon' (lowercase enum)
+    // to keep OnboardingSession.vertical consistent with Organization.verticalId.
     await tx.onboardingSession.update({
       where: { id: args.input.sessionId },
       data: {
         organizationId: newOrg.id,
-        vertical: 'SALON',
+        vertical: 'salon',
         state: 'ORG_CREATED',
       },
     });
@@ -189,7 +191,7 @@ export async function createOrgForOnboarding(args: {
         metadata: {
           organizationId: newOrg.id,
           planTier: validatedPlanTier,
-          vertical: 'SALON',
+          vertical: 'salon',
         },
       },
     });
@@ -219,7 +221,7 @@ export async function createOrgForOnboarding(args: {
       via: 'onboarding',
       sessionId: args.input.sessionId,
       planTier: validatedPlanTier,
-      vertical: 'SALON',
+      vertical: 'salon',
     },
   });
 

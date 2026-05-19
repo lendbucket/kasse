@@ -2,7 +2,7 @@ import { prismaAdmin } from '@/lib/prismaAdmin';
 import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import type { OnboardingLocationCreateInput } from './types';
-import { writeAuditLog, AuditAction } from '@/lib/audit/write';
+import type { Prisma } from '@prisma/client';
 
 const DEFAULT_GEOFENCE_RADIUS_FT = 100;
 
@@ -13,11 +13,11 @@ const DEFAULT_GEOFENCE_RADIUS_FT = 100;
 const DEFAULT_TIMEZONE = 'America/Chicago';
 
 // Fail fast if the runtime is too old to support IANA timezone validation.
-// package.json engines.node >= 20 should make this impossible, but assert
+// package.json engines.node >= 18 should make this impossible, but assert
 // here to catch any deployment that bypasses the engine gate.
 if (typeof Intl.supportedValuesOf !== 'function') {
   throw new Error(
-    'lib/onboarding/location.ts requires Node >=20 for Intl.supportedValuesOf. ' +
+    'lib/onboarding/location.ts requires Node >=18 for Intl.supportedValuesOf. ' +
     'Update Node or check package.json engines field.'
   );
 }
@@ -82,19 +82,21 @@ export function validateAddress(args: {
 /**
  * Create the first Location for the owner's org during onboarding.
  *
- * Uses prismaAdmin deliberately — the owner's NextAuth JWT was minted at
- * sign-in time before the org existed, so session.user.organizationId is
- * null. withTenantScope would throw NO_TENANT. This is the same bootstrap
- * window as org-create. Ownership is verified via the OnboardingSession
- * (session.userId must match the authenticated caller).
+ * Accepts a tenant-scoped transaction client (tx) from withTenantScope for
+ * Location/User/Organization writes (RLS-enforced tenant isolation).
  *
- * All writes including state transition happen atomically inside a single
- * $transaction. Audit logs are written outside (fail-soft).
+ * OnboardingSession state writes (linkResource + transitionTo + audit) are
+ * the CALLER's responsibility — they must run AFTER withTenantScope returns
+ * (after the tenant tx commits) so the Location row is visible on the
+ * prismaAdmin connection that sessions.ts helpers use. Doing them inside
+ * args.tx would fail with a FK constraint violation because prismaAdmin
+ * runs on a separate connection pool and can't see uncommitted rows.
  */
 export async function createLocationForOnboarding(args: {
+  tx: Prisma.TransactionClient;
   input: OnboardingLocationCreateInput;
   authenticatedUserId: string;
-}): Promise<{ locationId: string }> {
+}): Promise<{ locationId: string; organizationId: string }> {
   const nameError = validateLocationName(args.input.locationName);
   if (nameError) {
     throw new OnboardingError('INVALID_LOCATION_NAME', nameError);
@@ -115,6 +117,7 @@ export async function createLocationForOnboarding(args: {
     throw new OnboardingError('INVALID_TIMEZONE', tzError);
   }
 
+  // Pre-tx fast-fail checks via prismaAdmin (getSessionById uses prismaAdmin).
   const session = await getSessionById(args.input.sessionId);
   if (!session) {
     throw new OnboardingError('SESSION_NOT_FOUND', 'session not found');
@@ -138,104 +141,88 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // All writes atomic: location + session FK + user locationId + state
-  // transition + transition audit row.
-  const location = await prismaAdmin.$transaction(async (tx) => {
-    // Re-read session inside transaction to catch concurrent-call races.
-    // The pre-tx check above is for fast-fail user feedback; this one
-    // guarantees correctness under concurrency.
-    const txSession = await tx.onboardingSession.findUnique({
-      where: { id: args.input.sessionId },
-    });
-    if (!txSession || txSession.state !== 'ORG_CREATED') {
-      throw new OnboardingError(
-        'INVALID_TRANSITION',
-        `concurrent call advanced session state — retry`
-      );
-    }
-    if (txSession.locationId !== null) {
-      throw new OnboardingError(
-        'INVALID_TRANSITION',
-        'location already exists for this session'
-      );
-    }
-    if (!txSession.organizationId) {
-      // Should be impossible given state === 'ORG_CREATED', but be paranoid
-      throw new OnboardingError(
-        'ORG_NOT_YET_CREATED',
-        'session has no organizationId despite state being ORG_CREATED — DB inconsistency'
-      );
-    }
-
-    // Use txSession.organizationId (authoritative in-tx re-read) not
-    // args.input.organizationId (client-supplied). Closes the TOCTOU window.
-    const newLocation = await tx.location.create({
-      data: {
-        organizationId: txSession.organizationId,
-        name: args.input.locationName.trim(),
-        address: args.input.address.trim(),
-        city: args.input.city.trim(),
-        state: args.input.state.trim().toUpperCase(),
-        zip: args.input.zip.trim(),
-        geofenceRadius: DEFAULT_GEOFENCE_RADIUS_FT,
-        timezone: args.input.timezone ?? DEFAULT_TIMEZONE,
-        // lat/lng: null by default — no geocoder integrated yet.
-        // TODO: integrate geocoding service before launch (Google Places,
-        // Mapbox, or similar). Until then, address is stored as text and
-        // geofence checks use the default 100ft radius with null coords.
-      },
-    });
-
-    await tx.onboardingSession.update({
-      where: { id: args.input.sessionId },
-      data: {
-        locationId: newLocation.id,
-        state: 'LOCATION_CREATED',
-      },
-    });
-
-    await tx.user.update({
-      where: { id: args.authenticatedUserId },
-      data: { locationId: newLocation.id },
-    });
-
-    await tx.onboardingStateTransition.create({
-      data: {
-        sessionId: args.input.sessionId,
-        fromState: session.state,
-        toState: 'LOCATION_CREATED',
-        triggeredByUserId: args.authenticatedUserId,
-        metadata: {
-          locationId: newLocation.id,
-        },
-      },
-    });
-
-    return newLocation;
+  // Atomic claim via state transition. Two concurrent POSTs both try this
+  // UPDATE; Postgres row-level lock serializes them. The first transitions
+  // ORG_CREATED → LOCATION_PENDING and returns count=1. The second waits
+  // for the lock, re-reads the row, sees state='LOCATION_PENDING' (not
+  // 'ORG_CREATED'), WHERE clause fails, returns count=0 → throws.
+  //
+  // The state-as-claim-token pattern works because the UPDATE modifies
+  // a column (state) that's in its own WHERE clause. A plain "touch
+  // updatedAt" sentinel would NOT serialize.
+  //
+  // The userId + organizationId conditions in the WHERE clause fold
+  // ownership verification into the atomic claim. Pre-tx getSessionById
+  // already verified ownership, but that read is on a separate connection
+  // from this UPDATE — including the conditions here closes the narrow
+  // TOCTOU window without an extra round-trip. If a session token is
+  // presented for the wrong user/org, the claim silently fails (count=0)
+  // and the route returns INVALID_TRANSITION. Pre-tx checks still run
+  // first to give clients better error discrimination (SESSION_NOT_FOUND,
+  // ORG_SCOPE_MISMATCH, etc.) before reaching this claim.
+  const claim = await prismaAdmin.onboardingSession.updateMany({
+    where: {
+      id: args.input.sessionId,
+      state: 'ORG_CREATED',
+      locationId: null,
+      userId: args.authenticatedUserId,
+      organizationId: args.input.organizationId,
+    },
+    data: {
+      state: 'LOCATION_PENDING',
+    },
   });
 
-  // Audit logs outside transaction (fail-soft — writeAuditLog never throws).
-  // Use location.organizationId (post-tx authoritative value from the created
-  // entity), consistent with org.ts using org.id.
-  await writeAuditLog({
-    userId: args.authenticatedUserId,
-    organizationId: location.organizationId,
-    action: AuditAction.ONBOARDING_SESSION_TRANSITIONED,
-    entity: 'OnboardingSession',
-    entityId: args.input.sessionId,
-    before: { state: 'ORG_CREATED' },
-    after: { state: 'LOCATION_CREATED' },
-    changedFields: ['state'],
+  if (claim.count === 0) {
+    throw new OnboardingError(
+      'INVALID_TRANSITION',
+      'session is no longer eligible for location creation — concurrent call or state has advanced'
+    );
+  }
+
+  // Tenant-scoped writes: Location.create, User.update(locationId),
+  // Organization.update(timezone). RLS-enforced via withTenantScope. These
+  // commit when the withTenantScope callback returns.
+
+  const locationTimezone = args.input.timezone ?? DEFAULT_TIMEZONE;
+  const newLocation = await args.tx.location.create({
+    data: {
+      // organizationId comes from the JWT (server-verified by NextAuth).
+      // The pre-tx session check above asserted session.organizationId ===
+      // args.input.organizationId, and the claim updateMany requires
+      // state='ORG_CREATED' on the session, so a session whose org was
+      // mutated mid-flow would fail the claim.
+      organizationId: args.input.organizationId,
+      name: args.input.locationName.trim(),
+      address: args.input.address.trim(),
+      city: args.input.city.trim(),
+      state: args.input.state.trim().toUpperCase(),
+      zip: args.input.zip.trim(),
+      geofenceRadius: DEFAULT_GEOFENCE_RADIUS_FT,
+      timezone: locationTimezone,
+      // lat/lng: null by default — no geocoder integrated yet.
+      // TODO: integrate geocoding service before launch.
+    },
   });
 
-  await writeAuditLog({
-    userId: args.authenticatedUserId,
-    organizationId: location.organizationId,
-    action: AuditAction.LOCATION_CREATED,
-    entity: 'Location',
-    entityId: location.id,
-    metadata: { via: 'onboarding', sessionId: args.input.sessionId },
+  await args.tx.user.update({
+    where: { id: args.authenticatedUserId },
+    data: { locationId: newLocation.id },
   });
 
-  return { locationId: location.id };
+  // First-location-wins for org timezone. The claim guard above (updateMany
+  // with state='ORG_CREATED' + locationId IS NULL) ensures only one call
+  // reaches this update — concurrent calls and post-LOCATION_CREATED
+  // retries are rejected with INVALID_TRANSITION.
+  await args.tx.organization.update({
+    where: { id: args.input.organizationId },
+    data: { timezone: locationTimezone },
+  });
+
+  return {
+    locationId: newLocation.id,
+    // organizationId echoed from the create result. Prisma returns the
+    // value we wrote; no separate read.
+    organizationId: newLocation.organizationId,
+  };
 }

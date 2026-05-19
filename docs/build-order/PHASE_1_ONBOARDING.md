@@ -42,11 +42,13 @@ JWT refresh mechanism shipped: jwt callback handles `trigger === "update"` to
 re-fetch organizationId/role/locationId from DB. POST /api/onboarding/refresh-session
 returns current user state for client-side `useSession().update()` calls.
 
-### P1.A.3b — TENANT_SCOPED flip for onboarding routes
+### P1.A.3b — Cleanup + TENANT_SCOPED flip for location route ✅ COMPLETE
 
-Switch location-create (and any post-org-create routes) from prismaAdmin to
-withTenantScope now that JWT refresh is shipped. Small cleanup PR. Requires
-manual end-to-end test of the refresh flow first.
+Flipped /api/onboarding/location from prismaAdmin (ORG_BOOTSTRAP) to
+withTenantScope (TENANT_SCOPED). Client must call /api/onboarding/refresh-session
+between org-create and location-create (returns 409 if JWT lacks organizationId).
+Also: vertical casing fix ('SALON' → 'salon' in DB writes), first-location
+timezone propagated to Organization.timezone, engines.node loosened to >=18.
 
 ### P1.A.4 — Verification email template
 
