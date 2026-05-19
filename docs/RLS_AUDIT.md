@@ -96,6 +96,9 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/auth/forgot-password` | POST | Sets password reset token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
 | `/api/auth/reset-password` | POST | Validates reset token, hashes new password via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
 | `/api/auth/verify-email` | GET | Validates email verification token via prismaAdmin (PRE_SESSION — migrated 0.5.3b-2a) |
+| `/api/onboarding/email` | POST | Sends magic-link verification email via prismaAdmin (PRE_SESSION — P1.A.2) |
+| `/api/onboarding/verify` | POST | Consumes verification token, transitions to EMAIL_VERIFIED via prismaAdmin (PRE_SESSION — P1.A.2) |
+| `/api/onboarding/password` | POST | Creates User row with password hash, transitions to ACCOUNT_CREATED via prismaAdmin (PRE_SESSION — P1.A.2) |
 
 ### BYPASS_NEEDED — SUPERADMIN (cross-tenant operations)
 
@@ -132,14 +135,14 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 ## Summary
 
 - TENANT_SCOPED: **30**
-- BYPASS_NEEDED: **14**
-  - PRE_SESSION: **5** (auth handlers + NextAuth)
+- BYPASS_NEEDED: **17**
+  - PRE_SESSION: **8** (auth handlers + NextAuth + 3 onboarding pre-account routes)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
 - CRON: **1** (audit retention, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 46**
+**Total routes: 49**
 
 ## What happens next
 
@@ -953,3 +956,42 @@ Two columns added to existing tables:
 
 No new RLS policies needed. The locale fields are read via `prismaAdmin` in `i18n/request.ts`
 (runs outside tenant scope during locale detection, before withTenantScope is established).
+
+## P1.A.2 Tables — RLS Classification (2026-05-18)
+
+One new table from P1.A.2 has RLS ENABLED + FORCE ROW LEVEL SECURITY. Same SUPERADMIN_PROTECTED pattern as OnboardingSession from P1.A.1.
+
+| Table | Scoping Strategy | Read Policy | Write Policy |
+|-------|-----------------|-------------|--------------|
+| `OnboardingVerificationToken` | PRE_ACCOUNT (no orgId) | SUPERADMIN only | SUPERADMIN only |
+
+Table granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P1.A.2 Column Additions
+
+Three columns added to existing `OnboardingSession` table:
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `magicLinkEmailsSentCount` | INTEGER NOT NULL DEFAULT 0 | Rate limiting: emails sent in current window |
+| `magicLinkLastSentAt` | TIMESTAMPTZ (nullable) | Rate limiting: last email timestamp |
+| `passwordHash` | TEXT (nullable) | Bcrypt hash set at ACCOUNT_CREATED |
+
+### P1.A.2 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/email` | POST | BYPASS_NEEDED — PRE_SESSION | Sends magic-link via prismaAdmin (no tenant context pre-account) |
+| `/api/onboarding/verify` | POST | BYPASS_NEEDED — PRE_SESSION | Consumes verification token via prismaAdmin |
+| `/api/onboarding/password` | POST | BYPASS_NEEDED — PRE_SESSION | Creates User row via prismaAdmin, transitions to ACCOUNT_CREATED |
+
+### P1.A.2 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `issueToken` | `lib/onboarding/verification-tokens` | Issue single-use verification token (stores hash only) |
+| `consumeToken` | `lib/onboarding/verification-tokens` | Atomic single-use consumption with error discrimination |
+| `sendMagicLink` | `lib/onboarding/magic-link` | End-to-end: session + rate limit + token + Resend email |
+| `validatePassword` | `lib/onboarding/account` | Password strength validation (12+ chars, letters + nums/specials) |
+| `createAccount` | `lib/onboarding/account` | Bcrypt hash + User creation + state transition |
+| `renderMagicLinkEmail` | `lib/onboarding/emails/magic-link` | HTML + text email template |

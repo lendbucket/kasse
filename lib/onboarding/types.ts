@@ -57,6 +57,9 @@ export interface OnboardingSessionRecord {
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  magicLinkEmailsSentCount: number;
+  magicLinkLastSentAt: Date | null;
+  passwordHash: string | null;
 }
 
 export interface ResumeTokenPayload {
@@ -66,6 +69,27 @@ export interface ResumeTokenPayload {
   iat: number;
   exp: number;
   type: 'onboarding-resume';
+}
+
+export interface MagicLinkSentResult {
+  sessionId: string;
+  expiresAt: Date;
+  /**
+   * In development, the raw verification URL is returned so testing without
+   * a real inbox is possible. In production this field is always undefined.
+   */
+  devVerificationUrl?: string;
+}
+
+export type VerificationTokenPurpose = 'EMAIL_VERIFICATION';
+
+export interface VerificationTokenRecord {
+  id: string;
+  sessionId: string;
+  purpose: VerificationTokenPurpose;
+  consumedAt: Date | null;
+  expiresAt: Date;
+  createdAt: Date;
 }
 
 export class OnboardingError extends Error {
@@ -79,7 +103,12 @@ export class OnboardingError extends Error {
       | 'INVALID_TOKEN'
       | 'EMAIL_MISMATCH'
       | 'DUPLICATE_ACTIVE_SESSION'
-      | 'INVALID_EMAIL',
+      | 'INVALID_EMAIL'
+      | 'TOO_MANY_MAGIC_LINK_SENDS'
+      | 'TOKEN_ALREADY_CONSUMED'
+      | 'WRONG_TOKEN_PURPOSE'
+      | 'PASSWORD_TOO_WEAK'
+      | 'EMAIL_ALREADY_REGISTERED',
     message: string
   ) {
     super(message);

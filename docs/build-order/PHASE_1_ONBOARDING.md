@@ -1,6 +1,6 @@
 # PHASE 1 — ONBOARDING
 
-**Status:** In progress (P1.A.1 shipped)
+**Status:** In progress (P1.A.1, P1.A.2 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
 **Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
@@ -20,11 +20,15 @@ OnboardingStateTransition table (audit trail), JWT-based resume tokens (ONBOARDI
 signResumeToken, verifyResumeToken. Both tables RLS-enabled (SUPERADMIN-only writes via
 prismaAdmin). No UI or API routes — pure infrastructure for P1.A.2+.
 
-### P1.A.2 — Vertical picker UI (categorized)
+### P1.A.2 — Account creation + email verification (Resend magic-link) ✅ COMPLETE
 
-Files: `components/signup/VerticalPicker.tsx`
-
-Categories: Beauty (salon, barbershop, nail, brow, lash, tanning), Food (restaurant, bar, cafe, bakery, food truck, catering), Fitness (gym, yoga, pilates, crossfit, martial arts, dance, personal training), Wellness (med spa, massage, chiropractic, PT), Auto (detailing, repair), Pet (grooming, veterinary, daycare), Other Services (tattoo, photography, cleaning, tutoring, childcare, coworking, event venue, sports training, beauty school, retail, boutique). Search + filter.
+OnboardingVerificationToken table (single-use 24h tokens, sha256-hashed, atomic consumption),
+3 columns on OnboardingSession (magicLinkEmailsSentCount, magicLinkLastSentAt, passwordHash).
+Helpers: issueToken, consumeToken, sendMagicLink (rate-limited 3/hr), validatePassword,
+createAccount (bcrypt 12 rounds, transactional User creation). 3 API routes:
+POST /api/onboarding/email, POST /api/onboarding/verify, POST /api/onboarding/password.
+All PRE_SESSION (prismaAdmin). Email template with Kasse design system colors.
+NextAuth signIn integration deferred to P1.A.8 UI PR.
 
 ### P1.A.3 — Email verification endpoint + token
 
