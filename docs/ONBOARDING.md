@@ -31,7 +31,9 @@ EMAIL_VERIFIED
 ACCOUNT_CREATED
   | (org name + vertical, Organization created)
 ORG_CREATED
-  | (address geocoded, Location created)
+  | (claim: concurrent-call serialization)
+LOCATION_PENDING
+  | (address geocoded, Location created, tenant tx committed)
 LOCATION_CREATED
   | (vertical-specific catalog seeded)
 SERVICES_SEEDED

@@ -76,21 +76,20 @@ export async function POST(req: Request) {
       });
     });
 
-    // withTenantScope tx has now COMMITTED. The Location row is visible to
-    // all connections. The state-guarded claim updateMany in
-    // createLocationForOnboarding already reserved this session's right to
-    // transition (concurrent callers got INVALID_TRANSITION). It is now
-    // safe to update OnboardingSession.locationId and transition state.
+    // withTenantScope tx has now committed. The Location row is visible to
+    // all connections. The claim updateMany inside createLocationForOnboarding
+    // already advanced the session from ORG_CREATED → LOCATION_PENDING,
+    // which guarantees no concurrent caller reaches this point (their claim
+    // sees state='LOCATION_PENDING', not 'ORG_CREATED', and fails).
     //
     // Atomicity gap: writes below are NOT atomic with the tenant-scoped
     // writes above. If linkResource or transitionTo fails after args.tx
-    // committed, the Location is orphaned (committed but not linked from
-    // the session). The retry path: next call sees session still at
-    // ORG_CREATED with locationId still null -> claim succeeds -> new
-    // Location created. User.locationId from the first commit also points
-    // at the orphan until retry overwrites it. Same atomicity gap as all
-    // other onboarding state transitions in sessions.ts. Tracked in issue
-    // #95 for codebase-wide fix via withAdminTx.
+    // committed, the session is left at LOCATION_PENDING with locationId
+    // still null and the Location is orphaned. Retries are blocked (claim
+    // sees state != 'ORG_CREATED'). Recovery requires SUPERADMIN state
+    // reset or a janitor job for stuck PENDING sessions. This is a
+    // deliberate trade: blocking retries prevents orphan-Location
+    // accumulation. Tracked in issue #95 for codebase-wide fix.
     await linkResource({
       sessionId,
       locationId: result.locationId,

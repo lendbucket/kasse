@@ -141,11 +141,16 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // Atomic claim: only one caller can proceed for a given session.
-  // Postgres row-level lock on conditional UPDATE serializes concurrent
-  // requests — only one caller's claim succeeds, others get count=0.
-  // This prevents the duplicate-Location race where two concurrent POSTs
-  // both pass the pre-tx state check and both create Locations.
+  // Atomic claim via state transition. Two concurrent POSTs both try this
+  // UPDATE; Postgres row-level lock serializes them. The first transitions
+  // ORG_CREATED → LOCATION_PENDING and returns count=1. The second waits
+  // for the lock, re-reads the row, sees state='LOCATION_PENDING' (not
+  // 'ORG_CREATED'), WHERE clause fails, returns count=0 → throws.
+  //
+  // The state-as-claim-token pattern works because the UPDATE modifies
+  // a column (state) that's in its own WHERE clause. A plain "touch
+  // updatedAt" sentinel would NOT serialize — both callers would see
+  // state='ORG_CREATED' after acquiring the lock and both return count=1.
   const claim = await prismaAdmin.onboardingSession.updateMany({
     where: {
       id: args.input.sessionId,
@@ -153,7 +158,7 @@ export async function createLocationForOnboarding(args: {
       locationId: null,
     },
     data: {
-      updatedAt: new Date(),
+      state: 'LOCATION_PENDING',
     },
   });
 
