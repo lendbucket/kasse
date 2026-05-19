@@ -58,12 +58,17 @@ export async function createServicesForOnboarding(args: {
   //
   // userId + organizationId in WHERE fold ownership verification into the
   // atomic claim, closing the TOCTOU window between pre-tx read and claim.
+  // locationId: { not: null } is defense-in-depth — state='LOCATION_CREATED'
+  // already implies locationId is non-null in normal operation (P1.A.3b
+  // always sets locationId before advancing state), but the explicit
+  // guard stays consistent with cycle 7 of PR #94 ownership defense.
   const claim = await prismaAdmin.onboardingSession.updateMany({
     where: {
       id: args.input.sessionId,
       state: 'LOCATION_CREATED',
       userId: args.authenticatedUserId,
       organizationId: args.input.organizationId,
+      locationId: { not: null },
     },
     data: {
       state: 'SERVICES_PENDING',
@@ -96,8 +101,27 @@ export async function createServicesForOnboarding(args: {
     throw new OnboardingError('ORG_NOT_YET_CREATED', 'organization not found');
   }
 
+  // Cast: Prisma's generated VerticalId enum and the registry's VerticalId
+  // union have identical runtime values. The cast bridges the type-system
+  // distinction without changing behavior.
   const config = getVerticalConfig(org.verticalId as VerticalId);
   const defaultServices = config.defaultServices;
+
+  if (defaultServices.length === 0) {
+    // Defensive: defaultServices is empty for generalConfig (the registry
+    // fallback) and could be empty for future verticals. If this fires,
+    // the session is left at SERVICES_PENDING — same recovery story as
+    // org-not-found above (#95 territory).
+    //
+    // Unreachable today: launch is SALON-only (enforced upstream at org
+    // create), and salonConfig.defaultServices has 11 entries. This guard
+    // exists for future verticals and as belt-and-suspenders against
+    // misconfiguration.
+    throw new OnboardingError(
+      'INVALID_TRANSITION',
+      `vertical '${org.verticalId}' has no default services to seed`
+    );
+  }
 
   // Seed services via tenant-scoped tx (RLS enforces org scope).
   // Services are org-wide by default; per-location pricing/availability

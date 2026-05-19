@@ -73,8 +73,21 @@ export async function POST(req: Request) {
     //
     // Atomicity gap: writes below are NOT atomic with the tenant-scoped
     // writes above. Same gap as /api/onboarding/location (tracked in
-    // issue #95). Partial failure leaves session at SERVICES_PENDING,
-    // blocking retries until manual recovery.
+    // issue #95). Three failure modes worth knowing about:
+    //
+    // 1. transitionTo throws → session stuck at SERVICES_PENDING, Service
+    //    rows committed, client gets 500. Recovery: manual state reset.
+    // 2. writeAuditLog throws after transitionTo succeeded → state is
+    //    SERVICES_SEEDED, Service rows committed, but client gets 500.
+    //    Client may retry, hitting INVALID_TRANSITION (state has already
+    //    advanced). The operation succeeded; only the audit and the
+    //    response status disagree with reality.
+    // 3. Process crash anywhere in this block → same residue as #1 or #2
+    //    depending on where it landed.
+    //
+    // All three are #95 territory. withAdminTx will wrap transitionTo and
+    // writeAuditLog in a single atomic admin tx; janitor job will detect
+    // stuck PENDING sessions for case #1.
     await transitionTo({
       sessionId,
       toState: 'SERVICES_SEEDED',
