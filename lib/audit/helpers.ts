@@ -32,6 +32,9 @@ export const AuditAction = {
   ONBOARDING_SESSION_SKIPPED_STEP: "onboarding_session.skipped_step",
   ONBOARDING_SESSION_COMPLETED: "onboarding_session.completed",
   ONBOARDING_RESUME_LINK_SENT: "onboarding_session.resume_link_sent",
+  USER_CREATED: "user.created",
+  ONBOARDING_TOKEN_ISSUED: "onboarding_token.issued",
+  ONBOARDING_TOKEN_CONSUMED: "onboarding_token.consumed",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

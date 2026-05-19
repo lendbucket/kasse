@@ -2141,27 +2141,31 @@ model Tag {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model OnboardingSession {
-  id                 String                      @id @default(cuid())
-  email              String
-  state              String                      @default("STARTED")
-  vertical           String?
-  userId             String?
-  organizationId     String?
-  locationId         String?
-  data               Json                        @default("{}")
-  skippedSteps       String[]                    @default([])
-  emailVerifiedAt    DateTime?                   @db.Timestamptz(6)
-  completedAt        DateTime?                   @db.Timestamptz(6)
-  expiresAt          DateTime                    @db.Timestamptz(6)
-  ipAddressFirstSeen String?
-  userAgentFirstSeen String?
-  referrerFirstSeen  String?
-  createdAt          DateTime                    @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
-  location           Location?                   @relation(fields: [locationId], references: [id], onUpdate: NoAction)
-  organization       Organization?               @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
-  user               User?                       @relation("OnboardingSessionUser", fields: [userId], references: [id], onUpdate: NoAction)
-  transitions        OnboardingStateTransition[]
+  id                       String                        @id @default(cuid())
+  email                    String                        @unique(map: "idx_onboarding_session_email_active", where: raw("(state <> 'COMPLETED'::text)"))
+  state                    String                        @default("STARTED")
+  vertical                 String?
+  userId                   String?
+  organizationId           String?
+  locationId               String?
+  data                     Json                          @default("{}")
+  skippedSteps             String[]                      @default([])
+  emailVerifiedAt          DateTime?                     @db.Timestamptz(6)
+  completedAt              DateTime?                     @db.Timestamptz(6)
+  expiresAt                DateTime                      @db.Timestamptz(6)
+  ipAddressFirstSeen       String?
+  userAgentFirstSeen       String?
+  referrerFirstSeen        String?
+  createdAt                DateTime                      @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  magicLinkEmailsSentCount Int                           @default(0)
+  magicLinkLastSentAt      DateTime?                     @db.Timestamptz(6)
+  passwordHash             String?
+  location                 Location?                     @relation(fields: [locationId], references: [id], onUpdate: NoAction)
+  organization             Organization?                 @relation(fields: [organizationId], references: [id], onUpdate: NoAction)
+  user                     User?                         @relation("OnboardingSessionUser", fields: [userId], references: [id], onUpdate: NoAction)
+  transitions              OnboardingStateTransition[]
+  tokens                   OnboardingVerificationToken[]
 
   @@index([email], map: "idx_onboarding_session_email")
   @@index([expiresAt], map: "idx_onboarding_session_expires", where: raw("(state <> 'COMPLETED'::text)"))
@@ -2181,6 +2185,25 @@ model OnboardingStateTransition {
   triggeredBy       User?             @relation("OnboardingTransitionUser", fields: [triggeredByUserId], references: [id], onUpdate: NoAction)
 
   @@index([sessionId, createdAt], map: "idx_onboarding_transition_session")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model OnboardingVerificationToken {
+  id                String            @id @default(dbgenerated("(gen_random_uuid())::text"))
+  sessionId         String
+  tokenHash         String            @unique
+  purpose           String
+  consumedAt        DateTime?         @db.Timestamptz(6)
+  expiresAt         DateTime          @db.Timestamptz(6)
+  createdAt         DateTime          @default(now()) @db.Timestamptz(6)
+  ipAddressIssued   String?
+  ipAddressConsumed String?
+  userAgentIssued   String?
+  userAgentConsumed String?
+  session           OnboardingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sessionId, purpose], map: "idx_onboarding_vtoken_session_purpose")
 }
 
 enum Role {
