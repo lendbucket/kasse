@@ -49,13 +49,48 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
+        // Initial sign-in — enrich with user properties
         token.id = user.id
         token.role = (user as any).role
         token.organizationId = (user as any).organizationId
         token.locationId = (user as any).locationId
+        return token
       }
+
+      // Refresh trigger — re-fetch from DB to reflect latest user state.
+      // Used by useSession().update() after org-create assigns the user to
+      // a newly-created org (the JWT from sign-in still says organizationId: null).
+      // Rate limiting is handled by /api/onboarding/refresh-session (30s per
+      // user via in-memory map). We always re-fetch here on explicit update
+      // trigger — a prior debounce in the callback caused silent refresh
+      // failures within 30s of sign-in.
+      if (trigger === "update" && typeof token.id === "string" && token.id.length > 0) {
+        try {
+          const freshUser = await prismaAdmin.user.findUnique({
+            where: { id: token.id },
+            select: {
+              organizationId: true,
+              role: true,
+              locationId: true,
+            },
+          })
+          if (freshUser) {
+            token.organizationId = freshUser.organizationId
+            token.role = freshUser.role
+            token.locationId = freshUser.locationId
+          }
+        } catch (err) {
+          // The 'update' trigger is an explicit client signal — useSession().update()
+          // was called and the caller expects fresh data. Silent swallow would leave
+          // the token stale without notifying the client. Re-throw so NextAuth
+          // surfaces 500; client should retry via /api/onboarding/refresh-session.
+          console.error("jwt callback update branch failed:", err)
+          throw err
+        }
+      }
+
       return token
     },
     async session({ session, token }) {
