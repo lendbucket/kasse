@@ -1,8 +1,8 @@
-import { prismaAdmin } from '@/lib/prismaAdmin';
-import { getSessionById } from './sessions';
+import { getSessionById, linkResource, transitionTo } from './sessions';
 import { OnboardingError } from './types';
 import type { OnboardingLocationCreateInput } from './types';
 import type { Prisma } from '@prisma/client';
+import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 
 const DEFAULT_GEOFENCE_RADIUS_FT = 100;
 
@@ -83,12 +83,9 @@ export function validateAddress(args: {
  * Create the first Location for the owner's org during onboarding.
  *
  * Accepts a tenant-scoped transaction client (tx) from withTenantScope for
- * the Location.create call (RLS-enforced tenant isolation). OnboardingSession
- * and OnboardingStateTransition writes go through prismaAdmin because their
- * RLS policies require is_superadmin for mutations.
- *
- * Returns the created location ID. Audit logs are written by the caller
- * (route handler) outside the transaction scope.
+ * Location/User/Organization writes (RLS-enforced tenant isolation).
+ * OnboardingSession state writes go through the established sessions.ts
+ * helpers (linkResource + transitionTo) which use prismaAdmin internally.
  */
 export async function createLocationForOnboarding(args: {
   tx: Prisma.TransactionClient;
@@ -115,8 +112,7 @@ export async function createLocationForOnboarding(args: {
     throw new OnboardingError('INVALID_TIMEZONE', tzError);
   }
 
-  // Pre-tx fast-fail checks via prismaAdmin (OnboardingSession RLS requires
-  // superadmin for writes; reads allow userId match via actor_user_id).
+  // Pre-tx fast-fail checks via prismaAdmin (getSessionById uses prismaAdmin).
   const session = await getSessionById(args.input.sessionId);
   if (!session) {
     throw new OnboardingError('SESSION_NOT_FOUND', 'session not found');
@@ -140,30 +136,30 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // Two-scope write coordination:
+  // Three-phase write sequence:
   //
-  // 1. args.tx (tenant-scoped withTenantScope tx): Location.create,
-  //    User.update(locationId), Organization.update(timezone). RLS enforces
-  //    org isolation; rolls back automatically if any throw bubbles up.
+  // Phase 1 — tenant-scoped (args.tx, withTenantScope): Location.create,
+  //   User.update(locationId), Organization.update(timezone). RLS-enforced.
+  //   These writes commit when the withTenantScope callback returns.
   //
-  // 2. prismaAdmin.$transaction (separate tx, runs INSIDE args.tx callback):
-  //    OnboardingSession.update, OnboardingStateTransition.create. These
-  //    tables have RLS policies requiring is_superadmin for INSERT/UPDATE,
-  //    so they can't go through args.tx. Wrapped in their own $transaction
-  //    so they're atomic with each other.
+  // Phase 2 — superadmin via helpers (linkResource + transitionTo, both in
+  //   lib/onboarding/sessions.ts): OnboardingSession.locationId, state
+  //   advance, StateTransition row, ONBOARDING_SESSION_TRANSITIONED audit.
+  //   These write through prismaAdmin but NOT inside a single $transaction
+  //   — that pattern is broken under the prismaAdmin $extends wrapper
+  //   (see lib/prismaAdmin.ts comment block and GitHub issue #95).
   //
-  // Atomicity guarantees:
-  // - If prismaAdmin tx throws (step 2 fails): throw bubbles up, args.tx
-  //   rolls back. Net effect: nothing committed. ✓
-  // - If prismaAdmin tx commits but args.tx commit later fails (rare):
-  //   OnboardingSession ends up advanced to LOCATION_CREATED pointing at
-  //   a phantom location id. NOT recoverable. Mitigation: this is the
-  //   final write in the callback, args.tx commit happens immediately
-  //   after, window is microseconds. Documented limitation.
+  // Phase 3 — audit (writeAuditLog): LOCATION_CREATED entry. Fail-soft.
   //
-  // In-tx state re-read inside the prismaAdmin tx catches concurrent calls
-  // (two simultaneous POSTs for the same session): only the first one
-  // advances state, the second throws INVALID_TRANSITION.
+  // Atomicity: writes are NOT atomic across phases. Same gap exists in
+  // every other onboarding helper. Tracked in GitHub issue #95. The pre-tx
+  // state guard above and transitionTo's own ALLOWED_TRANSITIONS validation
+  // guard against most retry failure modes; the residual risk is a process
+  // crash between phases 1 and 2, leaving a Location with no
+  // OnboardingSession progression. Operationally recoverable: a follow-up
+  // call from the same user would hit the ORG_CREATED state guard in
+  // transitionTo and create a new Location (the orphaned first Location
+  // is detectable by orgId + recent createdAt for janitor cleanup).
 
   const locationTimezone = args.input.timezone ?? DEFAULT_TIMEZONE;
   const newLocation = await args.tx.location.create({
@@ -194,44 +190,29 @@ export async function createLocationForOnboarding(args: {
     data: { timezone: locationTimezone },
   });
 
-  // OnboardingSession + OnboardingStateTransition: atomic via prismaAdmin.$transaction.
-  // In-tx re-read + state guard closes concurrent-call race.
-  await prismaAdmin.$transaction(async (ptx) => {
-    const txSession = await ptx.onboardingSession.findUnique({
-      where: { id: args.input.sessionId },
-    });
-    if (!txSession || txSession.state !== 'ORG_CREATED') {
-      throw new OnboardingError(
-        'INVALID_TRANSITION',
-        'concurrent call advanced session state — retry'
-      );
-    }
-    if (txSession.locationId !== null) {
-      throw new OnboardingError(
-        'INVALID_TRANSITION',
-        'location already exists for this session'
-      );
-    }
+  // OnboardingSession.locationId + state transition via established helpers.
+  // These run after the tenant tx callback returns but the atomicity gap
+  // is the same as all other onboarding state transitions in the codebase
+  // (sessions.ts transitionTo / linkResource / skipStep all use this pattern).
+  await linkResource({
+    sessionId: args.input.sessionId,
+    locationId: newLocation.id,
+  });
 
-    await ptx.onboardingSession.update({
-      where: { id: args.input.sessionId },
-      data: {
-        locationId: newLocation.id,
-        state: 'LOCATION_CREATED',
-      },
-    });
+  await transitionTo({
+    sessionId: args.input.sessionId,
+    toState: 'LOCATION_CREATED',
+    triggeredByUserId: args.authenticatedUserId,
+    metadata: { locationId: newLocation.id },
+  });
 
-    await ptx.onboardingStateTransition.create({
-      data: {
-        sessionId: args.input.sessionId,
-        fromState: session.state,
-        toState: 'LOCATION_CREATED',
-        triggeredByUserId: args.authenticatedUserId,
-        metadata: {
-          locationId: newLocation.id,
-        },
-      },
-    });
+  await writeAuditLog({
+    userId: args.authenticatedUserId,
+    organizationId: newLocation.organizationId,
+    action: AuditAction.LOCATION_CREATED,
+    entity: 'Location',
+    entityId: newLocation.id,
+    metadata: { via: 'onboarding', sessionId: args.input.sessionId },
   });
 
   return {

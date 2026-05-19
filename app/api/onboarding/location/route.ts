@@ -3,10 +3,9 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { withTenantScope } from '@/lib/tenant/db-scope';
+import { tenantCtxFromSession } from '@/lib/tenant/ctx-from-session';
 import { createLocationForOnboarding } from '@/lib/onboarding/location';
-import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 import { OnboardingError } from '@/lib/onboarding/types';
-import { Role } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -45,15 +44,16 @@ export async function POST(req: Request) {
     // Tenant-scoped: organizationId comes from the NextAuth JWT, which was
     // refreshed via /api/onboarding/refresh-session after org-create. The
     // JWT is server-verified and withTenantScope sets Postgres RLS context.
-    const result = await withTenantScope(prisma, {
-      userId: session.user.id,
+    const ctx = tenantCtxFromSession({
+      id: session.user.id,
       email: session.user.email,
-      name: session.user.name ?? null,
-      role: session.user.role ?? Role.OWNER,
+      name: session.user.name,
+      role: session.user.role ?? null,
       organizationId: session.user.organizationId,
       locationId: session.user.locationId ?? null,
-      isSuperadmin: false,
-    }, async (tx) => {
+    });
+
+    const result = await withTenantScope(prisma, ctx, async (tx) => {
       return createLocationForOnboarding({
         tx,
         input: {
@@ -70,26 +70,8 @@ export async function POST(req: Request) {
       });
     });
 
-    // Audit logs outside tenant scope (writeAuditLog uses prismaAdmin internally)
-    await writeAuditLog({
-      userId: session.user.id,
-      organizationId: result.organizationId,
-      action: AuditAction.ONBOARDING_SESSION_TRANSITIONED,
-      entity: 'OnboardingSession',
-      entityId: sessionId,
-      before: { state: 'ORG_CREATED' },
-      after: { state: 'LOCATION_CREATED' },
-      changedFields: ['state'],
-    });
-
-    await writeAuditLog({
-      userId: session.user.id,
-      organizationId: result.organizationId,
-      action: AuditAction.LOCATION_CREATED,
-      entity: 'Location',
-      entityId: result.locationId,
-      metadata: { via: 'onboarding', sessionId },
-    });
+    // Audit logs emitted by the helper (transitionTo writes
+    // ONBOARDING_SESSION_TRANSITIONED, helper writes LOCATION_CREATED).
 
     return NextResponse.json(
       {
