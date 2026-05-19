@@ -1,6 +1,6 @@
 # PHASE 1 — ONBOARDING
 
-**Status:** In progress (P1.A.1, P1.A.2, P1.A.3 shipped)
+**Status:** In progress (P1.A.1, P1.A.2, P1.A.3, P1.A.3b, P1.A.4 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
 **Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
@@ -50,11 +50,13 @@ between org-create and location-create (returns 409 if JWT lacks organizationId)
 Also: vertical casing fix ('SALON' → 'salon' in DB writes), first-location
 timezone propagated to Organization.timezone, engines.node loosened to >=18.
 
-### P1.A.4 — Verification email template
+### P1.A.4 — Vertical-specific service catalog seed ✅ COMPLETE
 
-Files: `lib/emails/templates/verify-email.tsx`, Resend template
-
-Subject "Verify your Kasse account". Localized.
+Seeds the salon vertical's 11 defaultServices (Haircuts/Color/Styling/Treatments)
+into the org's Service table during onboarding. POST /api/onboarding/services,
+TENANT_SCOPED dual-client (same architecture as /api/onboarding/location).
+State-as-claim-token serialization via LOCATION_CREATED → SERVICES_PENDING →
+SERVICES_SEEDED. Source of truth: lib/verticals/configs/salon.ts defaultServices.
 
 ### P1.A.5 — Verification enforcement middleware
 

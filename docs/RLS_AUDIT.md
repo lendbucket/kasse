@@ -161,7 +161,7 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 
 ## Summary
 
-- TENANT_SCOPED: **31**
+- TENANT_SCOPED: **32**
 - BYPASS_NEEDED: **19**
   - PRE_SESSION: **8** (auth handlers + NextAuth + 3 onboarding pre-account routes)
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
@@ -171,7 +171,7 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 52**
+**Total routes: 53**
 
 ## What happens next
 
@@ -1035,6 +1035,7 @@ No new tables. Uses existing Organization, Location, BusinessSettings, User tabl
 |-------|-----------|---------------|--------|
 | `/api/onboarding/org` | POST | BYPASS_NEEDED — ORG_BOOTSTRAP | Creates Organization + BusinessSettings + links User as OWNER via prismaAdmin. The ONLY non-admin Organization.create. |
 | `/api/onboarding/location` | POST | TENANT_SCOPED (P1.A.3b) | Dual-client: Location/User/Org writes via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (in sessions.ts helpers) AFTER the tenant tx commits. Was ORG_BOOTSTRAP in P1.A.3. |
+| `/api/onboarding/services` | POST | TENANT_SCOPED (P1.A.4) | Dual-client: Service.createMany via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (sessions.ts helpers) AFTER the tenant tx commits. Same architecture as /api/onboarding/location. |
 | `/api/onboarding/refresh-session` | POST | BYPASS_NEEDED — SELF_READ | Returns user's own DB state for JWT refresh. Read-only, no mutations. |
 
 ### P1.A.3 Helper Functions
@@ -1046,3 +1047,19 @@ No new tables. Uses existing Organization, Location, BusinessSettings, User tabl
 | `validateLocationName` | `lib/onboarding/location` | Location name validation (2-100 chars) |
 | `validateAddress` | `lib/onboarding/location` | US address validation (state code, ZIP format) |
 | `createLocationForOnboarding` | `lib/onboarding/location` | First location creation + state transition |
+
+## P1.A.4 — Service catalog seed (2026-05-18)
+
+No new tables (uses existing Service table). No new RLS policies needed — Service already has tenant_isolation_* policies from P0.5.3b-3a.
+
+### P1.A.4 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/services` | POST | TENANT_SCOPED | Dual-client: Service.createMany via tx (withTenantScope); OnboardingSession/StateTransition writes via prismaAdmin in sessions.ts helpers AFTER the tenant tx commits. Same architecture as /api/onboarding/location. |
+
+### P1.A.4 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createServicesForOnboarding` | `lib/onboarding/services` | Seeds vertical's defaultServices into org's Service table during onboarding. State-as-claim-token serialization via LOCATION_CREATED → SERVICES_PENDING claim. |

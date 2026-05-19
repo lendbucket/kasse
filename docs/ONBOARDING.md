@@ -35,7 +35,9 @@ ORG_CREATED
 LOCATION_PENDING
   | (address geocoded, Location created, tenant tx committed)
 LOCATION_CREATED
-  | (vertical-specific catalog seeded)
+  | (claim: concurrent-call serialization)
+SERVICES_PENDING
+  | (vertical-specific catalog seeded, tenant tx committed)
 SERVICES_SEEDED
   | (>=1 staff invite sent OR skipped)
 STAFF_INVITED
