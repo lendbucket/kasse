@@ -38,6 +38,7 @@ export const AuditAction = {
   ORG_BOOTSTRAPPED: "organization.bootstrapped",
   LOCATION_CREATED: "location.created",
   SESSION_REFRESHED: "session.refreshed",
+  SERVICES_SEEDED: "onboarding.services_seeded",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

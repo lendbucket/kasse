@@ -43,7 +43,7 @@ describe("diffChangedFields (P0.A.14)", () => {
 });
 
 describe("AuditAction enum (P0.A.14)", () => {
-  it("contains all 35 canonical actions", () => {
+  it("contains all 36 canonical actions", () => {
     const expected = [
       "permission_set.create",
       "permission_set.update",
@@ -80,6 +80,7 @@ describe("AuditAction enum (P0.A.14)", () => {
       "organization.bootstrapped",
       "location.created",
       "session.refreshed",
+      "onboarding.services_seeded",
     ];
     const actual = Object.values(AuditAction).sort();
     assert.deepEqual(actual.sort(), expected.sort());

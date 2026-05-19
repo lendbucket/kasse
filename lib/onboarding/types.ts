@@ -5,6 +5,7 @@ export const ONBOARDING_STATES = [
   'ORG_CREATED',
   'LOCATION_PENDING',
   'LOCATION_CREATED',
+  'SERVICES_PENDING',
   'SERVICES_SEEDED',
   'STAFF_INVITED',
   'AGREEMENTS_CONFIGURED',
@@ -17,16 +18,17 @@ export type OnboardingState = typeof ONBOARDING_STATES[number];
 /**
  * Forward-only state machine. Maps each state to its single allowed next state.
  *
- * LOCATION_PENDING is a transient sentinel set during location creation by
- * createLocationForOnboarding's claim updateMany. It exists for concurrency
- * serialization only — concurrent POSTs to /api/onboarding/location both
- * attempt to UPDATE state from ORG_CREATED to LOCATION_PENDING; only the
- * first succeeds (Postgres row-level lock + state-change-as-claim-token).
- * The route handler then advances to LOCATION_CREATED via transitionTo
- * after the tenant tx commits. Sessions should not be observed in
- * LOCATION_PENDING for more than ~100ms in practice — if you see one
- * stuck there, the previous request crashed between the claim and
- * transitionTo (recovery is a manual state reset or janitor job).
+ * LOCATION_PENDING and SERVICES_PENDING are transient sentinels used for
+ * concurrency serialization. Each is set by a claim updateMany that
+ * transitions state as a claim token (e.g., ORG_CREATED → LOCATION_PENDING).
+ * Concurrent POSTs both attempt the UPDATE; Postgres row-level lock
+ * serializes them; only the first succeeds because the second sees the
+ * changed state and its WHERE fails (count=0). The route handler then
+ * advances to the final state (e.g., LOCATION_CREATED) via transitionTo
+ * after the tenant tx commits. Sessions should not be observed in a
+ * PENDING state for more than ~100ms in practice — if you see one stuck
+ * there, the previous request crashed between the claim and transitionTo
+ * (recovery is a manual state reset or janitor job, tracked in issue #95).
  */
 export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null> = {
   STARTED: 'EMAIL_VERIFIED',
@@ -34,7 +36,8 @@ export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null
   ACCOUNT_CREATED: 'ORG_CREATED',
   ORG_CREATED: 'LOCATION_PENDING',
   LOCATION_PENDING: 'LOCATION_CREATED',
-  LOCATION_CREATED: 'SERVICES_SEEDED',
+  LOCATION_CREATED: 'SERVICES_PENDING',
+  SERVICES_PENDING: 'SERVICES_SEEDED',
   SERVICES_SEEDED: 'STAFF_INVITED',
   STAFF_INVITED: 'AGREEMENTS_CONFIGURED',
   AGREEMENTS_CONFIGURED: 'COMPENSATION_CONFIGURED',
@@ -154,7 +157,8 @@ export class OnboardingError extends Error {
       | 'INVALID_LOCATION_NAME'
       | 'INVALID_TIMEZONE'
       | 'ORG_NOT_YET_CREATED'
-      | 'SLUG_COLLISION',
+      | 'SLUG_COLLISION'
+      | 'LOCATION_NOT_YET_CREATED',
     message: string
   ) {
     super(message);

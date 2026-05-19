@@ -10,8 +10,8 @@ import {
 import type { OnboardingState } from "@/lib/onboarding/types";
 
 describe("Onboarding state machine constants (P1.A.1)", () => {
-  it("has exactly 11 states", () => {
-    assert.equal(ONBOARDING_STATES.length, 11);
+  it("has exactly 12 states", () => {
+    assert.equal(ONBOARDING_STATES.length, 12);
   });
 
   it("starts with STARTED and ends with COMPLETED", () => {
