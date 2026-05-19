@@ -77,18 +77,20 @@ export async function POST(req: Request) {
     });
 
     // withTenantScope tx has now COMMITTED. The Location row is visible to
-    // all connections. Now safe to update OnboardingSession.locationId — the
-    // FK check on OnboardingSession_locationId_fkey will resolve.
+    // all connections. The state-guarded claim updateMany in
+    // createLocationForOnboarding already reserved this session's right to
+    // transition (concurrent callers got INVALID_TRANSITION). It is now
+    // safe to update OnboardingSession.locationId and transition state.
     //
-    // IMPORTANT: writes below are NOT atomic with the tenant-scoped writes
-    // above. If linkResource or transitionTo fails here, the Location is
-    // orphaned (committed but not linked from the session). User.locationId
-    // also points at the orphan until retry overwrites it. The retry path
-    // through transitionTo's ALLOWED_TRANSITIONS guard will create a new
-    // Location on next call. The orphan is detectable by orgId + recent
-    // createdAt for janitor cleanup. Same atomicity gap as all other
-    // onboarding state transitions. Tracked in issue #95 for codebase-wide
-    // fix via withAdminTx.
+    // Atomicity gap: writes below are NOT atomic with the tenant-scoped
+    // writes above. If linkResource or transitionTo fails after args.tx
+    // committed, the Location is orphaned (committed but not linked from
+    // the session). The retry path: next call sees session still at
+    // ORG_CREATED with locationId still null -> claim succeeds -> new
+    // Location created. User.locationId from the first commit also points
+    // at the orphan until retry overwrites it. Same atomicity gap as all
+    // other onboarding state transitions in sessions.ts. Tracked in issue
+    // #95 for codebase-wide fix via withAdminTx.
     await linkResource({
       sessionId,
       locationId: result.locationId,

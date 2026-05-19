@@ -1,3 +1,4 @@
+import { prismaAdmin } from '@/lib/prismaAdmin';
 import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import type { OnboardingLocationCreateInput } from './types';
@@ -140,13 +141,41 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // Tenant-scoped writes only: Location.create, User.update(locationId),
+  // Atomic claim: only one caller can proceed for a given session.
+  // Postgres row-level lock on conditional UPDATE serializes concurrent
+  // requests — only one caller's claim succeeds, others get count=0.
+  // This prevents the duplicate-Location race where two concurrent POSTs
+  // both pass the pre-tx state check and both create Locations.
+  const claim = await prismaAdmin.onboardingSession.updateMany({
+    where: {
+      id: args.input.sessionId,
+      state: 'ORG_CREATED',
+      locationId: null,
+    },
+    data: {
+      updatedAt: new Date(),
+    },
+  });
+
+  if (claim.count === 0) {
+    throw new OnboardingError(
+      'INVALID_TRANSITION',
+      'session is no longer eligible for location creation — concurrent call or state has advanced'
+    );
+  }
+
+  // Tenant-scoped writes: Location.create, User.update(locationId),
   // Organization.update(timezone). RLS-enforced via withTenantScope. These
   // commit when the withTenantScope callback returns.
 
   const locationTimezone = args.input.timezone ?? DEFAULT_TIMEZONE;
   const newLocation = await args.tx.location.create({
     data: {
+      // organizationId comes from the JWT (server-verified by NextAuth).
+      // The pre-tx session check above asserted session.organizationId ===
+      // args.input.organizationId, and the claim updateMany requires
+      // state='ORG_CREATED' on the session, so a session whose org was
+      // mutated mid-flow would fail the claim.
       organizationId: args.input.organizationId,
       name: args.input.locationName.trim(),
       address: args.input.address.trim(),
@@ -165,9 +194,10 @@ export async function createLocationForOnboarding(args: {
     data: { locationId: newLocation.id },
   });
 
-  // First-location-wins for org timezone. Multi-location orgs created
-  // later won't trigger this — only the very first location sets the
-  // org timezone (state === 'ORG_CREATED' guard ensures this).
+  // First-location-wins for org timezone. The claim guard above (updateMany
+  // with state='ORG_CREATED' + locationId IS NULL) ensures only one call
+  // reaches this update — concurrent calls and post-LOCATION_CREATED
+  // retries are rejected with INVALID_TRANSITION.
   await args.tx.organization.update({
     where: { id: args.input.organizationId },
     data: { timezone: locationTimezone },
@@ -175,8 +205,8 @@ export async function createLocationForOnboarding(args: {
 
   return {
     locationId: newLocation.id,
-    // organizationId read from the created entity (round-trip to
-    // args.input.organizationId). Kept for defense-in-depth.
+    // organizationId echoed from the create result. Prisma returns the
+    // value we wrote; no separate read.
     organizationId: newLocation.organizationId,
   };
 }
