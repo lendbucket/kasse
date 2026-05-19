@@ -8,12 +8,12 @@ import {
 
 // Sanity check: Intl.supportedValuesOf must be available in the test
 // environment. If this assertion fails, the timezone validation in
-// lib/onboarding/location.ts will silently accept any string. Node 20+
+// lib/onboarding/location.ts will silently accept any string. Node 18+
 // provides this API.
 assert.ok(
   typeof Intl.supportedValuesOf === "function",
   "Intl.supportedValuesOf is required for timezone validation tests. " +
-    "Node 20+ required."
+    "Node 18+ required."
 );
 
 describe("validateLocationName (P1.A.3)", () => {

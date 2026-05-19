@@ -166,12 +166,13 @@ After ACCOUNT_CREATED, the owner is logged in via NextAuth. The flow:
    set, BusinessSettings created, session.organizationId + vertical set,
    transition to ORG_CREATED.
 
-2. **POST /api/onboarding/location** -- owner submits address. Handler also
-   uses `prismaAdmin` because the owner's NextAuth JWT was minted at sign-in
-   time before the org existed (organizationId is null in the JWT until re-auth).
-   Ownership verified via OnboardingSession (session.userId must match caller).
-   Geofence radius defaults to 100ft. Lat/lng default to null (no geocoder
-   integrated yet -- TODO before launch). First location required.
+2. **POST /api/onboarding/location** -- owner submits address. Handler is
+   TENANT_SCOPED (uses `withTenantScope`). **Requires** calling
+   /api/onboarding/refresh-session between org-create and location-create
+   so the JWT carries the fresh organizationId. Returns 409 if the JWT
+   still has null organizationId. Geofence radius defaults to 100ft. Lat/lng
+   default to null (no geocoder integrated yet -- TODO before launch). First
+   location's timezone is propagated to Organization.timezone.
 
 3. Session is now at LOCATION_CREATED. Next step (P1.A.4): seed the
    vertical-specific service catalog.
@@ -184,12 +185,12 @@ no org yet -- `withTenantScope` would have no tenant to scope by. The
 solution: use `prismaAdmin` for that one specific bootstrap moment, with
 explicit audit logging (`ORG_BOOTSTRAPPED` action).
 
-The location-create endpoint shares the same bootstrap window because the
-NextAuth JWT callback only enriches organizationId at sign-in time (`if (user)`
-guard in jwt callback). After org-create updates User.organizationId in the
-DB, the JWT still carries the old null value until the user re-authenticates.
-Both routes therefore use `prismaAdmin` with ownership verified via the
-OnboardingSession row. Documented in RLS_AUDIT.md as ORG_BOOTSTRAP.
+The location-create endpoint was originally in the same bootstrap window
+(P1.A.3). As of P1.A.3b, it has been flipped to TENANT_SCOPED: the client
+must call /api/onboarding/refresh-session after org-create to update the
+JWT with the fresh organizationId, then /api/onboarding/location uses
+`withTenantScope` with RLS-enforced tenant isolation. Only /api/onboarding/org
+remains ORG_BOOTSTRAP.
 
 ### JWT refresh after org-create
 
@@ -213,11 +214,11 @@ We use NextAuth's `trigger === "update"` mechanism:
    the update trigger. The new token is written back to the cookie.
    Subsequent requests carry the fresh organizationId.
 
-This unblocks the use of `withTenantScope` for post-org-create onboarding
-routes, which currently use `prismaAdmin` as a workaround (documented in
-RLS_AUDIT.md as ORG_BOOTSTRAP classification). The flip to
-`withTenantScope` will happen in **P1.A.3b** (small cleanup PR) once we
-can manually test the refresh path end-to-end.
+As of **P1.A.3b**, this refresh is **REQUIRED** between org-create and
+location-create. The location route is now TENANT_SCOPED and returns 409
+if the JWT still has null organizationId. The client must call
+`/api/onboarding/refresh-session` (which triggers `useSession().update()`)
+after org-create before proceeding to location-create.
 
 #### Manual test path
 
