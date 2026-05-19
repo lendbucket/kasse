@@ -83,6 +83,16 @@ export async function createServicesForOnboarding(args: {
     select: { verticalId: true },
   });
   if (!org) {
+    // Structurally impossible in normal operation: the pre-tx check
+    // already asserted session.organizationId !== null, and the claim
+    // updateMany above required organizationId = X to succeed. Reaching
+    // this branch means the Organization row was deleted between the
+    // claim and this lookup (only possible via SUPERADMIN intervention).
+    //
+    // If this fires, the session is left stuck at SERVICES_PENDING with
+    // no automated recovery — same atomicity gap as all other onboarding
+    // state transitions. Tracked in issue #95 (janitor job for stuck
+    // PENDING sessions + withAdminTx for atomic state rollback).
     throw new OnboardingError('ORG_NOT_YET_CREATED', 'organization not found');
   }
 
