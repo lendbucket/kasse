@@ -140,7 +140,31 @@ export async function createLocationForOnboarding(args: {
     );
   }
 
-  // Create location via tenant-scoped tx (RLS enforces org scope on Location table).
+  // Two-scope write coordination:
+  //
+  // 1. args.tx (tenant-scoped withTenantScope tx): Location.create,
+  //    User.update(locationId), Organization.update(timezone). RLS enforces
+  //    org isolation; rolls back automatically if any throw bubbles up.
+  //
+  // 2. prismaAdmin.$transaction (separate tx, runs INSIDE args.tx callback):
+  //    OnboardingSession.update, OnboardingStateTransition.create. These
+  //    tables have RLS policies requiring is_superadmin for INSERT/UPDATE,
+  //    so they can't go through args.tx. Wrapped in their own $transaction
+  //    so they're atomic with each other.
+  //
+  // Atomicity guarantees:
+  // - If prismaAdmin tx throws (step 2 fails): throw bubbles up, args.tx
+  //   rolls back. Net effect: nothing committed. ✓
+  // - If prismaAdmin tx commits but args.tx commit later fails (rare):
+  //   OnboardingSession ends up advanced to LOCATION_CREATED pointing at
+  //   a phantom location id. NOT recoverable. Mitigation: this is the
+  //   final write in the callback, args.tx commit happens immediately
+  //   after, window is microseconds. Documented limitation.
+  //
+  // In-tx state re-read inside the prismaAdmin tx catches concurrent calls
+  // (two simultaneous POSTs for the same session): only the first one
+  // advances state, the second throws INVALID_TRANSITION.
+
   const locationTimezone = args.input.timezone ?? DEFAULT_TIMEZONE;
   const newLocation = await args.tx.location.create({
     data: {
@@ -157,7 +181,6 @@ export async function createLocationForOnboarding(args: {
     },
   });
 
-  // Set owner's default locationId via tenant-scoped tx.
   await args.tx.user.update({
     where: { id: args.authenticatedUserId },
     data: { locationId: newLocation.id },
@@ -171,29 +194,51 @@ export async function createLocationForOnboarding(args: {
     data: { timezone: locationTimezone },
   });
 
-  // OnboardingSession + OnboardingStateTransition writes go through
-  // prismaAdmin because their RLS policies require is_superadmin for
-  // INSERT/UPDATE. These are outside the tenant-scoped tx but still
-  // atomic within prismaAdmin's own transaction wrapper.
-  await prismaAdmin.onboardingSession.update({
-    where: { id: args.input.sessionId },
-    data: {
-      locationId: newLocation.id,
-      state: 'LOCATION_CREATED',
-    },
-  });
+  // OnboardingSession + OnboardingStateTransition: atomic via prismaAdmin.$transaction.
+  // In-tx re-read + state guard closes concurrent-call race.
+  await prismaAdmin.$transaction(async (ptx) => {
+    const txSession = await ptx.onboardingSession.findUnique({
+      where: { id: args.input.sessionId },
+    });
+    if (!txSession || txSession.state !== 'ORG_CREATED') {
+      throw new OnboardingError(
+        'INVALID_TRANSITION',
+        'concurrent call advanced session state — retry'
+      );
+    }
+    if (txSession.locationId !== null) {
+      throw new OnboardingError(
+        'INVALID_TRANSITION',
+        'location already exists for this session'
+      );
+    }
 
-  await prismaAdmin.onboardingStateTransition.create({
-    data: {
-      sessionId: args.input.sessionId,
-      fromState: session.state,
-      toState: 'LOCATION_CREATED',
-      triggeredByUserId: args.authenticatedUserId,
-      metadata: {
+    await ptx.onboardingSession.update({
+      where: { id: args.input.sessionId },
+      data: {
         locationId: newLocation.id,
+        state: 'LOCATION_CREATED',
       },
-    },
+    });
+
+    await ptx.onboardingStateTransition.create({
+      data: {
+        sessionId: args.input.sessionId,
+        fromState: session.state,
+        toState: 'LOCATION_CREATED',
+        triggeredByUserId: args.authenticatedUserId,
+        metadata: {
+          locationId: newLocation.id,
+        },
+      },
+    });
   });
 
-  return { locationId: newLocation.id, organizationId: newLocation.organizationId };
+  return {
+    locationId: newLocation.id,
+    // organizationId read from the created entity (round-trip to args.input.organizationId).
+    // Kept this way for defense-in-depth: if Prisma ever transforms the FK on write,
+    // we'd surface the actual stored value rather than the input.
+    organizationId: newLocation.organizationId,
+  };
 }

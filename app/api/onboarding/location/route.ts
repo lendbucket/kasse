@@ -28,6 +28,12 @@ export async function POST(req: Request) {
         { status: 409 }
       );
     }
+    if (!session.user.email) {
+      return NextResponse.json(
+        { error: 'invalid_session', message: 'session missing email' },
+        { status: 401 }
+      );
+    }
 
     const body = await req.json();
     const { sessionId, locationName, address, city, state, zip, timezone } = body;
@@ -41,7 +47,7 @@ export async function POST(req: Request) {
     // JWT is server-verified and withTenantScope sets Postgres RLS context.
     const result = await withTenantScope(prisma, {
       userId: session.user.id,
-      email: session.user.email ?? '',
+      email: session.user.email,
       name: session.user.name ?? null,
       role: session.user.role ?? Role.OWNER,
       organizationId: session.user.organizationId,
