@@ -149,13 +149,24 @@ export async function createLocationForOnboarding(args: {
   //
   // The state-as-claim-token pattern works because the UPDATE modifies
   // a column (state) that's in its own WHERE clause. A plain "touch
-  // updatedAt" sentinel would NOT serialize — both callers would see
-  // state='ORG_CREATED' after acquiring the lock and both return count=1.
+  // updatedAt" sentinel would NOT serialize.
+  //
+  // The userId + organizationId conditions in the WHERE clause fold
+  // ownership verification into the atomic claim. Pre-tx getSessionById
+  // already verified ownership, but that read is on a separate connection
+  // from this UPDATE — including the conditions here closes the narrow
+  // TOCTOU window without an extra round-trip. If a session token is
+  // presented for the wrong user/org, the claim silently fails (count=0)
+  // and the route returns INVALID_TRANSITION. Pre-tx checks still run
+  // first to give clients better error discrimination (SESSION_NOT_FOUND,
+  // ORG_SCOPE_MISMATCH, etc.) before reaching this claim.
   const claim = await prismaAdmin.onboardingSession.updateMany({
     where: {
       id: args.input.sessionId,
       state: 'ORG_CREATED',
       locationId: null,
+      userId: args.authenticatedUserId,
+      organizationId: args.input.organizationId,
     },
     data: {
       state: 'LOCATION_PENDING',
