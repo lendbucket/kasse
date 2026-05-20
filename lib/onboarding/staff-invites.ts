@@ -34,7 +34,6 @@ export async function createStaffInvitation(args: {
     skip?: boolean;
     email?: string;
     name?: string;
-    role?: 'STAFF';
   };
   authenticatedUserId: string;
   ipAddress?: string | null;
@@ -45,7 +44,9 @@ export async function createStaffInvitation(args: {
   rawToken: string | null;
   email: string | null;
   name: string | null;
-  emailSent: boolean;
+  expiresAt: Date | null;
+  organizationName: string;
+  locationName: string;
   skipped: boolean;
   organizationId: string;
 }> {
@@ -120,6 +121,37 @@ export async function createStaffInvitation(args: {
     }
   }
 
+  // Read org + location names via tx (RLS-enforced). Used for the
+  // email template. Reading inside the tx keeps the dual-client pattern
+  // consistent and avoids two extra prismaAdmin round-trips in the route
+  // handler.
+  const [org, location] = await Promise.all([
+    args.tx.organization.findUnique({
+      where: { id: args.input.organizationId },
+      select: { name: true },
+    }),
+    args.tx.location.findUnique({
+      where: { id: args.input.locationId },
+      select: { name: true },
+    }),
+  ]);
+
+  if (!org) {
+    throw new OnboardingError(
+      'ORG_NOT_YET_CREATED',
+      `organization ${args.input.organizationId} not found`
+    );
+  }
+  if (!location) {
+    throw new OnboardingError(
+      'LOCATION_NOT_YET_CREATED',
+      `location ${args.input.locationId} not found`
+    );
+  }
+
+  const organizationName = org.name;
+  const locationName = location.name;
+
   // Atomic claim via state transition. Same pattern as SERVICES_PENDING in
   // createServicesForOnboarding. Concurrent POSTs both try this UPDATE;
   // Postgres row-level lock serializes them. The first transitions
@@ -154,7 +186,9 @@ export async function createStaffInvitation(args: {
       rawToken: null,
       email: null,
       name: null,
-      emailSent: false,
+      expiresAt: null,
+      organizationName,
+      locationName,
       skipped: true,
       organizationId: args.input.organizationId,
     };
@@ -189,7 +223,7 @@ export async function createStaffInvitation(args: {
       inviterUserId: args.authenticatedUserId,
       email: normalizedEmail,
       name: normalizedName,
-      role: 'STAFF',
+      role: 'STAFF',   // Hardcoded; only STAFF is valid for staff invitations
       tokenHash,
       expiresAt,
       ipAddressIssued: args.ipAddress ?? null,
@@ -203,7 +237,9 @@ export async function createStaffInvitation(args: {
     rawToken,
     email: normalizedEmail,
     name: normalizedName,
-    emailSent: false, // Route handler sends
+    expiresAt,
+    organizationName,
+    locationName,
     skipped: false,
     organizationId: args.input.organizationId,
   };

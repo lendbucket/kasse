@@ -104,7 +104,7 @@ export async function POST(req: Request) {
           skip: skip === true,
           email: typeof email === 'string' ? email : undefined,
           name: typeof name === 'string' ? name : undefined,
-          role: 'STAFF',  // Only STAFF is valid; pre-validated above
+
         },
         authenticatedUserId: session.user.id,
         ipAddress,
@@ -171,23 +171,14 @@ export async function POST(req: Request) {
     let emailSent = false;
     if (RESEND_API_KEY && result.rawToken) {
       try {
-        const org = await prismaAdmin.organization.findUnique({
-          where: { id: result.organizationId },
-          select: { name: true },
-        });
-        const location = await prismaAdmin.location.findUnique({
-          where: { id: session.user.locationId! },
-          select: { name: true },
-        });
-
         const acceptUrl = `${getBaseUrl()}/staff/accept-invite?token=${result.rawToken}`;
         const emailContent = renderStaffInviteEmail({
           inviterName: session.user.name ?? session.user.email,
-          organizationName: org?.name ?? 'your organization',
-          locationName: location?.name ?? 'your location',
+          organizationName: result.organizationName,
+          locationName: result.locationName,
           inviteeName: result.name!,
           acceptUrl,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          expiresAt: result.expiresAt!,
         });
 
         const resend = new Resend(RESEND_API_KEY);
