@@ -205,6 +205,10 @@ export async function createStaffInvitation(args: {
       name: normalizedName,
       email: normalizedEmail,
       role: 'stylist',
+      // commissionRate is stored as PERCENT (e.g., 40 = 40% to the stylist).
+      // Default of 40% matches the Staff schema default and is a common
+      // starting point for new salon stylists. Owner can adjust per-stylist
+      // later via the staff settings UI (P1.A.7+).
       commissionRate: 40,
       isActive: false, // Activated on invite acceptance
     },
@@ -396,6 +400,13 @@ export async function acceptStaffInvitation(args: {
   if (staffLink.count === 0) {
     // Staff already linked — concurrent accept race. The User row we just
     // created is orphaned. Recovery is manual (#95 territory).
+    console.error('[ORPHAN_USER] acceptStaffInvitation: Staff link failed after User created', {
+      userId: newUser.id,
+      staffId: invitation.staffId,
+      invitationId: invitation.id,
+      organizationId: invitation.organizationId,
+      timestamp: new Date().toISOString(),
+    });
     throw new OnboardingError(
       'INVITE_ALREADY_ACCEPTED',
       'staff record already linked to a user — concurrent accept race'

@@ -108,6 +108,12 @@ CREATE POLICY "tenant_isolation_delete" ON "StaffInvitation"
   );
 
 -- 7. Grant privileges to kasse_app role
+-- IMPORTANT: this statement requires running as postgres (superuser) or
+-- another role with GRANT authority on this table. The Supabase MCP
+-- migration runner uses postgres credentials; `prisma migrate deploy`
+-- would also work IF its DATABASE_URL points to a role with GRANT
+-- authority. Do NOT attempt to run this migration as kasse_app — it
+-- doesn't own the table and lacks GRANT authority on its own role.
 GRANT SELECT, INSERT, UPDATE, DELETE ON "StaffInvitation" TO kasse_app;
 
 -- 8. Update OnboardingSession state CHECK to include STAFF_PENDING
