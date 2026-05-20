@@ -1158,3 +1158,67 @@ and OnboardingStateTransition fromState/toState CHECK constraints.
 |--------|--------|---------|
 | `validateCompensationInput` | `lib/onboarding/compensation` | Pure validation: model-type-conditional field checks, date sanity |
 | `setCompensationForStaff` | `lib/onboarding/compensation` | Owner sets compensation for all non-skipped agreement staff. Pre-claim invariant: every staff with an agreement must have a corresponding compensation input. State-as-claim-token via AGREEMENTS_CONFIGURED -> COMPENSATION_PENDING. |
+
+## P1.A.7-b — Supabase Storage Integration + SUPABASE_SERVICE_ROLE_KEY exception (2026-05-20)
+
+**Status:** ACTIVE
+
+P1.A.7-b introduces the FIRST use of Supabase Storage and the FIRST
+use of SUPABASE_SERVICE_ROLE_KEY in this codebase. Per the standing
+rule in this document ("if you see SUPABASE_SERVICE_ROLE_KEY introduced
+in a PR, flag it as a SEVERE concern unless this audit doc has been
+updated to document the new bypass exception"), the bypass exception is
+documented here.
+
+### Why the service role key is needed
+
+Supabase Storage uses its own RLS layer on storage.objects. Server-side
+uploads from a Vercel function don't have a Supabase JWT — they need a
+credential that authenticates as a privileged backend identity. The
+service_role key is the standard pattern for backend-to-Storage flows.
+
+### Bypass scope
+
+SUPABASE_SERVICE_ROLE_KEY is used ONLY by:
+- `lib/onboarding/agreement-storage.ts` (uploads + signed URL minting)
+
+No other module reads this env var. Any future module that introduces a
+read MUST update this section.
+
+### Storage path convention
+
+All objects in kasse-agreements are stored as:
+  `<organizationId>/<agreementId>/<filename>`
+
+The `authenticated_read_own_org_kasse_agreements` policy enforces that
+clients can only read objects whose path prefix matches their
+`app.current_org_id` session variable. Defense-in-depth — the primary
+access pattern is signed URLs minted by the backend.
+
+### P1.A.7-b Tables
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `AgreementSignToken` | Direct `organizationId` column | 4 per-command policies (SELECT/INSERT/UPDATE/DELETE) with superadmin bypass |
+
+Table granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P1.A.7-b API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/agreements/send` | POST | TENANT_SCOPED-style | OWNER-only. Reads agreements via prismaAdmin scoped by verified session orgId+locationId. Writes via withAdminTx (EmploymentAgreement.update + AgreementSignToken.create + audit log atomic). PDF upload + Resend send happen after batch commits (best-effort, fail-soft logged as DEGRADED). |
+| `/api/onboarding/agreements/send-test` | POST | TENANT_SCOPED-style | Same as /send but recipient is the authenticated owner's email. PDF + token are still real. |
+
+### P1.A.7-b Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `renderEmploymentAgreementPDF` | `lib/onboarding/agreement-pdf` | Server-side PDF generation via @react-pdf/renderer |
+| `uploadAgreementPDF` | `lib/onboarding/agreement-storage` | Uploads PDF to kasse-agreements bucket via Storage REST API + SUPABASE_SERVICE_ROLE_KEY |
+| `createSignedDownloadUrl` | `lib/onboarding/agreement-storage` | Mints a time-limited signed URL for the agreement PDF |
+| `generateRawAgreementToken` | `lib/onboarding/agreement-tokens` | 32-byte random token, hex (64 chars) |
+| `hashAgreementToken` | `lib/onboarding/agreement-tokens` | SHA-256 of the raw token, hex |
+| `sendAllAgreementsForSession` | `lib/onboarding/agreement-send` | Orchestrator: per-agreement loop with isolated failures, withAdminTx for DB writes, PDF upload + Resend send after commit |
+| `renderAgreementSignEmail` | `lib/onboarding/emails/agreement-sign` | HTML + text email template for signing notification |
+| `buildCompensationSummary` | `lib/onboarding/emails/agreement-sign` | Brief compensation text for email body |

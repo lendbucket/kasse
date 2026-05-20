@@ -35,6 +35,8 @@ export function onboardingErrorStatus(code: string): number {
     case 'NOT_ALL_STAFF_HAVE_COMPENSATION': return 409;
     case 'COMPENSATION_STAFF_MISMATCH': return 400;
     case 'COMPENSATION_FIELDS_INCOMPLETE': return 400;
+    case 'AGREEMENT_SEND_FAILED': return 500;
+    case 'COMPENSATION_REQUIRED_FOR_PDF': return 409;
     // Default 400 for validation-style codes:
     // INVALID_EMAIL, INVALID_ADDRESS, INVALID_LOCATION_NAME,
     // INVALID_TIMEZONE, INVALID_VERTICAL, INVALID_PLAN_TIER,

@@ -100,10 +100,20 @@ existing Compensation table from P0.G.4). Migration adds COMPENSATION_PENDING
 sentinel to CHECK constraints. Admin UI at /dashboard/admin/compensation/[sessionId].
 Validation tests for all 4 model types. E-sign / PDF / signing UI are P1.A.7-b/c/d.
 
-### P1.A.7-b/c/d — E-sign + PDF storage (pending)
+### P1.A.7-b — PDF + Storage + agreement send -- IN PROGRESS
 
-Legal document generation, e-sign flow, PDF storage.
-Requires withAdminTx (#95) for atomicity guarantees on legal docs. UNBLOCKED.
+PDF generation via @react-pdf/renderer. Supabase Storage bucket
+(kasse-agreements) for per-org PDF isolation. AgreementSignToken table
+for per-recipient hashed signing tokens. Resend email with signing link.
+POST /api/onboarding/agreements/send and /send-test routes. Per-agreement
+atomicity via withAdminTx. SUPABASE_SERVICE_ROLE_KEY bypass exception
+documented in RLS_AUDIT.md.
+
+### P1.A.7-c/d — Signing UI + wait-vs-continue (pending)
+
+Public signing UI at /agreements/sign/[token]. Signature acceptance flow.
+Owner dashboard pending-agreements tile. "Wait for signatures vs continue"
+branch at COMPENSATION_CONFIGURED -> COMPLETED.
 
 ### P1.A.8 — Google OAuth signup
 

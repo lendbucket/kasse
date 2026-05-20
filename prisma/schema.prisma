@@ -154,6 +154,7 @@ model Organization {
   users                  User[]
   waitlistEntries        WaitlistEntry[]
   webhooks               Webhook[]
+  agreementSignTokens    AgreementSignToken[]
 
   @@index([verticalId])
   @@index([planTier])
@@ -348,6 +349,7 @@ model Staff {
   invitations           StaffInvitation[]
   stylistServices       StylistService[]
   tipDistributions      TipDistribution[]
+  agreementSignTokens   AgreementSignToken[]
 
   @@index([organizationId, isActive], map: "idx_staff_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
 }
@@ -1736,11 +1738,38 @@ model EmploymentAgreement {
   notes              String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @default(now())
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  staff              Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff              Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  agreementSignToken AgreementSignToken?
 
   @@index([organizationId, staffId], map: "idx_emp_org_staff")
   @@index([organizationId, status], map: "idx_emp_status")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// Per-recipient signing token for EmploymentAgreements. Hash stored at
+/// rest; raw token returned once via email. Mirrors StaffInvitation pattern.
+model AgreementSignToken {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()::text"))
+  organizationId      String
+  agreementId         String              @unique
+  staffId             String
+  tokenHash           String              @unique
+  expiresAt           DateTime
+  sentAt              DateTime            @default(now())
+  consumedAt          DateTime?
+  ipAddressIssued     String?
+  userAgentIssued     String?
+  ipAddressConsumed   String?
+  userAgentConsumed   String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @default(now())
+  agreement           EmploymentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  staff               Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId], map: "idx_agreement_sign_token_org")
+  @@index([expiresAt], map: "idx_agreement_sign_token_expires")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
