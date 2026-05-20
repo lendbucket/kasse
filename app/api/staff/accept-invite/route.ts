@@ -51,7 +51,8 @@ export async function POST(req: Request) {
       entityId: null,
       metadata: {
         staffId: result.staffId,
-        email: result.email,
+        // email REMOVED — PII. staffId is sufficient for audit lookups.
+        // Email is recoverable via Staff → User join if needed for investigation.
       },
     });
 

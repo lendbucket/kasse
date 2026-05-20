@@ -22,15 +22,13 @@ export function renderStaffInviteEmail(
   // can't break HTML attribute quoting or inject elements.
   const acceptUrl = encodeURI(params.acceptUrl);
 
-  const expiresHuman = expiresAt.toLocaleString('en-US', {
-    weekday: 'long',
-    month: 'short',
+  // Format expiry as UTC date — timezone-neutral, accurate for "in 7 days"
+  const expiresHuman = expiresAt.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
     day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-    timeZone: 'America/Chicago',
-  });
+    timeZone: 'UTC',
+  }) + ' UTC';
 
   const subject = `${inviterName} invited you to join ${organizationName} on Kasse`;
 

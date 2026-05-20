@@ -43,6 +43,8 @@ export async function createStaffInvitation(args: {
   staffInvitationId: string | null;
   staffId: string | null;
   rawToken: string | null;
+  email: string | null;
+  name: string | null;
   emailSent: boolean;
   skipped: boolean;
   organizationId: string;
@@ -86,7 +88,7 @@ export async function createStaffInvitation(args: {
       throw new OnboardingError('INVALID_EMAIL', `'${args.input.email}' is not a valid email`);
     }
     if (!args.input.name || !args.input.name.trim()) {
-      throw new OnboardingError('INVITE_EMAIL_REQUIRED', 'name is required to invite a stylist');
+      throw new OnboardingError('INVITE_NAME_REQUIRED', 'name is required to invite a stylist');
     }
 
     // Check if a User already exists with this email
@@ -150,19 +152,24 @@ export async function createStaffInvitation(args: {
       staffInvitationId: null,
       staffId: null,
       rawToken: null,
+      email: null,
+      name: null,
       emailSent: false,
       skipped: true,
       organizationId: args.input.organizationId,
     };
   }
 
+  const normalizedEmail = args.input.email!.trim().toLowerCase();
+  const normalizedName = args.input.name!.trim();
+
   // Create Staff row (userId=null — not yet linked to a User account)
   const staff = await args.tx.staff.create({
     data: {
       organizationId: args.input.organizationId,
       locationId: args.input.locationId,
-      name: args.input.name!.trim(),
-      email: args.input.email!.trim().toLowerCase(),
+      name: normalizedName,
+      email: normalizedEmail,
       role: 'stylist',
       commissionRate: 40,
       isActive: false, // Activated on invite acceptance
@@ -180,8 +187,8 @@ export async function createStaffInvitation(args: {
       locationId: args.input.locationId,
       staffId: staff.id,
       inviterUserId: args.authenticatedUserId,
-      email: args.input.email!.trim().toLowerCase(),
-      name: args.input.name!.trim(),
+      email: normalizedEmail,
+      name: normalizedName,
       role: 'STAFF',
       tokenHash,
       expiresAt,
@@ -194,6 +201,8 @@ export async function createStaffInvitation(args: {
     staffInvitationId: invitation.id,
     staffId: staff.id,
     rawToken,
+    email: normalizedEmail,
+    name: normalizedName,
     emailSent: false, // Route handler sends
     skipped: false,
     organizationId: args.input.organizationId,
@@ -308,7 +317,13 @@ export async function acceptStaffInvitation(args: {
     },
   });
 
-  // 5. Link Staff to User and activate (atomic via updateMany WHERE userId IS NULL)
+  // Staff claim — defense-in-depth. Token consume above already serialized
+  // this flow (only one caller per token). This claim can only fail if the
+  // Staff row was linked via a code path that doesn't go through this
+  // function (SUPERADMIN intervention, future bugs in other helpers). If
+  // it fails, the User row created in this function is orphaned. Recovery
+  // requires manual cleanup. Tracked in #95 (withAdminTx would let us
+  // wrap all 3 writes in one transaction, eliminating this gap entirely).
   const staffLink = await prismaAdmin.staff.updateMany({
     where: {
       id: invitation.staffId,

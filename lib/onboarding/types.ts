@@ -167,6 +167,7 @@ export class OnboardingError extends Error {
       | 'INVITE_NOT_FOUND'
       | 'INVITE_ALREADY_ACCEPTED'
       | 'INVITE_EXPIRED'
+      | 'INVITE_NAME_REQUIRED'
       | 'INVITE_EMAIL_ALREADY_USER',
     message: string
   ) {

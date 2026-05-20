@@ -62,14 +62,12 @@ export async function POST(req: Request) {
     const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = req.headers.get('user-agent') ?? null;
 
-    // Look up locationId from the onboarding session
-    const onboardingSession = await prismaAdmin.onboardingSession.findUnique({
-      where: { id: sessionId },
-      select: { locationId: true },
-    });
-    if (!onboardingSession?.locationId) {
+    if (!session.user.locationId) {
       return NextResponse.json(
-        { error: 'location_not_yet_created', message: 'location must be created before inviting staff' },
+        {
+          error: 'location_not_yet_created',
+          message: 'Call /api/onboarding/refresh-session after location step.',
+        },
         { status: 409 }
       );
     }
@@ -89,7 +87,7 @@ export async function POST(req: Request) {
         input: {
           sessionId,
           organizationId: session.user.organizationId!,
-          locationId: onboardingSession.locationId!,
+          locationId: session.user.locationId!,
           skip: skip === true,
           email: typeof email === 'string' ? email : undefined,
           name: typeof name === 'string' ? name : undefined,
@@ -125,7 +123,7 @@ export async function POST(req: Request) {
         where: { id: sessionId },
         data: {
           skippedSteps: {
-            push: 'SERVICES_SEEDED',
+            push: 'STAFF_INVITED',
           },
         },
       });
@@ -165,7 +163,7 @@ export async function POST(req: Request) {
           select: { name: true },
         });
         const location = await prismaAdmin.location.findUnique({
-          where: { id: onboardingSession.locationId! },
+          where: { id: session.user.locationId! },
           select: { name: true },
         });
 
@@ -174,7 +172,7 @@ export async function POST(req: Request) {
           inviterName: session.user.name ?? session.user.email,
           organizationName: org?.name ?? 'your organization',
           locationName: location?.name ?? 'your location',
-          inviteeName: body.name,
+          inviteeName: result.name!,
           acceptUrl,
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         });
@@ -182,7 +180,7 @@ export async function POST(req: Request) {
         const resend = new Resend(RESEND_API_KEY);
         await resend.emails.send({
           from: RESEND_FROM,
-          to: body.email,
+          to: result.email!,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
