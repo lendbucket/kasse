@@ -1,6 +1,6 @@
 # PHASE 1 — ONBOARDING
 
-**Status:** In progress (P1.A.1, P1.A.2, P1.A.3, P1.A.3b, P1.A.4, P1.A.5 shipped)
+**Status:** In progress (P1.A.1, P1.A.2, P1.A.3, P1.A.3b, P1.A.4, P1.A.5, P1.A.6 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
 **Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
@@ -70,11 +70,19 @@ STAFF_PENDING → STAFF_INVITED. New StaffInvitation model with RLS policies.
 Error-status helper extracted (onboardingErrorStatus) to de-duplicate mapping
 across 4 onboarding routes.
 
-### P1.A.6 — Password strength meter
+### P1.A.6 — Employment agreements scaffolding ✅ COMPLETE
 
-Files: `components/auth/PasswordStrength.tsx`
-
-zxcvbn-based. Min 8 chars + 3 of (upper/lower/digit/symbol) OR 14+ chars.
+POST /api/onboarding/agreements: owner selects templateType (W2/CONTRACTOR_1099/
+BOOTH_RENT/HYBRID) or skips. Creates one DRAFT EmploymentAgreement row per active
+Staff at the org+location. documentUrl is placeholder ('pending://<templateType>'),
+status is always 'DRAFT'. Real legal document content, e-sign, PDF storage ship
+in P1.A.7 (blocked on #95). State-as-claim-token serialization via STAFF_INVITED →
+AGREEMENTS_PENDING → AGREEMENTS_CONFIGURED. AGREEMENTS_PENDING is additive sentinel
+(same architecture as LOCATION_PENDING, SERVICES_PENDING, STAFF_PENDING). No new
+tables — EmploymentAgreement model already exists from P0.G.4. Migration updates
+OnboardingSession state CHECK constraint. EmploymentAgreement RLS gap noted: existing
+policy is FOR ALL with no superadmin bypass. Fine for P1.A.6 (uses args.tx
+exclusively); future admin tools need the superadmin OR clause (#95 territory).
 
 ### P1.A.7 — bcrypt password hashing
 

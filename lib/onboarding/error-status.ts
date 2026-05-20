@@ -30,6 +30,8 @@ export function onboardingErrorStatus(code: string): number {
     case 'TOO_MANY_MAGIC_LINK_SENDS': return 429;
     case 'INVITE_EMAIL_REQUIRED': return 400;
     case 'INVITE_NAME_REQUIRED': return 400;
+    case 'INVALID_AGREEMENT_TEMPLATE_TYPE': return 400;
+    case 'INVITE_NO_STAFF_TO_AGREE': return 409;
     // Default 400 for validation-style codes:
     // INVALID_EMAIL, INVALID_ADDRESS, INVALID_LOCATION_NAME,
     // INVALID_TIMEZONE, INVALID_VERTICAL, INVALID_PLAN_TIER,

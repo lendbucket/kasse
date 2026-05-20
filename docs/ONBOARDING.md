@@ -1,6 +1,6 @@
 # Onboarding
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 ## Purpose
 
@@ -43,7 +43,9 @@ SERVICES_SEEDED
 STAFF_PENDING
   | (staff invite sent or skip path, tenant tx committed)
 STAFF_INVITED
-  | (employment templates configured OR skipped)
+  | (claim: concurrent-call serialization)
+AGREEMENTS_PENDING
+  | (employment agreement drafts created or skip path, tenant tx committed)
 AGREEMENTS_CONFIGURED
   | (>=1 Compensation record OR skipped)
 COMPENSATION_CONFIGURED
