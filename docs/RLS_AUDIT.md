@@ -161,9 +161,9 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 
 ## Summary
 
-- TENANT_SCOPED: **32**
-- BYPASS_NEEDED: **19**
-  - PRE_SESSION: **8** (auth handlers + NextAuth + 3 onboarding pre-account routes)
+- TENANT_SCOPED: **33**
+- BYPASS_NEEDED: **20**
+  - PRE_SESSION: **9** (auth handlers + NextAuth + 3 onboarding pre-account routes + staff invite accept)
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
   - ORG_BOOTSTRAP: **1** (onboarding org-create — authenticated but no org yet)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
@@ -171,7 +171,7 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 53**
+**Total routes: 55**
 
 ## What happens next
 
@@ -1036,6 +1036,8 @@ No new tables. Uses existing Organization, Location, BusinessSettings, User tabl
 | `/api/onboarding/org` | POST | BYPASS_NEEDED — ORG_BOOTSTRAP | Creates Organization + BusinessSettings + links User as OWNER via prismaAdmin. The ONLY non-admin Organization.create. |
 | `/api/onboarding/location` | POST | TENANT_SCOPED (P1.A.3b) | Dual-client: Location/User/Org writes via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (in sessions.ts helpers) AFTER the tenant tx commits. Was ORG_BOOTSTRAP in P1.A.3. |
 | `/api/onboarding/services` | POST | TENANT_SCOPED (P1.A.4) | Dual-client: Service.createMany via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (sessions.ts helpers) AFTER the tenant tx commits. Same architecture as /api/onboarding/location. |
+| `/api/onboarding/staff-invite` | POST | TENANT_SCOPED (P1.A.5) | Dual-client. Staff.create + StaffInvitation.create via withTenantScope tx; OnboardingSession state via prismaAdmin in sessions.ts. |
+| `/api/staff/accept-invite` | POST | BYPASS_NEEDED — PRE_SESSION (P1.A.5) | Invitee has no session yet. User/Staff/StaffInvitation writes all via prismaAdmin (atomic across 3 tables not guaranteed, #95). |
 | `/api/onboarding/refresh-session` | POST | BYPASS_NEEDED — SELF_READ | Returns user's own DB state for JWT refresh. Read-only, no mutations. |
 
 ### P1.A.3 Helper Functions
@@ -1063,3 +1065,22 @@ No new tables (uses existing Service table). No new RLS policies needed — Serv
 | Helper | Module | Purpose |
 |--------|--------|---------|
 | `createServicesForOnboarding` | `lib/onboarding/services` | Seeds vertical's defaultServices into org's Service table during onboarding. State-as-claim-token serialization via LOCATION_CREATED → SERVICES_PENDING claim. |
+
+## P1.A.5 — Staff invite + role assignment (2026-05-19)
+
+New table: StaffInvitation (RLS-enabled, 4 tenant isolation policies + superadmin bypass). Token storage is hashed (sha256), single-use via atomic updateMany consume.
+
+### P1.A.5 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/staff-invite` | POST | TENANT_SCOPED | Dual-client: Staff.create + StaffInvitation.create via withTenantScope tx; OnboardingSession state transitions via prismaAdmin in sessions.ts helpers AFTER tenant tx commits. Same architecture as /api/onboarding/location and /api/onboarding/services. Skip path uses same STAFF_PENDING sentinel mechanism. |
+| `/api/staff/accept-invite` | POST | BYPASS_NEEDED — PRE_SESSION | Invitee has no User account or JWT at time of acceptance. Auth is the invitation token itself. Creates User row, links Staff.userId, marks invitation accepted — all via prismaAdmin. Atomicity gap spans 3 tables without single transaction (#95 territory). |
+
+### P1.A.5 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createStaffInvitation` | `lib/onboarding/staff-invites` | Owner invites a stylist or skips. Creates Staff row (userId=null) + StaffInvitation with hashed token. State-as-claim-token serialization via SERVICES_SEEDED → STAFF_PENDING claim. |
+| `acceptStaffInvitation` | `lib/onboarding/staff-invites` | Consumes invitation token, creates User (role=STAFF), links Staff.userId, activates staff. All via prismaAdmin (no tenant scope — invitee has no session). |
+| `onboardingErrorStatus` | `lib/onboarding/error-status` | Maps OnboardingError codes to HTTP status codes. Extracted from duplicated logic in location.ts and services.ts (cycle 3 reviewer feedback on PR #96). |

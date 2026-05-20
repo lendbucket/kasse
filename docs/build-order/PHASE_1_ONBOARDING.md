@@ -1,6 +1,6 @@
 # PHASE 1 — ONBOARDING
 
-**Status:** In progress (P1.A.1, P1.A.2, P1.A.3, P1.A.3b, P1.A.4 shipped)
+**Status:** In progress (P1.A.1, P1.A.2, P1.A.3, P1.A.3b, P1.A.4, P1.A.5 shipped)
 **Scope:** Signup foundation, 8-step wizard, 30-day email sequence, tours, setup checklist.
 **Total PRs:** 80
 **Depends on:** P0 (foundation — COMPLETE as of 2026-05-18)
@@ -58,11 +58,17 @@ TENANT_SCOPED dual-client (same architecture as /api/onboarding/location).
 State-as-claim-token serialization via LOCATION_CREATED → SERVICES_PENDING →
 SERVICES_SEEDED. Source of truth: lib/verticals/configs/salon.ts defaultServices.
 
-### P1.A.5 — Verification enforcement middleware
+### P1.A.5 — Staff invite + role assignment ✅ COMPLETE
 
-Files: `middleware.ts` (extend)
-
-Unverified users redirected to `/signup/verify-email` for all routes except logout and verification flow.
+Staff invitation flow for onboarding. POST /api/onboarding/staff-invite: owner
+sends invite or skips. Creates Staff row (userId=null), StaffInvitation row
+with hashed token, sends email via Resend. Skip path uses same STAFF_PENDING
+sentinel for state machine consistency. POST /api/staff/accept-invite: public
+route, invitee provides token + password, gets a User account, Staff row
+activated. State-as-claim-token serialization via SERVICES_SEEDED →
+STAFF_PENDING → STAFF_INVITED. New StaffInvitation model with RLS policies.
+Error-status helper extracted (onboardingErrorStatus) to de-duplicate mapping
+across 4 onboarding routes.
 
 ### P1.A.6 — Password strength meter
 
