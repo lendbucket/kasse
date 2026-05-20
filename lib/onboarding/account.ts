@@ -113,7 +113,7 @@ export async function createAccount(args: {
     p.onboardingStateTransition.create({
       data: {
         sessionId: args.sessionId,
-        fromState: 'EMAIL_VERIFIED',
+        fromState: session.state,  // guaranteed 'EMAIL_VERIFIED' by guards above
         toState: 'ACCOUNT_CREATED',
         triggeredByUserId: userId,
         metadata: { userId },

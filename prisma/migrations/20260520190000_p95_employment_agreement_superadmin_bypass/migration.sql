@@ -10,6 +10,14 @@
 -- OR clause — same pattern as Location, Service, Staff, StaffInvitation.
 --
 -- Applied to production via Supabase MCP on 2026-05-20.
+--
+-- IMPORTANT: this migration's DROP POLICY / CREATE POLICY statements
+-- require the postgres role (table owner). When running via
+-- `prisma migrate deploy`, MIGRATION_DATABASE_URL must point to a
+-- postgres-role connection. The kasse_app role cannot execute these
+-- statements (it lacks ownership of the EmploymentAgreement table).
+-- See docs/RLS_AUDIT.md "Production State Log" for the
+-- DATABASE_URL/MIGRATION_DATABASE_URL split.
 
 DROP POLICY IF EXISTS "tenant_isolation" ON "EmploymentAgreement";
 

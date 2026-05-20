@@ -73,6 +73,16 @@ export async function withAdminTx<T extends readonly Prisma.PrismaPromise<unknow
       'if you upgraded Prisma, check the $extends API for the equivalent.'
     );
   }
+  // Defensive: if $parent ever returns the same wrapped client (or any
+  // $extends-wrapped variant) we'd be back to the broken pattern this
+  // helper exists to fix. Throw rather than allow silent re-introduction.
+  if (unwrapped === (prismaAdmin as any)) {
+    throw new Error(
+      '[withAdminTx] prismaAdmin.$parent returned the wrapped client itself. ' +
+      'This means $extends interception is still in play and batch operations ' +
+      'will not run atomically. Check the Prisma version and $extends API.'
+    );
+  }
 
   const operations = build(unwrapped);
 
@@ -95,6 +105,11 @@ export async function withAdminTx<T extends readonly Prisma.PrismaPromise<unknow
     );
   }
 
+  // The function signature's mapped type correctly propagates the tuple
+  // shape to callers — but Prisma's batch $transaction return type is too
+  // loose to cast through without `as any` here. The narrow types are
+  // enforced at the build(p) callback return and at the destructuring
+  // call sites; this cast covers only the internal forwarding.
   return results as any;
 }
 

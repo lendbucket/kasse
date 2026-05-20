@@ -1138,4 +1138,4 @@ New export from `lib/audit/write.ts`: `auditLogCreateOp(p, input)` returns a def
 
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
-| `/api/cron/onboarding-janitor` | POST, GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan |
+| `/api/cron/onboarding-janitor` | GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan. Vercel cron sends GET. |
