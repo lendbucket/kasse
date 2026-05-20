@@ -10,12 +10,13 @@ import type { Prisma } from '@prisma/client';
  * _prismaAdmin's connection pool instead.
  *
  * Uses Prisma's BATCH transaction form: $transaction([...promises]).
- * The SET LOCAL prelude is included as the first operation, so all
- * subsequent operations in the batch see app.is_superadmin = 'true'
+ * The SET LOCAL prelude is included as the first operation, followed by
+ * a runtime assertion that verifies the SET LOCAL actually applied within
+ * the batch. All subsequent operations run with app.is_superadmin = 'true'
  * on the SAME connection within the SAME transaction.
  *
  * Returns the results of the user-provided operations (NOT including
- * the SET LOCAL result, which is dropped).
+ * the SET LOCAL or assertion results, which are dropped).
  *
  * USAGE:
  *   const [user, session, transition] = await withAdminTx((p) => [
@@ -29,6 +30,14 @@ import type { Prisma } from '@prisma/client';
  * the batch without the $extends wrapper interception. All operations
  * MUST return PrismaPromise (i.e., be deferred). Do NOT await inside
  * the callback — that defeats the batching.
+ *
+ * SAFETY:
+ *   - Throws if $parent is unavailable (no silent fallback to the
+ *     wrapped client, which would reintroduce the broken pattern).
+ *   - Includes a runtime assertion that SET LOCAL applied within the
+ *     batch via current_setting() check. If Prisma batch semantics
+ *     ever change, this fails fast rather than allowing ops to run
+ *     without superadmin context (silent RLS denial).
  *
  * LIMITATIONS:
  *   - All operations must be Prisma model operations (findUnique,
@@ -47,21 +56,44 @@ import type { Prisma } from '@prisma/client';
  *   _prismaAdmin base PrismaClient (identity check: $parent === base).
  *   Batch transactions on the unwrapped client group all operations on
  *   one backend connection (verified via pg_backend_pid()).
+ *   Runtime SET LOCAL assertion passes on every call.
  */
 export async function withAdminTx<T extends readonly Prisma.PrismaPromise<unknown>[]>(
   build: (p: PrismaAdminUnwrapped) => [...T]
 ): Promise<{ [K in keyof T]: T[K] extends Prisma.PrismaPromise<infer R> ? R : never }> {
   // Access the underlying _prismaAdmin client. The $extends wrapper exposes
-  // this via .$parent (verified against Prisma 7.x).
-  const unwrapped: PrismaAdminUnwrapped = (prismaAdmin as any).$parent ?? prismaAdmin;
+  // this via .$parent (verified against Prisma 7.x). Throw if unavailable —
+  // falling back to the wrapped client would reintroduce the broken pattern.
+  const unwrapped = (prismaAdmin as any).$parent as PrismaAdminUnwrapped | undefined;
+  if (!unwrapped) {
+    throw new Error(
+      '[withAdminTx] prismaAdmin.$parent is unavailable. ' +
+      'This is required to access the unwrapped Prisma client for batch ' +
+      'transactions. The $parent property is verified on Prisma 7.x — ' +
+      'if you upgraded Prisma, check the $extends API for the equivalent.'
+    );
+  }
 
   const operations = build(unwrapped);
 
-  // Prepend SET LOCAL so it runs on the same connection as the batch.
-  const [, ...results] = await unwrapped.$transaction([
+  // Batch: SET LOCAL + assertion + user operations.
+  // The assertion verifies SET LOCAL applied on this connection within
+  // this transaction. If Prisma batch semantics ever change such that
+  // SET LOCAL runs on a different connection, the assertion catches it.
+  const [, isSuperadminCheck, ...results] = await unwrapped.$transaction([
     unwrapped.$executeRaw`SET LOCAL app.is_superadmin = 'true'`,
+    unwrapped.$queryRaw<[{ value: string }]>`SELECT current_setting('app.is_superadmin', true) AS value`,
     ...operations,
   ]);
+
+  const assertedValue = (isSuperadminCheck as unknown as [{ value: string }])?.[0]?.value;
+  if (assertedValue !== 'true') {
+    throw new Error(
+      '[withAdminTx] SET LOCAL did not apply within the batch transaction. ' +
+      `Expected 'true', got '${assertedValue ?? '(empty)'}'. ` +
+      'Prisma batch semantics may have changed — verify $transaction array form still wraps in one tx.'
+    );
+  }
 
   return results as any;
 }

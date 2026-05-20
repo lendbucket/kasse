@@ -61,6 +61,12 @@ export async function createAccount(args: {
   if (!session) {
     throw new OnboardingError('SESSION_NOT_FOUND', `session ${args.sessionId} not found`);
   }
+  if (session.expiresAt < new Date()) {
+    throw new OnboardingError('SESSION_EXPIRED', `session expired at ${session.expiresAt.toISOString()}`);
+  }
+  if (session.state === 'COMPLETED') {
+    throw new OnboardingError('SESSION_COMPLETED', 'session already completed');
+  }
   if (session.state !== 'EMAIL_VERIFIED') {
     throw new OnboardingError(
       'INVALID_TRANSITION',

@@ -14,13 +14,15 @@ const PENDING_STATES = [
 const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * POST /api/cron/onboarding-janitor
+ * GET /api/cron/onboarding-janitor
  *
  * Cron-triggered sweep for OnboardingSessions stuck in any *_PENDING
- * state for >5 minutes. PENDING states are transient sentinels used for
- * concurrent-call serialization — a session should not stay in one for
- * more than ~100ms in practice. If it does, the owning request crashed
- * between the state-as-token claim and the transitionTo call.
+ * state for >5 minutes. Vercel cron sends HTTP GET requests.
+ *
+ * PENDING states are transient sentinels used for concurrent-call
+ * serialization — a session should not stay in one for more than
+ * ~100ms in practice. If it does, the owning request crashed between
+ * the state-as-token claim and the transitionTo call.
  *
  * v1 behavior: LOG-ONLY. Emits [STUCK_PENDING_SESSION] tags for each
  * stuck session so Vercel log search and future alerting can surface
@@ -28,14 +30,23 @@ const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
  * the next iteration, after we trust the janitor correctly identifies
  * stuck sessions vs. legitimately slow requests.
  */
-export async function POST(req: Request) {
+export async function GET(req: Request) {
+  // Fail-closed auth: if CRON_SECRET is unset in production, reject
+  // all requests rather than silently accepting unauthenticated ones.
+  const expected = process.env.CRON_SECRET;
   const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '');
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.CRON_SECRET &&
-    cronSecret !== process.env.CRON_SECRET
-  ) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  if (process.env.NODE_ENV === 'production') {
+    if (!expected) {
+      console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
+      return NextResponse.json(
+        { error: 'service_misconfigured' },
+        { status: 500 }
+      );
+    }
+    if (cronSecret !== expected) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
   }
 
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS);
@@ -48,7 +59,6 @@ export async function POST(req: Request) {
     },
     select: {
       id: true,
-      email: true,
       state: true,
       organizationId: true,
       updatedAt: true,
@@ -58,7 +68,6 @@ export async function POST(req: Request) {
   for (const session of stuck) {
     console.error('[STUCK_PENDING_SESSION] session in PENDING state >5min', {
       sessionId: session.id,
-      email: session.email,
       state: session.state,
       organizationId: session.organizationId,
       updatedAt: session.updatedAt.toISOString(),
@@ -71,8 +80,4 @@ export async function POST(req: Request) {
     recoveredCount: 0,
     note: 'log-only mode; automated recovery not yet enabled',
   });
-}
-
-export async function GET() {
-  return NextResponse.json({ ok: true, mode: 'log-only' });
 }
