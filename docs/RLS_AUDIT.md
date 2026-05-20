@@ -168,11 +168,11 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
   - ORG_BOOTSTRAP: **1** (onboarding org-create — authenticated but no org yet)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
-- CRON: **1** (audit retention, CRON_SECRET protected)
+- CRON: **2** (audit retention + onboarding janitor, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 56**
+**Total routes: 57**
 
 ## What happens next
 
@@ -1103,10 +1103,39 @@ No new tables (uses existing EmploymentAgreement model from P0.G.4). Migration u
 |--------|--------|---------|
 | `createEmploymentAgreementDrafts` | `lib/onboarding/agreements` | Owner selects templateType or skips. Creates one DRAFT EmploymentAgreement per active Staff at org+location. State-as-claim-token serialization via STAFF_INVITED → AGREEMENTS_PENDING claim. Scaffolding only — documentUrl is placeholder, status is DRAFT. |
 
-### P1.A.6 EmploymentAgreement RLS Gap
+### P1.A.6 EmploymentAgreement RLS — RESOLVED (#95)
 
-⚠️ The existing EmploymentAgreement RLS policy is FOR ALL with NO superadmin bypass (unlike Location/Service/Staff/StaffInvitation patterns which include an `OR app.is_superadmin = 'true'` clause). This means prismaAdmin cannot write to EmploymentAgreement directly.
+~~The existing EmploymentAgreement RLS policy was FOR ALL with no superadmin bypass.~~
 
-P1.A.6 is unaffected: all EmploymentAgreement writes go through `args.tx` (the tenant-scoped transaction client from `withTenantScope`), which sets `app.current_org_id` and passes the tenant isolation policy.
+**Fixed in #95**: The single `tenant_isolation` FOR ALL policy has been replaced with 4 per-command policies (SELECT/INSERT/UPDATE/DELETE) that include the `OR app.is_superadmin = 'true'` clause — same pattern as Location, Service, Staff, StaffInvitation. Migration: `20260520190000_p95_employment_agreement_superadmin_bypass`. Applied to production via Supabase MCP on 2026-05-20.
 
-However, if a future janitor job, admin tool, or #95 `withAdminTx` work needs to write EmploymentAgreement rows via prismaAdmin, the RLS policy must be updated to include the superadmin OR clause. Tracked alongside issue #95.
+prismaAdmin can now operate on EmploymentAgreement rows directly. P1.A.6 tenant-scoped writes (via `args.tx`) are unaffected — the tenant isolation condition still matches.
+
+## Issue #95 — Codebase Atomicity Hardening (2026-05-20)
+
+### withAdminTx helper
+
+New helper `lib/admin/withAdminTx.ts` wraps multiple prismaAdmin operations in a SINGLE Prisma batch transaction. Works around the broken `prismaAdmin.$transaction(async (tx) => ...)` pattern caused by the `$extends` wrapper intercepting operations and dispatching them on separate connections.
+
+See `docs/architecture/admin-transactions.md` for full documentation, usage examples, and rules.
+
+### Refactored helpers
+
+| Helper | Module | Change |
+|--------|--------|--------|
+| `transitionTo` | `lib/onboarding/sessions` | Session update + state transition + audit log now atomic via withAdminTx |
+| `skipStep` | `lib/onboarding/sessions` | Session update + state transition + audit log now atomic via withAdminTx |
+| `getOrCreateSession` | `lib/onboarding/sessions` | Session create + state transition + audit log now atomic via withAdminTx |
+| `createAccount` | `lib/onboarding/account` | **SEVERE bug fix**: User create + session update + state transition + audit log now atomic via withAdminTx. Previously used broken `prismaAdmin.$transaction(async tx => ...)` where inner operations bypassed the outer tx. |
+
+### auditLogCreateOp
+
+New export from `lib/audit/write.ts`: `auditLogCreateOp(p, input)` returns a deferred PrismaPromise for use inside withAdminTx batches. Unlike `writeAuditLog()`, it does NOT catch errors — failures propagate to the batch transaction and trigger rollback.
+
+### Janitor cron
+
+`POST /api/cron/onboarding-janitor` — log-only sweep for sessions stuck in *_PENDING states for >5 minutes. Emits `[STUCK_PENDING_SESSION]` tags. Registered in `vercel.json` at `*/5 * * * *`. Automated recovery is the next iteration.
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/cron/onboarding-janitor` | POST, GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan |

@@ -76,19 +76,25 @@ POST /api/onboarding/agreements: owner selects templateType (W2/CONTRACTOR_1099/
 BOOTH_RENT/HYBRID) or skips. Creates one DRAFT EmploymentAgreement row per active
 Staff at the org+location. documentUrl is placeholder ('pending://<templateType>'),
 status is always 'DRAFT'. Real legal document content, e-sign, PDF storage ship
-in P1.A.7 (blocked on #95). State-as-claim-token serialization via STAFF_INVITED →
+in P1.A.7. State-as-claim-token serialization via STAFF_INVITED →
 AGREEMENTS_PENDING → AGREEMENTS_CONFIGURED. AGREEMENTS_PENDING is additive sentinel
 (same architecture as LOCATION_PENDING, SERVICES_PENDING, STAFF_PENDING). No new
 tables — EmploymentAgreement model already exists from P0.G.4. Migration updates
-OnboardingSession state CHECK constraint. EmploymentAgreement RLS gap noted: existing
-policy is FOR ALL with no superadmin bypass. Fine for P1.A.6 (uses args.tx
-exclusively); future admin tools need the superadmin OR clause (#95 territory).
+OnboardingSession state CHECK constraint. EmploymentAgreement RLS superadmin bypass
+added in #95.
 
-### P1.A.7 — bcrypt password hashing
+### Issue #95 — Codebase atomicity hardening ✅ COMPLETE
 
-Files: `lib/auth/password.ts`
+withAdminTx helper for atomic multi-operation prismaAdmin writes. Refactored
+transitionTo, skipStep, getOrCreateSession, createAccount to use it. Fixed
+SEVERE bug in createAccount where User row could persist with no session linkage.
+EmploymentAgreement RLS updated with superadmin bypass. Janitor cron for stuck
+PENDING sessions (log-only v1). P1.A.7 is now unblocked.
 
-bcrypt cost 12. Pepper from env.
+### P1.A.7 — Compensation + e-sign + PDF storage
+
+Compensation model wiring, legal document generation, e-sign flow, PDF storage.
+Requires withAdminTx (#95) for atomicity guarantees on legal docs. UNBLOCKED.
 
 ### P1.A.8 — Google OAuth signup
 
