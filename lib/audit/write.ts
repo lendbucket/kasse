@@ -1,4 +1,5 @@
 import { prismaAdmin } from "@/lib/prismaAdmin";
+import type { Prisma } from "@prisma/client";
 import type { NextRequest } from "next/server";
 import { type AuditAction } from "./helpers";
 
@@ -32,6 +33,44 @@ export type AuditInput = {
   route?: string;
   request?: NextRequest;
 };
+
+/**
+ * Build a deferred audit log create operation for use inside withAdminTx.
+ *
+ * Unlike writeAuditLog(), this does NOT catch errors — the caller
+ * (withAdminTx) handles atomicity. It also does NOT extract request
+ * headers (no request context inside a batch builder). Pass IP/UA/
+ * requestId explicitly via the metadata field if needed.
+ *
+ * Returns a PrismaPromise — do NOT await it; pass it directly into
+ * the withAdminTx batch array.
+ */
+export function auditLogCreateOp(
+  // p is the unwrapped _prismaAdmin base client (passed from inside a
+  // withAdminTx callback). Typed as `typeof prismaAdmin` because the
+  // $extends wrapper exposes the same model accessor surface as the
+  // base. See lib/admin/withAdminTx.ts for the unwrapping mechanism.
+  p: typeof prismaAdmin,
+  input: Omit<AuditInput, 'request' | 'route'>
+): Prisma.PrismaPromise<unknown> {
+  return p.auditLog.create({
+    data: {
+      userId: input.userId,
+      organizationId: input.organizationId,
+      action: input.action,
+      entity: input.entity,
+      entityId: input.entityId,
+      before: input.before ?? undefined,
+      after: input.after ?? undefined,
+      changedFields: input.changedFields ?? [],
+      metadata: input.metadata ?? undefined,
+      ipAddress: null,
+      userAgent: null,
+      requestId: null,
+      route: null,
+    },
+  });
+}
 
 export async function writeAuditLog(input: AuditInput): Promise<void> {
   try {

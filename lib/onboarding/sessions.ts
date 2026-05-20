@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prismaAdmin } from '@/lib/prismaAdmin';
-import { writeAuditLog, AuditAction } from '@/lib/audit/write';
+import { withAdminTx } from '@/lib/admin/withAdminTx';
+import { writeAuditLog, auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 import {
   type OnboardingState,
   type OnboardingSessionRecord,
@@ -16,6 +17,10 @@ const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 /**
  * Get or create an onboarding session for a given email. If an active session
  * exists for the email, returns it. Otherwise creates one in STARTED state.
+ *
+ * The create path uses withAdminTx to atomically write the session, the
+ * initial state transition record, and the audit log entry. If any of the
+ * three fails, all roll back.
  */
 export async function getOrCreateSession(args: {
   email: string;
@@ -42,42 +47,47 @@ export async function getOrCreateSession(args: {
 
   const expiresAt = new Date(Date.now() + DEFAULT_SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
 
+  // Client-side ID so we can reference it across all three batch
+  // operations without needing the result of the first.
+  const sessionId = crypto.randomUUID();
+
   try {
-    const created = await prismaAdmin.onboardingSession.create({
-      data: {
-        email,
-        state: 'STARTED',
-        data: {},
-        skippedSteps: [],
-        expiresAt,
-        ipAddressFirstSeen: args.ipAddress ?? null,
-        userAgentFirstSeen: args.userAgent ?? null,
-        referrerFirstSeen: args.referrer ?? null,
-      },
-    });
-
-    await prismaAdmin.onboardingStateTransition.create({
-      data: {
-        sessionId: created.id,
-        fromState: 'NEW',
-        toState: 'STARTED',
-        metadata: {
+    const [created] = await withAdminTx((p) => [
+      p.onboardingSession.create({
+        data: {
+          id: sessionId,
           email,
-          ipAddress: args.ipAddress,
-          userAgent: args.userAgent,
-          referrer: args.referrer,
+          state: 'STARTED',
+          data: {},
+          skippedSteps: [],
+          expiresAt,
+          ipAddressFirstSeen: args.ipAddress ?? null,
+          userAgentFirstSeen: args.userAgent ?? null,
+          referrerFirstSeen: args.referrer ?? null,
         },
-      },
-    });
-
-    await writeAuditLog({
-      userId: null,
-      organizationId: null,
-      action: AuditAction.ONBOARDING_SESSION_CREATED,
-      entity: 'OnboardingSession',
-      entityId: created.id,
-      metadata: { email },
-    });
+      }),
+      p.onboardingStateTransition.create({
+        data: {
+          sessionId,
+          fromState: 'NEW',
+          toState: 'STARTED',
+          metadata: {
+            email,
+            ipAddress: args.ipAddress,
+            userAgent: args.userAgent,
+            referrer: args.referrer,
+          },
+        },
+      }),
+      auditLogCreateOp(p, {
+        userId: null,
+        organizationId: null,
+        action: AuditAction.ONBOARDING_SESSION_CREATED,
+        entity: 'OnboardingSession',
+        entityId: sessionId,
+        metadata: { email },
+      }),
+    ]);
 
     return created as unknown as OnboardingSessionRecord;
   } catch (err) {
@@ -120,6 +130,9 @@ export async function getSessionByEmail(email: string): Promise<OnboardingSessio
 /**
  * Transition a session forward. Validates against ALLOWED_TRANSITIONS —
  * throws OnboardingError('INVALID_TRANSITION') on any disallowed move.
+ *
+ * Uses withAdminTx to atomically write the session update, state transition
+ * record, and audit log entry. If any of the three fails, all roll back.
  */
 export async function transitionTo(args: {
   sessionId: string;
@@ -153,40 +166,40 @@ export async function transitionTo(args: {
     ? { ...(session.data as Record<string, unknown>), ...args.dataPatch }
     : session.data;
 
-  const updated = await prismaAdmin.onboardingSession.update({
-    where: { id: args.sessionId },
-    data: {
-      state: args.toState,
-      data: mergedData as any,
-      ...(args.toState === 'EMAIL_VERIFIED' ? { emailVerifiedAt: new Date() } : {}),
-      ...(args.toState === 'COMPLETED' ? { completedAt: new Date() } : {}),
-    },
-  });
-
-  await prismaAdmin.onboardingStateTransition.create({
-    data: {
-      sessionId: args.sessionId,
-      fromState: session.state,
-      toState: args.toState,
-      triggeredByUserId: args.triggeredByUserId ?? null,
-      metadata: args.metadata ?? {},
-    },
-  });
-
   const auditAction = args.toState === 'COMPLETED'
     ? AuditAction.ONBOARDING_SESSION_COMPLETED
     : AuditAction.ONBOARDING_SESSION_TRANSITIONED;
 
-  await writeAuditLog({
-    userId: args.triggeredByUserId ?? null,
-    organizationId: updated.organizationId,
-    action: auditAction,
-    entity: 'OnboardingSession',
-    entityId: args.sessionId,
-    before: { state: session.state },
-    after: { state: args.toState },
-    changedFields: ['state'],
-  });
+  const [updated] = await withAdminTx((p) => [
+    p.onboardingSession.update({
+      where: { id: args.sessionId },
+      data: {
+        state: args.toState,
+        data: mergedData as any,
+        ...(args.toState === 'EMAIL_VERIFIED' ? { emailVerifiedAt: new Date() } : {}),
+        ...(args.toState === 'COMPLETED' ? { completedAt: new Date() } : {}),
+      },
+    }),
+    p.onboardingStateTransition.create({
+      data: {
+        sessionId: args.sessionId,
+        fromState: session.state,
+        toState: args.toState,
+        triggeredByUserId: args.triggeredByUserId ?? null,
+        metadata: args.metadata ?? {},
+      },
+    }),
+    auditLogCreateOp(p, {
+      userId: args.triggeredByUserId ?? null,
+      organizationId: session.organizationId,
+      action: auditAction,
+      entity: 'OnboardingSession',
+      entityId: args.sessionId,
+      before: { state: session.state },
+      after: { state: args.toState },
+      changedFields: ['state'],
+    }),
+  ]);
 
   return updated as unknown as OnboardingSessionRecord;
 }
@@ -194,6 +207,9 @@ export async function transitionTo(args: {
 /**
  * Mark a step as skipped. Only allowed for steps in SKIPPABLE_STATES.
  * Skipping advances the state forward.
+ *
+ * Uses withAdminTx to atomically write the session update, state transition
+ * record, and audit log entry.
  */
 export async function skipStep(args: {
   sessionId: string;
@@ -228,35 +244,35 @@ export async function skipStep(args: {
 
   const newSkipped = [...session.skippedSteps, args.step];
 
-  const updated = await prismaAdmin.onboardingSession.update({
-    where: { id: args.sessionId },
-    data: {
-      state: next,
-      skippedSteps: newSkipped,
-    },
-  });
-
-  await prismaAdmin.onboardingStateTransition.create({
-    data: {
-      sessionId: args.sessionId,
-      fromState: session.state,
-      toState: next,
-      triggeredByUserId: args.triggeredByUserId ?? null,
-      metadata: { skipped: true },
-    },
-  });
-
-  await writeAuditLog({
-    userId: args.triggeredByUserId ?? null,
-    organizationId: updated.organizationId,
-    action: AuditAction.ONBOARDING_SESSION_SKIPPED_STEP,
-    entity: 'OnboardingSession',
-    entityId: args.sessionId,
-    before: { state: session.state },
-    after: { state: next, skippedSteps: newSkipped },
-    changedFields: ['state', 'skippedSteps'],
-    metadata: { skippedStep: args.step },
-  });
+  const [updated] = await withAdminTx((p) => [
+    p.onboardingSession.update({
+      where: { id: args.sessionId },
+      data: {
+        state: next,
+        skippedSteps: newSkipped,
+      },
+    }),
+    p.onboardingStateTransition.create({
+      data: {
+        sessionId: args.sessionId,
+        fromState: session.state,
+        toState: next,
+        triggeredByUserId: args.triggeredByUserId ?? null,
+        metadata: { skipped: true },
+      },
+    }),
+    auditLogCreateOp(p, {
+      userId: args.triggeredByUserId ?? null,
+      organizationId: session.organizationId,
+      action: AuditAction.ONBOARDING_SESSION_SKIPPED_STEP,
+      entity: 'OnboardingSession',
+      entityId: args.sessionId,
+      before: { state: session.state },
+      after: { state: next, skippedSteps: newSkipped },
+      changedFields: ['state', 'skippedSteps'],
+      metadata: { skippedStep: args.step },
+    }),
+  ]);
 
   return updated as unknown as OnboardingSessionRecord;
 }

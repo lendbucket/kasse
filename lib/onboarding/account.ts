@@ -1,8 +1,9 @@
 import { hash } from 'bcryptjs';
 import { prismaAdmin } from '@/lib/prismaAdmin';
-import { transitionTo, getSessionById } from './sessions';
+import { withAdminTx } from '@/lib/admin/withAdminTx';
+import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
-import { writeAuditLog, AuditAction } from '@/lib/audit/write';
+import { auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 
 const BCRYPT_ROUNDS = 12;
 const MIN_PASSWORD_LENGTH = 12;
@@ -32,9 +33,18 @@ export function validatePassword(password: string): string | null {
  * After EMAIL_VERIFIED, owner submits a password. We:
  * 1. Hash password (bcrypt 12 rounds)
  * 2. Create the User row (email + passwordHash)
- * 3. Link session.userId = newUser.id, null session.passwordHash
- *    (User row is the sole owner of the credential after this point)
- * 4. Transition session to ACCOUNT_CREATED
+ * 3. Link session.userId = newUser.id, null session.passwordHash,
+ *    advance state to ACCOUNT_CREATED
+ * 4. Create state transition record
+ * 5. Write audit log
+ *
+ * All writes are atomic via withAdminTx. If any operation fails, all
+ * roll back — fixing the pre-existing SEVERE bug where User row could
+ * persist with no session linkage if session.update failed.
+ *
+ * Uses client-side ID generation (crypto.randomUUID()) so the User ID
+ * is known at batch build time — the batch form doesn't expose
+ * intermediate results.
  *
  * Returns the created user ID.
  */
@@ -50,6 +60,12 @@ export async function createAccount(args: {
   const session = await getSessionById(args.sessionId);
   if (!session) {
     throw new OnboardingError('SESSION_NOT_FOUND', `session ${args.sessionId} not found`);
+  }
+  if (session.expiresAt < new Date()) {
+    throw new OnboardingError('SESSION_EXPIRED', `session expired at ${session.expiresAt.toISOString()}`);
+  }
+  if (session.state === 'COMPLETED') {
+    throw new OnboardingError('SESSION_COMPLETED', 'session already completed');
   }
   if (session.state !== 'EMAIL_VERIFIED') {
     throw new OnboardingError(
@@ -72,48 +88,46 @@ export async function createAccount(args: {
 
   const passwordHash = await hash(args.password, BCRYPT_ROUNDS);
 
-  // Create user and update session in a transaction
-  const user = await prismaAdmin.$transaction(async (tx) => {
-    const newUser = await tx.user.create({
+  // Client-side ID so all batch operations can reference it without
+  // needing the result of user.create.
+  const userId = crypto.randomUUID();
+
+  const [user] = await withAdminTx((p) => [
+    p.user.create({
       data: {
+        id: userId,
         email: session.email,
         password: passwordHash,
         emailVerified: session.emailVerifiedAt ?? new Date(),
         role: 'OWNER',
       },
-    });
-
-    await tx.onboardingSession.update({
+    }),
+    p.onboardingSession.update({
       where: { id: args.sessionId },
       data: {
-        passwordHash: null,  // User row owns the credential now; null here
-                             // so we don't hold a duplicate bcrypt hash
-        userId: newUser.id,
+        passwordHash: null,
+        userId,
+        state: 'ACCOUNT_CREATED',
       },
-    });
-
-    return newUser;
-  });
-
-  // Transition state outside the transaction (writes audit log)
-  await transitionTo({
-    sessionId: args.sessionId,
-    toState: 'ACCOUNT_CREATED',
-    triggeredByUserId: user.id,
-    metadata: { userId: user.id },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    organizationId: null,
-    action: AuditAction.USER_CREATED,
-    entity: 'User',
-    entityId: user.id,
-    metadata: {
-      via: 'onboarding',
-      sessionId: args.sessionId,
-    },
-  });
+    }),
+    p.onboardingStateTransition.create({
+      data: {
+        sessionId: args.sessionId,
+        fromState: session.state,  // guaranteed 'EMAIL_VERIFIED' by guards above
+        toState: 'ACCOUNT_CREATED',
+        triggeredByUserId: userId,
+        metadata: { userId },
+      },
+    }),
+    auditLogCreateOp(p, {
+      userId,
+      organizationId: null,
+      action: AuditAction.USER_CREATED,
+      entity: 'User',
+      entityId: userId,
+      metadata: { via: 'onboarding', sessionId: args.sessionId },
+    }),
+  ]);
 
   return { userId: user.id };
 }
