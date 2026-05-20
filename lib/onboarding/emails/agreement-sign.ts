@@ -62,7 +62,15 @@ export function renderAgreementSignEmail(
     expiresAt,
   } = params;
 
-  const signingUrl = encodeURI(params.signingUrl);
+  // Validate signing URL format. The URL is server-constructed from
+  // BASE_URL + hex token, so it should always be valid. Using URL()
+  // constructor instead of encodeURI to avoid double-encoding risk.
+  let signingUrl: string;
+  try {
+    signingUrl = new URL(params.signingUrl).toString();
+  } catch {
+    signingUrl = params.signingUrl;
+  }
 
   const expiresHuman = expiresAt.toLocaleDateString('en-US', {
     year: 'numeric',

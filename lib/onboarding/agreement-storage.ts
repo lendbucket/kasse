@@ -13,6 +13,7 @@
  */
 
 const BUCKET = 'kasse-agreements';
+const STORAGE_PATH_PREFIX = 'kasse-agreements://';
 
 function getSupabaseConfig() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,6 +21,37 @@ function getSupabaseConfig() {
   if (!url) throw new Error('[agreement-storage] SUPABASE_URL is not configured');
   if (!key) throw new Error('[agreement-storage] SUPABASE_SERVICE_ROLE_KEY is not configured');
   return { url: url.replace(/\/$/, ''), key };
+}
+
+/**
+ * Build a stable storage path marker for EmploymentAgreement.documentUrl.
+ * The PDF lives at this path inside the kasse-agreements bucket. Signed
+ * download URLs are minted on demand via createSignedDownloadUrl().
+ *
+ * Format: kasse-agreements://<orgId>/<agreementId>/<filename>
+ */
+export function buildStoragePathMarker(args: {
+  organizationId: string;
+  agreementId: string;
+  filename: 'unsigned.pdf' | 'signed.pdf';
+}): string {
+  return `${STORAGE_PATH_PREFIX}${args.organizationId}/${args.agreementId}/${args.filename}`;
+}
+
+/**
+ * Parse a storage path marker back into its components. Returns null
+ * if the input isn't a kasse-agreements storage path marker.
+ */
+export function parseStoragePathMarker(marker: string): {
+  organizationId: string;
+  agreementId: string;
+  filename: string;
+} | null {
+  if (!marker.startsWith(STORAGE_PATH_PREFIX)) return null;
+  const path = marker.slice(STORAGE_PATH_PREFIX.length);
+  const parts = path.split('/');
+  if (parts.length !== 3) return null;
+  return { organizationId: parts[0], agreementId: parts[1], filename: parts[2] };
 }
 
 /**
@@ -89,13 +121,22 @@ export async function createSignedDownloadUrl(args: {
     );
   }
 
-  const data = await res.json() as { signedURL: string };
+  // Supabase Storage has used both signedURL and signedUrl across versions.
+  // Accept either to be resilient to API changes.
+  const data = await res.json() as { signedURL?: string; signedUrl?: string };
+  const rawSignedUrl = data.signedURL ?? data.signedUrl;
+  if (!rawSignedUrl) {
+    throw new Error(
+      `[agreement-storage] signed URL response missing both signedURL and signedUrl fields: ${JSON.stringify(data)}`
+    );
+  }
+
   const expiresAt = new Date(Date.now() + args.expiresInSec * 1000);
 
-  // The signedURL from Supabase is a path — prepend the project URL
-  const signedUrl = data.signedURL.startsWith('http')
-    ? data.signedURL
-    : `${url}/storage/v1${data.signedURL}`;
+  // The signed URL from Supabase may be a path — prepend the project URL
+  const signedUrl = rawSignedUrl.startsWith('http')
+    ? rawSignedUrl
+    : `${url}/storage/v1${rawSignedUrl}`;
 
   return { signedUrl, expiresAt };
 }

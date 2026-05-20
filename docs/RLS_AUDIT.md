@@ -1207,8 +1207,8 @@ Table granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
-| `/api/onboarding/agreements/send` | POST | TENANT_SCOPED-style | OWNER-only. Reads agreements via prismaAdmin scoped by verified session orgId+locationId. Writes via withAdminTx (EmploymentAgreement.update + AgreementSignToken.create + audit log atomic). PDF upload + Resend send happen after batch commits (best-effort, fail-soft logged as DEGRADED). |
-| `/api/onboarding/agreements/send-test` | POST | TENANT_SCOPED-style | Same as /send but recipient is the authenticated owner's email. PDF + token are still real. |
+| `/api/onboarding/agreements/send` | POST | TENANT_SCOPED | OWNER-only. Pre-batch reads (agreements, org) use withTenantScope (RLS-enforced). Multi-table atomic writes use withAdminTx (EmploymentAgreement.update + AgreementSignToken.create + audit log). PDF upload + Resend send happen after batch commits (best-effort, fail-soft logged as DEGRADED). |
+| `/api/onboarding/agreements/send-test` | POST | TENANT_SCOPED | Same as /send but recipient is the authenticated owner's email. PDF + token are still real. |
 
 ### P1.A.7-b Helper Functions
 
@@ -1222,3 +1222,21 @@ Table granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
 | `sendAllAgreementsForSession` | `lib/onboarding/agreement-send` | Orchestrator: per-agreement loop with isolated failures, withAdminTx for DB writes, PDF upload + Resend send after commit |
 | `renderAgreementSignEmail` | `lib/onboarding/emails/agreement-sign` | HTML + text email template for signing notification |
 | `buildCompensationSummary` | `lib/onboarding/emails/agreement-sign` | Brief compensation text for email body |
+| `buildStoragePathMarker` | `lib/onboarding/agreement-storage` | Stable path marker for documentUrl (not a signed URL) |
+| `parseStoragePathMarker` | `lib/onboarding/agreement-storage` | Parse marker back into orgId/agreementId/filename |
+
+### Storage path markers in documentUrl
+
+`EmploymentAgreement.documentUrl` stores a STORAGE PATH MARKER
+(format: `kasse-agreements://<orgId>/<agreementId>/<filename>`), NOT
+a signed URL. Signed download URLs are minted on demand via
+`createSignedDownloadUrl()` because they have a fixed TTL (currently
+7 days, matching the signing token). Storing a signed URL would
+create a time bomb where `documentUrl` becomes dead after 7 days.
+
+Recovery path: the storage path marker is stable. Any view that needs
+to display the PDF re-mints a signed URL from the path.
+
+Migration impact: existing DRAFT rows have `documentUrl='pending://...'`
+(set in P1.A.6). These get OVERWRITTEN to the storage path marker
+when the owner triggers send (P1.A.7-b). No migration is needed.

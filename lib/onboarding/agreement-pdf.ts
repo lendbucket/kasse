@@ -279,6 +279,11 @@ export async function renderEmploymentAgreementPDF(
     );
   }
 
+  // Cast needed: @react-pdf/renderer's renderToBuffer expects
+  // ReactElement<DocumentProps> but React.createElement returns a more
+  // general ReactElement. The Document wrapper inside AgreementDocument
+  // satisfies the runtime contract — the type mismatch is an incomplete
+  // @react-pdf/renderer type export, not a logic error.
   const element = React.createElement(AgreementDocument, { input }) as any;
   return await renderToBuffer(element);
 }

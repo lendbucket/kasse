@@ -2,42 +2,45 @@
  * Orchestrator: send all DRAFT EmploymentAgreements for an onboarding session.
  *
  * Per-agreement flow:
- *   1. Render PDF (agreement-pdf.ts)
- *   2. Upload to Supabase Storage (agreement-storage.ts)
- *   3. Generate signing token (agreement-tokens.ts)
- *   4. Atomic DB write via withAdminTx: EmploymentAgreement.update +
+ *   a. Validate staff has email (skip if missing)
+ *   b. Render PDF (agreement-pdf.ts)
+ *   c. Upload PDF to Supabase Storage (agreement-storage.ts)
+ *   d. Generate signing token (agreement-tokens.ts)
+ *   e. Atomic DB write via withAdminTx: EmploymentAgreement.update +
  *      AgreementSignToken.create + audit log
- *   5. Send signing email via Resend
+ *   f. Send signing email via Resend (best-effort)
  *
- * Steps 1-4 are per-recipient atomic: if any throws, the agreement
- * stays at DRAFT and the failure is recorded in the response. Step 5
- * (email) is best-effort — DB rows are authoritative.
+ * Steps a-e are per-recipient: if any throws, the agreement stays at
+ * DRAFT and the failure is recorded in the response. Step f (email) is
+ * best-effort — DB rows are authoritative.
  *
- * ORDERING RATIONALE: DB writes first, then upload, then email. This
- * mirrors magic-link.ts (lines 88-97): an orphaned SENT row without
- * a delivered email is recoverable (owner re-triggers); a delivered
- * email linking to a nonexistent token is not.
+ * ORDERING RATIONALE: PDF upload BEFORE DB write so documentUrl points
+ * to a real storage path (not a placeholder). DB write BEFORE email so
+ * that a delivered email always points to an existing token. Email last
+ * because it's the least critical and most recoverable. This mirrors
+ * magic-link.ts (lines 88-97).
  *
- * Actually, we reverse the PDF upload to BEFORE the DB write so the
- * documentUrl is a real signed URL, not a placeholder. Sequence:
- *   a. Render PDF
- *   b. Upload PDF → get signed download URL
- *   c. Generate token
- *   d. withAdminTx: update agreement (status=SENT, documentUrl=signedUrl)
- *      + create token + audit log
- *   e. Send email (best-effort)
- *
- * If (d) fails after (b), an orphaned PDF in Storage is harmless
- * (no token was created, so no one can access it via the signing flow).
+ * READS: agreement + org lookups run inside withTenantScope (RLS-enforced).
+ * WRITES: the multi-table atomic batch uses withAdminTx because
+ * EmploymentAgreement and AgreementSignToken have different RLS policies
+ * and the batch needs superadmin context (same as #95 transitionTo).
+ * getSessionById stays as prismaAdmin — OnboardingSession is
+ * SUPERADMIN_PROTECTED, and session ownership is enforced immediately.
  */
 import { Resend } from 'resend';
 import { withAdminTx } from '@/lib/admin/withAdminTx';
 import { prismaAdmin } from '@/lib/prismaAdmin';
+import { withTenantScope } from '@/lib/tenant/db-scope';
+import type { TenantContext } from '@/lib/tenant/context';
 import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import { auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 import { renderEmploymentAgreementPDF } from './agreement-pdf';
-import { uploadAgreementPDF, createSignedDownloadUrl } from './agreement-storage';
+import {
+  uploadAgreementPDF,
+  createSignedDownloadUrl,
+  buildStoragePathMarker,
+} from './agreement-storage';
 import {
   generateRawAgreementToken,
   hashAgreementToken,
@@ -47,7 +50,19 @@ import { renderAgreementSignEmail, buildCompensationSummary } from './emails/agr
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = 'Kasse <onboarding@kasseapp.com>';
-const BASE_URL = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'https://portal.kasseapp.com';
+
+const BASE_URL = (() => {
+  const url = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  if (!url) {
+    console.warn(
+      '[agreement-send] Neither NEXTAUTH_URL nor NEXT_PUBLIC_APP_URL is set — ' +
+      'falling back to hardcoded https://portal.kasseapp.com. ' +
+      'Set NEXTAUTH_URL in Vercel for staging/preview deploys.'
+    );
+    return 'https://portal.kasseapp.com';
+  }
+  return url;
+})();
 
 function getResendClient(): Resend {
   if (!RESEND_API_KEY) {
@@ -56,7 +71,28 @@ function getResendClient(): Resend {
   return new Resend(RESEND_API_KEY);
 }
 
+/**
+ * Classify an error into a stable code for client response. Raw error
+ * messages can contain PII (staff emails from Resend errors, paths
+ * from Storage errors). Only stable codes are returned to the client;
+ * detail is logged server-side.
+ */
+function classifyAgreementSendError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('[agreement-pdf]')) return 'PDF_RENDER_FAILED';
+  if (msg.includes('[agreement-storage] upload failed')) return 'STORAGE_UPLOAD_FAILED';
+  if (msg.includes('[agreement-storage] signed URL')) return 'SIGNED_URL_FAILED';
+  if (msg.includes('AgreementSignToken')) return 'TOKEN_CREATE_FAILED';
+  if (msg.includes('Resend') || msg.includes('email')) return 'EMAIL_SEND_FAILED';
+  return 'UNKNOWN_ERROR';
+}
+
+// Type alias for the prisma-like client accepted by withTenantScope
+type PrismaClientLike = { $transaction: (...args: any[]) => any };
+
 export async function sendAllAgreementsForSession(args: {
+  prisma: PrismaClientLike;
+  ctx: TenantContext;
   input: {
     sessionId: string;
     organizationId: string;
@@ -74,7 +110,7 @@ export async function sendAllAgreementsForSession(args: {
 }> {
   const { input } = args;
 
-  // 1. Session validation (mirrors compensation.ts pattern)
+  // 1. Session validation via prismaAdmin (OnboardingSession is SUPERADMIN_PROTECTED)
   const session = await getSessionById(input.sessionId);
   if (!session) {
     throw new OnboardingError('SESSION_NOT_FOUND', 'session not found');
@@ -95,28 +131,28 @@ export async function sendAllAgreementsForSession(args: {
     );
   }
 
-  // 2. Load all DRAFT EmploymentAgreements at this org+location
-  const agreements = await prismaAdmin.employmentAgreement.findMany({
-    where: {
-      organizationId: input.organizationId,
-      status: 'DRAFT',
-      staff: { locationId: input.locationId, softDeletedAt: null },
-    },
-    include: {
-      staff: {
-        include: {
-          compensation: true,
+  // 2. Load DRAFT agreements + org via withTenantScope (RLS-enforced reads)
+  const { agreements, orgName } = await withTenantScope(args.prisma, args.ctx, async (tx) => {
+    const agreements = await tx.employmentAgreement.findMany({
+      where: {
+        organizationId: input.organizationId,
+        status: 'DRAFT',
+        staff: { locationId: input.locationId, softDeletedAt: null },
+      },
+      include: {
+        staff: {
+          include: { compensation: true },
         },
       },
-    },
-  });
+    });
 
-  // Also load the org name for the email/PDF
-  const org = await prismaAdmin.organization.findUnique({
-    where: { id: input.organizationId },
-    select: { name: true },
+    const org = await tx.organization.findUnique({
+      where: { id: input.organizationId },
+      select: { name: true },
+    });
+
+    return { agreements, orgName: org?.name ?? 'Your Employer' };
   });
-  const orgName = org?.name ?? 'Your Employer';
 
   // 3. If no agreements, return empty (handles skip-agreements path)
   if (agreements.length === 0) {
@@ -134,6 +170,25 @@ export async function sendAllAgreementsForSession(args: {
   for (const agreement of agreements) {
     const staff = agreement.staff;
     const compensation = staff.compensation;
+
+    // Pre-batch: validate recipient email exists
+    const recipientEmail = input.isTest
+      ? args.authenticatedUserEmail
+      : staff.email;
+
+    if (!recipientEmail) {
+      results.failedCount++;
+      results.failures.push({
+        agreementId: agreement.id,
+        staffName: staff.name,
+        error: 'STAFF_EMAIL_MISSING',
+      });
+      console.error(
+        '[AGREEMENT_SEND_SKIPPED] staff has no email — cannot send agreement',
+        { agreementId: agreement.id, staffId: staff.id }
+      );
+      continue;
+    }
 
     try {
       // a. Render PDF
@@ -165,7 +220,7 @@ export async function sendAllAgreementsForSession(args: {
           : null,
       });
 
-      // b. Upload PDF + get signed URL
+      // b. Upload PDF
       const { path } = await uploadAgreementPDF({
         organizationId: input.organizationId,
         agreementId: agreement.id,
@@ -173,8 +228,16 @@ export async function sendAllAgreementsForSession(args: {
         pdfBytes,
       });
 
+      // Store a stable path marker in documentUrl (not a signed URL that expires)
+      const storagePath = buildStoragePathMarker({
+        organizationId: input.organizationId,
+        agreementId: agreement.id,
+        filename: 'unsigned.pdf',
+      });
+
+      // Mint a signed URL for the email only — same 7-day TTL as the signing token
       const signedUrlTtlSec = Math.floor(SIGN_TOKEN_TTL_MS / 1000);
-      const { signedUrl } = await createSignedDownloadUrl({
+      const { signedUrl: emailSignedUrl } = await createSignedDownloadUrl({
         path,
         expiresInSec: signedUrlTtlSec,
       });
@@ -186,19 +249,22 @@ export async function sendAllAgreementsForSession(args: {
       const now = new Date();
 
       // d. Atomic DB write: update agreement + create token + audit
+      // Uses withAdminTx for multi-table atomicity (superadmin context).
+      // The (p as any) cast is needed because the AgreementSignToken
+      // model was added in this PR and Prisma client types aren't
+      // regenerated until the next `prisma generate` (runs at build time
+      // via postinstall). The model IS in schema.prisma and the table
+      // exists in the database — the cast is a local dev limitation only.
       await withAdminTx((p) => [
         p.employmentAgreement.update({
           where: { id: agreement.id },
           data: {
             status: 'SENT',
             sentAt: now,
-            documentUrl: signedUrl,
+            documentUrl: storagePath,
             expiresAt,
           },
         }),
-        // AgreementSignToken model was added to schema.prisma in this PR.
-        // Prisma client types are regenerated at build time via `prisma generate`.
-        // The cast is needed until the next `npx prisma generate` or `prisma db pull`.
         (p as any).agreementSignToken.create({
           data: {
             organizationId: input.organizationId,
@@ -225,67 +291,65 @@ export async function sendAllAgreementsForSession(args: {
         }),
       ]);
 
-      // e. Send email (best-effort)
+      // e. Send email (best-effort — DB rows are authoritative)
       const signingUrl = `${BASE_URL}/agreements/sign/${rawToken}`;
-      const recipientEmail = input.isTest
-        ? args.authenticatedUserEmail
-        : staff.email;
 
-      if (recipientEmail) {
-        const compSummary = compensation
-          ? buildCompensationSummary(compensation)
-          : 'See attached agreement';
+      const compSummary = compensation
+        ? buildCompensationSummary(compensation)
+        : 'See attached agreement';
 
-        const effectiveStart = compensation
-          ? compensation.effectiveStartDate.toISOString().slice(0, 10)
-          : 'TBD';
+      const effectiveStart = compensation
+        ? compensation.effectiveStartDate.toISOString().slice(0, 10)
+        : 'TBD';
 
-        const emailContent = renderAgreementSignEmail({
-          staffName: staff.name ?? 'Team Member',
-          organizationName: orgName,
-          templateType: agreement.templateType ?? 'Employment',
-          compensationSummary: compSummary,
-          effectiveStartDate: effectiveStart,
-          signingUrl,
-          expiresAt,
+      const emailContent = renderAgreementSignEmail({
+        staffName: staff.name ?? 'Team Member',
+        organizationName: orgName,
+        templateType: agreement.templateType ?? 'Employment',
+        compensationSummary: compSummary,
+        effectiveStartDate: effectiveStart,
+        signingUrl,
+        expiresAt,
+      });
+
+      try {
+        await resend.emails.send({
+          from: RESEND_FROM,
+          to: recipientEmail,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
         });
-
-        try {
-          await resend.emails.send({
-            from: RESEND_FROM,
-            to: recipientEmail,
-            subject: emailContent.subject,
-            html: emailContent.html,
-            text: emailContent.text,
-          });
-        } catch (emailErr) {
-          // DEGRADED: DB rows committed at SENT but email didn't go out.
-          // Recovery: owner re-triggers send for this agreement (P1.A.7-d).
-          console.error(
-            '[DEGRADED_AGREEMENT_SEND] agreement marked SENT but email failed',
-            {
-              agreementId: agreement.id,
-              staffId: staff.id,
-              error: emailErr instanceof Error ? emailErr.message : String(emailErr),
-            }
-          );
-        }
+      } catch (emailErr) {
+        // DEGRADED: DB rows committed at SENT but email didn't go out.
+        // Recovery: owner re-triggers send for this agreement (P1.A.7-d).
+        console.error(
+          '[DEGRADED_AGREEMENT_SEND] agreement marked SENT but email failed',
+          {
+            agreementId: agreement.id,
+            staffId: staff.id,
+            errorCode: classifyAgreementSendError(emailErr),
+            errorDetail: emailErr instanceof Error ? emailErr.message : String(emailErr),
+          }
+        );
       }
 
       results.sentCount++;
     } catch (err) {
       results.failedCount++;
+      const errCode = classifyAgreementSendError(err);
       results.failures.push({
         agreementId: agreement.id,
         staffName: staff.name,
-        error: err instanceof Error ? err.message : String(err),
+        error: errCode,
       });
       console.error(
         '[AGREEMENT_SEND_FAILED] failed to process agreement',
         {
           agreementId: agreement.id,
           staffId: staff.id,
-          error: err instanceof Error ? err.message : String(err),
+          errorCode: errCode,
+          errorDetail: err instanceof Error ? err.message : String(err),
         }
       );
     }

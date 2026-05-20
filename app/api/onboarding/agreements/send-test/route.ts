@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { tenantCtxFromSession } from '@/lib/tenant/ctx-from-session';
 import { sendAllAgreementsForSession } from '@/lib/onboarding/agreement-send';
 import { OnboardingError } from '@/lib/onboarding/types';
 import { onboardingErrorStatus } from '@/lib/onboarding/error-status';
@@ -47,7 +49,18 @@ export async function POST(req: Request) {
     const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = req.headers.get('user-agent') ?? null;
 
+    const ctx = tenantCtxFromSession({
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
+      organizationId: session.user.organizationId,
+      locationId: session.user.locationId ?? null,
+    });
+
     const result = await sendAllAgreementsForSession({
+      prisma,
+      ctx,
       input: {
         sessionId,
         organizationId: session.user.organizationId,

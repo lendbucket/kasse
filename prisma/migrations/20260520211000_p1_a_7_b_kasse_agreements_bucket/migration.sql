@@ -1,3 +1,19 @@
+-- ============================================================
+-- DEPLOYMENT NOTE: This migration MUST run as the postgres role.
+-- ============================================================
+-- The CREATE POLICY statements below target storage.objects, which
+-- lives in the storage schema. The kasse_app role does NOT have
+-- CREATE permission on storage.objects.
+--
+-- Applied via Supabase MCP using the postgres superuser on 2026-05-20,
+-- BEFORE merging this PR. The file is committed to prisma/migrations/
+-- for documentation only — DO NOT let `prisma migrate deploy` re-run
+-- this in CI/CD.
+--
+-- If you need to roll back or re-apply, do it via Supabase MCP or
+-- the Supabase dashboard SQL editor, connecting as postgres.
+-- ============================================================
+--
 -- P1.A.7-b: Create kasse-agreements storage bucket.
 --
 -- Bucket organization: kasse-agreements/<orgId>/<agreementId>/<filename>

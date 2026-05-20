@@ -1749,6 +1749,12 @@ model EmploymentAgreement {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 /// Per-recipient signing token for EmploymentAgreements. Hash stored at
 /// rest; raw token returned once via email. Mirrors StaffInvitation pattern.
+///
+/// PARTIAL INDEX WARNING: The idx_agreement_sign_token_expires index
+/// in the migration includes `WHERE "consumedAt" IS NULL` for query
+/// efficiency on unconsumed tokens. Prisma schema cannot express
+/// partial indexes — DO NOT run `prisma db pull` and accept the
+/// regenerated schema without preserving this divergence.
 model AgreementSignToken {
   id                  String              @id @default(dbgenerated("gen_random_uuid()::text"))
   organizationId      String
