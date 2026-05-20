@@ -64,16 +64,18 @@ export async function GET(req: Request) {
     }
 
     // GET uses prismaAdmin with strict orgId+locationId filters derived
-    // from the verified server-side session. This mirrors the pattern in
-    // /api/onboarding/agreements (POST pre-check) and is consistent with
-    // the dual-client architecture: tenant-scoped writes via the POST tx;
-    // session-scoped reads via prismaAdmin where the scope is provably
-    // the authenticated user's own org/location.
+    // from the verified server-side session. This is a DELIBERATE choice
+    // (not an oversight) documented under "P1.A.7-a — Compensation
+    // foundation" in docs/RLS_AUDIT.md.
     //
-    // We do NOT use withTenantScope here because the read does not need
-    // RLS enforcement — the where clause is the security boundary, and
-    // it's derived from server-verified JWT claims that the client
-    // cannot forge. See docs/RLS_AUDIT.md "Compensation foundation" entry.
+    // FORWARD COMPATIBILITY WARNING: the security boundary is entirely
+    // the `where` clause + the OWNER role check above. There is no RLS
+    // backstop. If you ever refactor this handler or copy the pattern,
+    // preserve BOTH of:
+    //   1. The strict orgId+locationId filter sourced from session JWT
+    //   2. The role === 'OWNER' gate above
+    // Adding a queryParam orgId override would be a SEVERE security
+    // regression — flag it immediately in PR review.
     const staffMembers = await prismaAdmin.staff.findMany({
       where: {
         organizationId: session.user.organizationId,
@@ -211,16 +213,57 @@ export async function POST(req: Request) {
       });
     });
 
-    // Tenant tx committed. Compensation rows visible.
-    // Advance state: COMPENSATION_PENDING -> COMPENSATION_CONFIGURED.
-    await transitionTo({
-      sessionId,
-      toState: 'COMPENSATION_CONFIGURED',
-      triggeredByUserId: session.user.id,
-      metadata: {
-        compensationCount: result.compensationCount,
-      },
-    });
+    // Compensation rows are committed at this point. The state advance
+    // to COMPENSATION_CONFIGURED is a separate operation that can fail
+    // independently. If it does, the session is stuck at
+    // COMPENSATION_PENDING; recovery is by janitor cron + retry.
+    //
+    // We return 202 (partial success) on transitionTo failure so the
+    // client knows writes succeeded and can decide whether to wait or
+    // retry. The default 500 path would suggest "nothing was saved"
+    // which is misleading.
+    try {
+      await transitionTo({
+        sessionId,
+        toState: 'COMPENSATION_CONFIGURED',
+        triggeredByUserId: session.user.id,
+        metadata: {
+          compensationCount: result.compensationCount,
+        },
+      });
+    } catch (transitionErr) {
+      console.error(
+        '[COMPENSATION_STATE_ADVANCE_FAILED] compensation rows saved but state advance failed',
+        {
+          sessionId,
+          compensationCount: result.compensationCount,
+          error: transitionErr instanceof Error ? transitionErr.message : String(transitionErr),
+        }
+      );
+
+      await writeAuditLog({
+        userId: session.user.id,
+        organizationId: result.organizationId,
+        action: AuditAction.ONBOARDING_COMPENSATION_SET,
+        entity: 'Compensation',
+        entityId: null,
+        metadata: {
+          via: 'onboarding',
+          sessionId,
+          compensationCount: result.compensationCount,
+          stateAdvanceFailed: true,
+        },
+      });
+
+      return NextResponse.json(
+        {
+          compensationCount: result.compensationCount,
+          sessionState: 'COMPENSATION_PENDING',
+          message: 'compensation saved successfully, but state advance failed — janitor will recover or retry the request',
+        },
+        { status: 202, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     await writeAuditLog({
       userId: session.user.id,

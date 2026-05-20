@@ -120,7 +120,7 @@ function isCardValid(form: CompensationFormData): boolean {
     }
     case 'BOOTH_RENT': {
       const v = parseInt(form.boothRentCents, 10);
-      return !isNaN(v) && v > 0 && BOOTH_RENT_FREQUENCIES.includes(form.boothRentFrequency as any);
+      return !isNaN(v) && v > 0 && (BOOTH_RENT_FREQUENCIES as readonly string[]).includes(form.boothRentFrequency);
     }
     case 'HYBRID': {
       const h = parseInt(form.baseHourlyRateCents, 10);
@@ -209,7 +209,6 @@ const inputStyle: React.CSSProperties = {
 
 const selectStyle: React.CSSProperties = {
   ...inputStyle,
-  appearance: 'auto' as const,
 };
 
 const radioGroupStyle: React.CSSProperties = {
@@ -569,7 +568,7 @@ export default function CompensationAdminPage() {
     return f && isCardValid(f);
   });
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     setSubmitting(true);
     setError(null);
 
@@ -597,7 +596,7 @@ export default function CompensationAdminPage() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [sessionId, staffWithAgreements, forms, router]);
 
   if (loading) {
     return (

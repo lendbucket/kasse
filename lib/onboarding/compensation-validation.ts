@@ -52,7 +52,7 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  */
 export function validateCompensationInput(input: CompensationInput): string | null {
   // Model type
-  if (!VALID_MODEL_TYPES.includes(input.modelType as CompensationModelType)) {
+  if (!(VALID_MODEL_TYPES as readonly string[]).includes(input.modelType)) {
     return `invalid modelType '${input.modelType}' — must be one of: ${VALID_MODEL_TYPES.join(', ')}`;
   }
 

@@ -133,6 +133,24 @@ export async function setCompensationForStaff(args: {
   }
 
   // 4. Atomic claim: AGREEMENTS_CONFIGURED -> COMPENSATION_PENDING
+  //
+  // WHY THIS COMES BEFORE THE TENANT TX:
+  // The claim uses prismaAdmin (rolbypassrls bypass) to write the
+  // OnboardingSession state. We can't put this inside withTenantScope
+  // because OnboardingSession has SUPERADMIN_PROTECTED RLS policies —
+  // the tenant-scoped tx (kasse_app role) cannot write to it.
+  //
+  // FAILURE MODE: if step 5 (Compensation row writes) throws, the
+  // tenant tx rolls back BUT this claim already committed. The session
+  // is stuck at COMPENSATION_PENDING. Recovery is by the janitor cron
+  // (app/api/cron/onboarding-janitor) which sweeps stuck *_PENDING
+  // states. The owner sees a 500/409 and retries after the janitor
+  // surfaces it (today: 5min log-only; future: automated state reset).
+  //
+  // This is the same dual-client architecture trade-off documented for
+  // /api/onboarding/agreements, /api/onboarding/staff-invite, and
+  // /api/onboarding/services. Tracked as a known limitation in
+  // docs/RLS_AUDIT.md under "Issue #95 — Codebase Atomicity Hardening".
   const claim = await prismaAdmin.onboardingSession.updateMany({
     where: {
       id: args.input.sessionId,
