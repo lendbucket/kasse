@@ -73,6 +73,31 @@ export async function createEmploymentAgreementDrafts(args: {
         `templateType must be one of: ${VALID_TEMPLATE_TYPES.join(', ')}`
       );
     }
+
+    // Verify at least one Staff member exists at this org+location before
+    // we claim the state. If we did this check AFTER the claim, an owner
+    // who skipped staff invites would get stuck at AGREEMENTS_PENDING with
+    // no recovery path. Pre-claim check keeps state at STAFF_INVITED so
+    // owner can either invite staff or skip this step.
+    //
+    // Use prismaAdmin here (same connection family as getSessionById above);
+    // RLS is bypassed but we're filtering by organizationId from a
+    // pre-verified session, so cross-tenant exposure is impossible.
+    const hasStaff = await prismaAdmin.staff.findFirst({
+      where: {
+        organizationId: args.input.organizationId,
+        locationId: args.input.locationId,
+        softDeletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!hasStaff) {
+      throw new OnboardingError(
+        'INVITE_NO_STAFF_TO_AGREE',
+        'no active staff members found at this location — invite staff first or skip this step'
+      );
+    }
   }
 
   // Atomic claim via state transition. Same pattern as STAFF_PENDING in
@@ -123,10 +148,18 @@ export async function createEmploymentAgreementDrafts(args: {
     select: { id: true, name: true },
   });
 
+  // Invariant: staffMembers.length > 0 — guaranteed by the pre-claim
+  // INVITE_NO_STAFF_TO_AGREE check above. The check uses prismaAdmin
+  // (RLS bypassed); this read uses args.tx (RLS enforced). In practice
+  // they return the same set because: (a) all Staff have a non-null
+  // organizationId, (b) the RLS policy on Staff filters by organizationId,
+  // and (c) we're inside the tenant scope for this organizationId. If
+  // there's ever a divergence (e.g., RLS policy changes), this would
+  // fire as a 'INTERNAL: empty Staff under tenant scope' error.
   if (staffMembers.length === 0) {
     throw new OnboardingError(
       'INVITE_NO_STAFF_TO_AGREE',
-      'no active staff members found at this location — invite staff first or skip this step'
+      'INTERNAL: Staff found via prismaAdmin pre-check but not via tx — possible RLS divergence'
     );
   }
 
