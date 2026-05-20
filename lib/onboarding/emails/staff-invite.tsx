@@ -7,6 +7,21 @@ export interface StaffInviteEmailParams {
   expiresAt: Date;
 }
 
+/**
+ * Escape HTML special characters in user-supplied display strings.
+ * Defense-in-depth: even though all values here come from server-side
+ * DB rows (not user request input), they originate from owner-supplied
+ * org/location/staff names that could contain HTML special chars.
+ */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function renderStaffInviteEmail(
   params: StaffInviteEmailParams
 ): { html: string; text: string; subject: string } {
@@ -46,13 +61,13 @@ export function renderStaffInviteEmail(
           <tr>
             <td>
               <h1 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 700; color: #111827;">
-                You've been invited to join ${organizationName}
+                You've been invited to join ${escapeHtml(organizationName)}
               </h1>
               <p style="margin: 0 0 8px 0; font-size: 16px; line-height: 1.5; color: #4b5563;">
-                Hi ${inviteeName},
+                Hi ${escapeHtml(inviteeName)},
               </p>
               <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.5; color: #4b5563;">
-                ${inviterName} has invited you as a <strong>Stylist</strong> at <strong>${locationName}</strong>. Click the button below to create your account and get started.
+                ${escapeHtml(inviterName)} has invited you as a <strong>Stylist</strong> at <strong>${escapeHtml(locationName)}</strong>. Click the button below to create your account and get started.
               </p>
               <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 32px 0;">
                 <tr>

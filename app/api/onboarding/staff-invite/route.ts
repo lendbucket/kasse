@@ -75,6 +75,13 @@ export async function POST(req: Request) {
     // Validate optional role: must be STAFF or omitted. Anything else
     // (OWNER, MANAGER, etc.) is not a valid invite role — owners are
     // already authenticated, managers come later (P1.A.7+).
+    //
+    // Note: the helper hardcodes role='STAFF' regardless. This route-level
+    // validation is defensive — it rejects nonsense client input upfront
+    // rather than silently ignoring it. When the system extends to support
+    // MANAGER invites (P1.A.7+), threading role through the helper becomes
+    // straightforward; until then, the strict check matches the strict
+    // hardcoded write.
     if (role !== undefined && role !== 'STAFF') {
       return NextResponse.json(
         {

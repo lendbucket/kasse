@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       organizationId: result.organizationId,
       action: AuditAction.STAFF_INVITATION_ACCEPTED,
       entity: 'StaffInvitation',
-      entityId: null,
+      entityId: result.invitationId,
       metadata: {
         staffId: result.staffId,
         // email REMOVED — PII. staffId is sufficient for audit lookups.
@@ -60,10 +60,10 @@ export async function POST(req: Request) {
       {
         userId: result.userId,
         staffId: result.staffId,
-        // organizationId intentionally omitted — invitee will see it after
-        // signing in via /signin. Reduces info-disclosure surface for an
-        // unauthenticated response.
-        email: result.email,
+        // email + organizationId intentionally omitted from this unauthenticated
+        // response. The audit log omits email for the same reason. Client can
+        // use the email it already has (typed by the invitee or pre-filled
+        // from the invite-accept page).
         signinUrl: `${getBaseUrl()}/signin?email=${encodeURIComponent(result.email)}`,
       },
       { status: 200, headers: { 'Cache-Control': 'no-store' } }

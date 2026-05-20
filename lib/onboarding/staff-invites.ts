@@ -273,6 +273,7 @@ export async function acceptStaffInvitation(args: {
 }): Promise<{
   userId: string;
   staffId: string;
+  invitationId: string;
   organizationId: string;
   locationId: string;
   email: string;
@@ -422,6 +423,7 @@ export async function acceptStaffInvitation(args: {
   return {
     userId: newUser.id,
     staffId: invitation.staffId,
+    invitationId: invitation.id,
     organizationId: invitation.organizationId,
     locationId: invitation.locationId,
     email: invitation.email,
