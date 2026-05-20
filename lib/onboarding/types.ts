@@ -7,6 +7,7 @@ export const ONBOARDING_STATES = [
   'LOCATION_CREATED',
   'SERVICES_PENDING',
   'SERVICES_SEEDED',
+  'STAFF_PENDING',
   'STAFF_INVITED',
   'AGREEMENTS_CONFIGURED',
   'COMPENSATION_CONFIGURED',
@@ -18,17 +19,18 @@ export type OnboardingState = typeof ONBOARDING_STATES[number];
 /**
  * Forward-only state machine. Maps each state to its single allowed next state.
  *
- * LOCATION_PENDING and SERVICES_PENDING are transient sentinels used for
- * concurrency serialization. Each is set by a claim updateMany that
- * transitions state as a claim token (e.g., ORG_CREATED → LOCATION_PENDING).
- * Concurrent POSTs both attempt the UPDATE; Postgres row-level lock
- * serializes them; only the first succeeds because the second sees the
- * changed state and its WHERE fails (count=0). The route handler then
- * advances to the final state (e.g., LOCATION_CREATED) via transitionTo
- * after the tenant tx commits. Sessions should not be observed in a
- * PENDING state for more than ~100ms in practice — if you see one stuck
- * there, the previous request crashed between the claim and transitionTo
- * (recovery is a manual state reset or janitor job, tracked in issue #95).
+ * LOCATION_PENDING, SERVICES_PENDING, and STAFF_PENDING are transient
+ * sentinels used for concurrency serialization. Each is set by a claim
+ * updateMany that transitions state as a claim token (e.g.,
+ * SERVICES_SEEDED → STAFF_PENDING). Concurrent POSTs both attempt the
+ * UPDATE; Postgres row-level lock serializes them; only the first succeeds
+ * because the second sees the changed state and its WHERE fails (count=0).
+ * The route handler then advances to the final state (e.g., STAFF_INVITED)
+ * via transitionTo after the tenant tx commits. Sessions should not be
+ * observed in a PENDING state for more than ~100ms in practice — if you
+ * see one stuck there, the previous request crashed between the claim and
+ * transitionTo (recovery is a manual state reset or janitor job, tracked
+ * in issue #95).
  */
 export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null> = {
   STARTED: 'EMAIL_VERIFIED',
@@ -38,7 +40,8 @@ export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null
   LOCATION_PENDING: 'LOCATION_CREATED',
   LOCATION_CREATED: 'SERVICES_PENDING',
   SERVICES_PENDING: 'SERVICES_SEEDED',
-  SERVICES_SEEDED: 'STAFF_INVITED',
+  SERVICES_SEEDED: 'STAFF_PENDING',
+  STAFF_PENDING: 'STAFF_INVITED',
   STAFF_INVITED: 'AGREEMENTS_CONFIGURED',
   AGREEMENTS_CONFIGURED: 'COMPENSATION_CONFIGURED',
   COMPENSATION_CONFIGURED: 'COMPLETED',
@@ -158,7 +161,13 @@ export class OnboardingError extends Error {
       | 'INVALID_TIMEZONE'
       | 'ORG_NOT_YET_CREATED'
       | 'SLUG_COLLISION'
-      | 'LOCATION_NOT_YET_CREATED',
+      | 'LOCATION_NOT_YET_CREATED'
+      | 'INVITE_EMAIL_REQUIRED'
+      | 'INVITE_ALREADY_EXISTS'
+      | 'INVITE_NOT_FOUND'
+      | 'INVITE_ALREADY_ACCEPTED'
+      | 'INVITE_EXPIRED'
+      | 'INVITE_EMAIL_ALREADY_USER',
     message: string
   ) {
     super(message);

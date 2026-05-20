@@ -8,6 +8,7 @@ import { createLocationForOnboarding } from '@/lib/onboarding/location';
 import { linkResource, transitionTo } from '@/lib/onboarding/sessions';
 import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 import { OnboardingError } from '@/lib/onboarding/types';
+import { onboardingErrorStatus } from '@/lib/onboarding/error-status';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -120,17 +121,9 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     if (err instanceof OnboardingError) {
-      const status = err.code === 'INVALID_ADDRESS' ? 400
-        : err.code === 'INVALID_LOCATION_NAME' ? 400
-        : err.code === 'INVALID_TIMEZONE' ? 400
-        : err.code === 'ORG_NOT_YET_CREATED' ? 409
-        : err.code === 'ORG_SCOPE_MISMATCH' ? 403
-        : err.code === 'INVALID_TRANSITION' ? 409
-        : err.code === 'SESSION_NOT_FOUND' ? 404
-        : 400;
       return NextResponse.json(
         { error: err.code.toLowerCase(), message: err.message },
-        { status }
+        { status: onboardingErrorStatus(err.code) }
       );
     }
     console.error('onboarding location create failed', err);

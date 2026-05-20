@@ -11,8 +11,8 @@ describe("SERVICES_PENDING sentinel state (P1.A.4)", () => {
     assert.ok(ONBOARDING_STATES.includes("SERVICES_PENDING"));
   });
 
-  it("has exactly 12 states after adding SERVICES_PENDING", () => {
-    assert.equal(ONBOARDING_STATES.length, 12);
+  it("has exactly 13 states after adding SERVICES_PENDING and STAFF_PENDING", () => {
+    assert.equal(ONBOARDING_STATES.length, 13);
   });
 
   it("LOCATION_CREATED transitions to SERVICES_PENDING", () => {
@@ -23,15 +23,15 @@ describe("SERVICES_PENDING sentinel state (P1.A.4)", () => {
     assert.equal(ALLOWED_TRANSITIONS.SERVICES_PENDING, "SERVICES_SEEDED");
   });
 
-  it("SERVICES_SEEDED transitions to STAFF_INVITED (unchanged)", () => {
-    assert.equal(ALLOWED_TRANSITIONS.SERVICES_SEEDED, "STAFF_INVITED");
+  it("SERVICES_SEEDED transitions to STAFF_PENDING (updated for P1.A.5)", () => {
+    assert.equal(ALLOWED_TRANSITIONS.SERVICES_SEEDED, "STAFF_PENDING");
   });
 
   it("SERVICES_PENDING is NOT skippable", () => {
     assert.ok(!SKIPPABLE_STATES.has("SERVICES_PENDING"));
   });
 
-  it("transition chain covers all 12 states in order", () => {
+  it("transition chain covers all 13 states in order", () => {
     let current: (typeof ONBOARDING_STATES)[number] = "STARTED";
     const visited: (typeof ONBOARDING_STATES)[number][] = [current];
     while (ALLOWED_TRANSITIONS[current] !== null) {

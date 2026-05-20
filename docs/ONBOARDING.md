@@ -1,6 +1,6 @@
 # Onboarding
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Purpose
 
@@ -39,7 +39,9 @@ LOCATION_CREATED
 SERVICES_PENDING
   | (vertical-specific catalog seeded, tenant tx committed)
 SERVICES_SEEDED
-  | (>=1 staff invite sent OR skipped)
+  | (claim: concurrent-call serialization)
+STAFF_PENDING
+  | (staff invite sent or skip path, tenant tx committed)
 STAFF_INVITED
   | (employment templates configured OR skipped)
 AGREEMENTS_CONFIGURED

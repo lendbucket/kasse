@@ -39,6 +39,9 @@ export const AuditAction = {
   LOCATION_CREATED: "location.created",
   SESSION_REFRESHED: "session.refreshed",
   SERVICES_SEEDED: "onboarding.services_seeded",
+  STAFF_INVITATION_SENT: "staff.invitation_sent",
+  STAFF_INVITATION_ACCEPTED: "staff.invitation_accepted",
+  ONBOARDING_STAFF_INVITE_SKIPPED: "onboarding.staff_invite_skipped",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
