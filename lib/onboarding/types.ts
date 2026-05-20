@@ -52,6 +52,17 @@ export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null
 
 /**
  * Steps the owner can explicitly skip without abandoning the flow.
+ *
+ * NOTE: This set governs the `skipStep` helper, NOT the `skip: true`
+ * flag on onboarding routes. The skip flag is route-specific and
+ * advances state through the same sentinel mechanism as the non-skip
+ * path (e.g., agreements route: STAFF_INVITED → AGREEMENTS_PENDING →
+ * AGREEMENTS_CONFIGURED, with no actual agreements created). The two
+ * mechanisms are distinct:
+ *   - SKIPPABLE_STATES: used by /api/onboarding/skip-step, advances
+ *     state from X to ALLOWED_TRANSITIONS[X] without doing any work.
+ *   - skip: true flag: used by step-specific routes, advances through
+ *     the same state path as non-skip but creates zero resources.
  */
 export const SKIPPABLE_STATES: ReadonlySet<OnboardingState> = new Set([
   'STAFF_INVITED',

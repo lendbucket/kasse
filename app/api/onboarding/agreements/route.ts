@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { prismaAdmin } from '@/lib/prismaAdmin';
 import { withTenantScope } from '@/lib/tenant/db-scope';
 import { tenantCtxFromSession } from '@/lib/tenant/ctx-from-session';
-import { createEmploymentAgreementDrafts } from '@/lib/onboarding/agreements';
+import { createEmploymentAgreementDrafts, VALID_TEMPLATE_TYPES } from '@/lib/onboarding/agreements';
 import { transitionTo } from '@/lib/onboarding/sessions';
 import { writeAuditLog, AuditAction } from '@/lib/audit/write';
 import { OnboardingError } from '@/lib/onboarding/types';
@@ -13,8 +13,6 @@ import { onboardingErrorStatus } from '@/lib/onboarding/error-status';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const VALID_TEMPLATE_TYPES = ['W2', 'CONTRACTOR_1099', 'BOOTH_RENT', 'HYBRID'];
 
 export async function POST(req: Request) {
   try {
@@ -41,6 +39,25 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: 'invalid_session', message: 'session missing role' },
         { status: 401 }
+      );
+    }
+
+    // Onboarding is OWNER-only. Even though the helper enforces
+    // session.userId === authenticated user (preventing cross-user
+    // attacks), a non-OWNER role driving onboarding is incorrect by
+    // design. STAFF, MANAGER, FRANCHISE_OWNER, etc. should not be able
+    // to advance another role's onboarding flow.
+    //
+    // NOTE: prior onboarding routes (location, services, staff-invite)
+    // do NOT have this check. Retroactive hardening tracked separately —
+    // add this check to all prior routes as a follow-up hardening PR.
+    if (session.user.role !== 'OWNER') {
+      return NextResponse.json(
+        {
+          error: 'forbidden',
+          message: 'only OWNER role can configure agreements during onboarding',
+        },
+        { status: 403 }
       );
     }
 

@@ -3,8 +3,8 @@ import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import type { Prisma } from '@prisma/client';
 
-const VALID_TEMPLATE_TYPES = ['W2', 'CONTRACTOR_1099', 'BOOTH_RENT', 'HYBRID'] as const;
-type TemplateType = typeof VALID_TEMPLATE_TYPES[number];
+export const VALID_TEMPLATE_TYPES = ['W2', 'CONTRACTOR_1099', 'BOOTH_RENT', 'HYBRID'] as const;
+export type AgreementTemplateType = typeof VALID_TEMPLATE_TYPES[number];
 
 /**
  * Create DRAFT EmploymentAgreement rows for all active Staff at a given
@@ -58,6 +58,12 @@ export async function createEmploymentAgreementDrafts(args: {
       'location must be created before configuring agreements'
     );
   }
+  if (session.locationId !== args.input.locationId) {
+    throw new OnboardingError(
+      'ORG_SCOPE_MISMATCH',
+      'session location does not match the input location'
+    );
+  }
   if (session.state !== 'STAFF_INVITED') {
     throw new OnboardingError(
       'INVALID_TRANSITION',
@@ -67,7 +73,7 @@ export async function createEmploymentAgreementDrafts(args: {
 
   // Validate templateType if not skipping
   if (!args.input.skip) {
-    if (!args.input.templateType || !VALID_TEMPLATE_TYPES.includes(args.input.templateType as TemplateType)) {
+    if (!args.input.templateType || !VALID_TEMPLATE_TYPES.includes(args.input.templateType as AgreementTemplateType)) {
       throw new OnboardingError(
         'INVALID_AGREEMENT_TEMPLATE_TYPE',
         `templateType must be one of: ${VALID_TEMPLATE_TYPES.join(', ')}`
@@ -136,7 +142,7 @@ export async function createEmploymentAgreementDrafts(args: {
     };
   }
 
-  const templateType = args.input.templateType as TemplateType;
+  const templateType = args.input.templateType as AgreementTemplateType;
 
   // Read all Staff rows for this org+location via args.tx (RLS-enforced).
   const staffMembers = await args.tx.staff.findMany({
