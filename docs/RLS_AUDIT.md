@@ -1150,7 +1150,7 @@ and OnboardingStateTransition fromState/toState CHECK constraints.
 
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
-| `/api/onboarding/compensation` | GET, POST | TENANT_SCOPED | GET reads staff + agreements + existing compensation via prismaAdmin (scoped by verified session orgId). POST creates Compensation rows via withTenantScope tx; OnboardingSession state transitions via prismaAdmin in sessions.ts helpers AFTER tenant tx commits. Same dual-client architecture as /api/onboarding/agreements. |
+| `/api/onboarding/compensation` | GET, POST | TENANT_SCOPED-style | GET reads staff + agreements + existing compensation via prismaAdmin, scoped by strict organizationId+locationId filters derived from the verified server-side session (same pattern as the agreements route's POST pre-check). OWNER-only at the route level. POST creates Compensation rows via withTenantScope tx; OnboardingSession state transitions via prismaAdmin in sessions.ts helpers AFTER tenant tx commits. |
 
 ### P1.A.7-a Helper Functions
 

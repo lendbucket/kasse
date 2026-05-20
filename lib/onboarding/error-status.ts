@@ -33,7 +33,6 @@ export function onboardingErrorStatus(code: string): number {
     case 'INVALID_AGREEMENT_TEMPLATE_TYPE': return 400;
     case 'INVITE_NO_STAFF_TO_AGREE': return 409;
     case 'NOT_ALL_STAFF_HAVE_COMPENSATION': return 409;
-    case 'COMPENSATION_NOT_YET_AGREED': return 409;
     case 'COMPENSATION_STAFF_MISMATCH': return 400;
     case 'INVALID_COMPENSATION_MODEL': return 400;
     case 'COMPENSATION_FIELDS_INCOMPLETE': return 400;

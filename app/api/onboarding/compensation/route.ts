@@ -38,18 +38,46 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'invalid_session' }, { status: 401 });
     }
 
+    // OWNER-only gate (mirrors POST handler)
+    if (session.user.role !== 'OWNER') {
+      return NextResponse.json(
+        { error: 'forbidden', message: 'only OWNER role can view compensation during onboarding' },
+        { status: 403 }
+      );
+    }
+
+    // Require locationId in JWT — refusing to widen the query when missing
+    if (!session.user.locationId) {
+      return NextResponse.json(
+        {
+          error: 'location_not_yet_created',
+          message: 'Call /api/onboarding/refresh-session after location step.',
+        },
+        { status: 409 }
+      );
+    }
+
     const url = new URL(req.url);
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId) {
       return NextResponse.json({ error: 'session_id_required' }, { status: 400 });
     }
 
-    // Read staff + agreements + existing compensation via prismaAdmin
-    // (bypasses RLS, but we scope by orgId from verified session).
+    // GET uses prismaAdmin with strict orgId+locationId filters derived
+    // from the verified server-side session. This mirrors the pattern in
+    // /api/onboarding/agreements (POST pre-check) and is consistent with
+    // the dual-client architecture: tenant-scoped writes via the POST tx;
+    // session-scoped reads via prismaAdmin where the scope is provably
+    // the authenticated user's own org/location.
+    //
+    // We do NOT use withTenantScope here because the read does not need
+    // RLS enforcement — the where clause is the security boundary, and
+    // it's derived from server-verified JWT claims that the client
+    // cannot forge. See docs/RLS_AUDIT.md "Compensation foundation" entry.
     const staffMembers = await prismaAdmin.staff.findMany({
       where: {
         organizationId: session.user.organizationId,
-        locationId: session.user.locationId ?? undefined,
+        locationId: session.user.locationId,
         softDeletedAt: null,
       },
       select: {
@@ -144,12 +172,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'session_id_required' }, { status: 400 });
     }
 
-    if (!Array.isArray(compensations) || compensations.length === 0) {
+    if (!Array.isArray(compensations)) {
       return NextResponse.json(
-        { error: 'compensations_required', message: 'at least one compensation entry is required' },
+        { error: 'compensations_required', message: 'compensations must be an array' },
         { status: 400 }
       );
     }
+    // Empty array is allowed — the helper validates against staff-with-agreements
+    // (which is also empty in the skip-agreements path). Both being empty means
+    // owner skipped agreements; we advance state without any Compensation rows.
 
     if (!session.user.locationId) {
       return NextResponse.json(

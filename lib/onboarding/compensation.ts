@@ -3,9 +3,16 @@ import { getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import type { Prisma } from '@prisma/client';
 
-// Re-export pure validation types and functions from the DB-free module.
-// Tests import from compensation-validation.ts directly to avoid
-// DATABASE_URL requirement; runtime code imports from this file.
+// Local imports for use within this file. The `export { ... }` block
+// below re-exports them for consumers — `export` does not pull names
+// into the current scope, so both blocks are needed.
+import { validateCompensationInput } from './compensation-validation';
+import type { CompensationInput } from './compensation-validation';
+
+// Re-export pure validation types and functions from the DB-free module
+// so consumers can import everything from a single entry point. Tests
+// import directly from compensation-validation.ts to avoid the
+// DATABASE_URL requirement that pulling in compensation.ts triggers.
 export {
   VALID_MODEL_TYPES,
   VALID_BOOTH_RENT_FREQUENCIES,
@@ -16,9 +23,6 @@ export type {
   BoothRentFrequency,
   CompensationInput,
 } from './compensation-validation';
-
-import { validateCompensationInput } from './compensation-validation';
-import type { CompensationInput } from './compensation-validation';
 
 /**
  * Set compensation for all staff members during onboarding. Follows the

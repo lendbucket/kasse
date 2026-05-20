@@ -522,9 +522,15 @@ export default function CompensationAdminPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/api/onboarding/compensation?sessionId=${sessionId}`)
+    const controller = new AbortController();
+    let active = true;
+
+    fetch(`/api/onboarding/compensation?sessionId=${sessionId}`, {
+      signal: controller.signal,
+    })
       .then((r) => r.json())
       .then((data) => {
+        if (!active) return;
         const staffEntries: StaffEntry[] = data.staff ?? [];
         setStaffList(staffEntries);
 
@@ -538,8 +544,19 @@ export default function CompensationAdminPage() {
         }
         setForms(initial);
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!active) return;
+        if (e.name === 'AbortError') return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [sessionId]);
 
   const updateForm = useCallback((staffId: string, form: CompensationFormData) => {

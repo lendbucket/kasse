@@ -189,7 +189,6 @@ export class OnboardingError extends Error {
       | 'INVALID_COMPENSATION_MODEL'
       | 'COMPENSATION_FIELDS_INCOMPLETE'
       | 'COMPENSATION_STAFF_MISMATCH'
-      | 'COMPENSATION_NOT_YET_AGREED'
       | 'NOT_ALL_STAFF_HAVE_COMPENSATION',
     message: string
   ) {
