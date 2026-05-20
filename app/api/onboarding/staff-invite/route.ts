@@ -72,6 +72,19 @@ export async function POST(req: Request) {
       );
     }
 
+    // Validate optional role: must be STAFF or omitted. Anything else
+    // (OWNER, MANAGER, etc.) is not a valid invite role — owners are
+    // already authenticated, managers come later (P1.A.7+).
+    if (role !== undefined && role !== 'STAFF') {
+      return NextResponse.json(
+        {
+          error: 'invalid_role',
+          message: `role must be 'STAFF' or omitted; got '${role}'`,
+        },
+        { status: 400 }
+      );
+    }
+
     const ctx = tenantCtxFromSession({
       id: session.user.id,
       email: session.user.email,
@@ -91,7 +104,7 @@ export async function POST(req: Request) {
           skip: skip === true,
           email: typeof email === 'string' ? email : undefined,
           name: typeof name === 'string' ? name : undefined,
-          role: role === 'STAFF' ? 'STAFF' : undefined,
+          role: 'STAFF',  // Only STAFF is valid; pre-validated above
         },
         authenticatedUserId: session.user.id,
         ipAddress,

@@ -28,11 +28,13 @@ export function onboardingErrorStatus(code: string): number {
     case 'INVITE_ALREADY_EXISTS': return 409;
     case 'INVITE_EMAIL_ALREADY_USER': return 409;
     case 'TOO_MANY_MAGIC_LINK_SENDS': return 429;
+    case 'INVITE_EMAIL_REQUIRED': return 400;
+    case 'INVITE_NAME_REQUIRED': return 400;
     // Default 400 for validation-style codes:
     // INVALID_EMAIL, INVALID_ADDRESS, INVALID_LOCATION_NAME,
     // INVALID_TIMEZONE, INVALID_VERTICAL, INVALID_PLAN_TIER,
     // INVALID_ORG_NAME, PASSWORD_TOO_WEAK, EMAIL_MISMATCH,
-    // WRONG_TOKEN_PURPOSE, SLUG_COLLISION, INVITE_EMAIL_REQUIRED
+    // WRONG_TOKEN_PURPOSE, SLUG_COLLISION
     default: return 400;
   }
 }

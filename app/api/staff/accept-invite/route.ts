@@ -60,7 +60,9 @@ export async function POST(req: Request) {
       {
         userId: result.userId,
         staffId: result.staffId,
-        organizationId: result.organizationId,
+        // organizationId intentionally omitted — invitee will see it after
+        // signing in via /signin. Reduces info-disclosure surface for an
+        // unauthenticated response.
         email: result.email,
         signinUrl: `${getBaseUrl()}/signin?email=${encodeURIComponent(result.email)}`,
       },

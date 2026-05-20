@@ -39,6 +39,11 @@ ALTER TABLE "StaffInvitation"
     FOREIGN KEY ("organizationId") REFERENCES "Organization"("id")
     ON DELETE CASCADE ON UPDATE NO ACTION;
 
+-- Note: locationId FK uses default ON DELETE RESTRICT (not CASCADE).
+-- Locations are typically soft-deleted (isActive=false), not hard-deleted.
+-- If a hard-delete is ever attempted on a Location with pending
+-- StaffInvitations, it will fail loudly — which is the safe behavior.
+-- Pending invitations should be revoked/accepted before location removal.
 ALTER TABLE "StaffInvitation"
   ADD CONSTRAINT "StaffInvitation_locationId_fkey"
     FOREIGN KEY ("locationId") REFERENCES "Location"("id")

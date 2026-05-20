@@ -282,7 +282,12 @@ export async function acceptStaffInvitation(args: {
     throw new OnboardingError('INVITE_ALREADY_ACCEPTED', 'invitation consumed by concurrent request');
   }
 
-  // 2. Read back the consumed invitation
+  // 2. Read back the consumed invitation.
+  // Note: the updateMany consume above locked the row atomically. The
+  // theoretical window between consume and this re-read is microseconds
+  // and only exploitable by SUPERADMIN actively racing the request.
+  // The whole-row read is consistent because Postgres MVCC + the unique
+  // constraint on tokenHash guarantee the row identity hasn't changed.
   const invitation = await prismaAdmin.staffInvitation.findUnique({
     where: { tokenHash },
   });
@@ -321,9 +326,26 @@ export async function acceptStaffInvitation(args: {
   // this flow (only one caller per token). This claim can only fail if the
   // Staff row was linked via a code path that doesn't go through this
   // function (SUPERADMIN intervention, future bugs in other helpers). If
-  // it fails, the User row created in this function is orphaned. Recovery
-  // requires manual cleanup. Tracked in #95 (withAdminTx would let us
-  // wrap all 3 writes in one transaction, eliminating this gap entirely).
+  // it fails, the User row created above is orphaned.
+  //
+  // Recovery (SUPERADMIN, executed via psql or Supabase SQL editor):
+  //
+  //   -- Identify orphan: User created with role=STAFF whose Staff row's
+  //   -- userId points to a DIFFERENT User (or no Staff at all).
+  //   SELECT u.id, u.email, u."organizationId", u."createdAt"
+  //   FROM "User" u
+  //   LEFT JOIN "Staff" s ON s."userId" = u.id
+  //   WHERE u.role = 'STAFF'
+  //     AND s.id IS NULL
+  //     AND u."createdAt" > NOW() - INTERVAL '7 days';
+  //
+  //   -- Delete the orphan User row (no Staff/Org/etc dependencies because
+  //   -- the orphan never got linked). Verify the row matches expectations
+  //   -- before running.
+  //   DELETE FROM "User" WHERE id = '<orphan-user-id>';
+  //
+  // Tracked in #95 (withAdminTx would let us wrap all 3 writes in one
+  // transaction, eliminating this gap entirely + auto-rollback).
   const staffLink = await prismaAdmin.staff.updateMany({
     where: {
       id: invitation.staffId,
@@ -344,7 +366,7 @@ export async function acceptStaffInvitation(args: {
     );
   }
 
-  // 6. Record acceptedUserId on the invitation
+  // 5. Record acceptedUserId on the invitation
   await prismaAdmin.staffInvitation.update({
     where: { id: invitation.id },
     data: { acceptedUserId: newUser.id },

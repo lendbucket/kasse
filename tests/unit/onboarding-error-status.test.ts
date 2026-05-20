@@ -79,10 +79,17 @@ describe("onboardingErrorStatus helper (P1.A.5)", () => {
     assert.equal(onboardingErrorStatus("TOO_MANY_MAGIC_LINK_SENDS"), 429);
   });
 
+  it("INVITE_EMAIL_REQUIRED → 400", () => {
+    assert.equal(onboardingErrorStatus("INVITE_EMAIL_REQUIRED"), 400);
+  });
+
+  it("INVITE_NAME_REQUIRED → 400", () => {
+    assert.equal(onboardingErrorStatus("INVITE_NAME_REQUIRED"), 400);
+  });
+
   it("unknown/validation codes default to 400", () => {
     assert.equal(onboardingErrorStatus("INVALID_EMAIL"), 400);
     assert.equal(onboardingErrorStatus("PASSWORD_TOO_WEAK"), 400);
-    assert.equal(onboardingErrorStatus("INVITE_EMAIL_REQUIRED"), 400);
     assert.equal(onboardingErrorStatus("SLUG_COLLISION"), 400);
     assert.equal(onboardingErrorStatus("SOME_UNKNOWN_CODE"), 400);
   });
