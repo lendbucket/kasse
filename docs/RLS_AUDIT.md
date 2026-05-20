@@ -1139,3 +1139,22 @@ New export from `lib/audit/write.ts`: `auditLogCreateOp(p, input)` returns a def
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
 | `/api/cron/onboarding-janitor` | GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan. Vercel cron sends GET. |
+
+## P1.A.7-a — Compensation foundation (2026-05-20)
+
+No new tables (uses existing Compensation table from P0.G.4). Migration
+adds COMPENSATION_PENDING to the OnboardingSession.state CHECK constraint
+and OnboardingStateTransition fromState/toState CHECK constraints.
+
+### P1.A.7-a API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/compensation` | GET, POST | TENANT_SCOPED | GET reads staff + agreements + existing compensation via prismaAdmin (scoped by verified session orgId). POST creates Compensation rows via withTenantScope tx; OnboardingSession state transitions via prismaAdmin in sessions.ts helpers AFTER tenant tx commits. Same dual-client architecture as /api/onboarding/agreements. |
+
+### P1.A.7-a Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `validateCompensationInput` | `lib/onboarding/compensation` | Pure validation: model-type-conditional field checks, date sanity |
+| `setCompensationForStaff` | `lib/onboarding/compensation` | Owner sets compensation for all non-skipped agreement staff. Pre-claim invariant: every staff with an agreement must have a corresponding compensation input. State-as-claim-token via AGREEMENTS_CONFIGURED -> COMPENSATION_PENDING. |

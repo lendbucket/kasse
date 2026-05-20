@@ -91,9 +91,18 @@ SEVERE bug in createAccount where User row could persist with no session linkage
 EmploymentAgreement RLS updated with superadmin bypass. Janitor cron for stuck
 PENDING sessions (log-only v1). P1.A.7 is now unblocked.
 
-### P1.A.7 — Compensation + e-sign + PDF storage
+### P1.A.7-a — Compensation foundation (schema, API, admin UI) -- IN PROGRESS
 
-Compensation model wiring, legal document generation, e-sign flow, PDF storage.
+Compensation configuration layer for onboarding. Four model types: W2,
+1099_COMMISSION, BOOTH_RENT, HYBRID. State advances AGREEMENTS_CONFIGURED
+-> COMPENSATION_PENDING -> COMPENSATION_CONFIGURED. No new tables (uses
+existing Compensation table from P0.G.4). Migration adds COMPENSATION_PENDING
+sentinel to CHECK constraints. Admin UI at /dashboard/admin/compensation/[sessionId].
+Validation tests for all 4 model types. E-sign / PDF / signing UI are P1.A.7-b/c/d.
+
+### P1.A.7-b/c/d — E-sign + PDF storage (pending)
+
+Legal document generation, e-sign flow, PDF storage.
 Requires withAdminTx (#95) for atomicity guarantees on legal docs. UNBLOCKED.
 
 ### P1.A.8 — Google OAuth signup
