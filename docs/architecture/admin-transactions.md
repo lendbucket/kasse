@@ -105,9 +105,12 @@ via `(prismaAdmin as any).$parent`), bypassing the `$extends` wrapper.
 ## Vercel cron note
 
 Vercel cron sends HTTP **GET** requests, not POST. Any cron-triggered
-route must put its logic in the GET handler. The POST handler (if
-present) is for manual/API invocation only. The onboarding-janitor
-was fixed in cycle 2 after shipping with sweep logic in POST.
+route must put its sweep/work logic in the GET handler. The
+`/api/cron/onboarding-janitor` route follows this pattern — its GET
+handler runs the stuck-session sweep.
+If a cron route needs a manual-invocation POST handler (for testing or
+backfill), it's fine to add one alongside GET, but the cron itself
+invokes GET only.
 
 ## Client-side ID generation
 

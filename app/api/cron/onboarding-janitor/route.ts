@@ -31,22 +31,22 @@ const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
  * stuck sessions vs. legitimately slow requests.
  */
 export async function GET(req: Request) {
-  // Fail-closed auth: if CRON_SECRET is unset in production, reject
-  // all requests rather than silently accepting unauthenticated ones.
   const expected = process.env.CRON_SECRET;
   const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '');
 
-  if (process.env.NODE_ENV === 'production') {
-    if (!expected) {
-      console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
-      return NextResponse.json(
-        { error: 'service_misconfigured' },
-        { status: 500 }
-      );
-    }
-    if (cronSecret !== expected) {
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
+  // Production: secret MUST be set; fail-closed if misconfigured.
+  if (process.env.NODE_ENV === 'production' && !expected) {
+    console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
+    return NextResponse.json(
+      { error: 'service_misconfigured' },
+      { status: 500 }
+    );
+  }
+
+  // All environments: if secret is set, enforce it. Only skip auth
+  // entirely when secret is absent (dev/test convenience).
+  if (expected && cronSecret !== expected) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS);

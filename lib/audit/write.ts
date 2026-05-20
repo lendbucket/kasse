@@ -46,6 +46,10 @@ export type AuditInput = {
  * the withAdminTx batch array.
  */
 export function auditLogCreateOp(
+  // p is the unwrapped _prismaAdmin base client (passed from inside a
+  // withAdminTx callback). Typed as `typeof prismaAdmin` because the
+  // $extends wrapper exposes the same model accessor surface as the
+  // base. See lib/admin/withAdminTx.ts for the unwrapping mechanism.
   p: typeof prismaAdmin,
   input: Omit<AuditInput, 'request' | 'route'>
 ): Prisma.PrismaPromise<unknown> {

@@ -59,12 +59,27 @@ import type { Prisma } from '@prisma/client';
  *   Runtime SET LOCAL assertion passes on every call.
  */
 export async function withAdminTx<T extends readonly Prisma.PrismaPromise<unknown>[]>(
-  build: (p: PrismaAdminUnwrapped) => [...T]
+  build: (p: PrismaAdminBase) => [...T]
 ): Promise<{ [K in keyof T]: T[K] extends Prisma.PrismaPromise<infer R> ? R : never }> {
-  // Access the underlying _prismaAdmin client. The $extends wrapper exposes
-  // this via .$parent (verified against Prisma 7.x). Throw if unavailable —
-  // falling back to the wrapped client would reintroduce the broken pattern.
-  const unwrapped = (prismaAdmin as any).$parent as PrismaAdminUnwrapped | undefined;
+  // Access the underlying _prismaAdmin client via $extends's $parent.
+  //
+  // $parent is NOT part of the Prisma public API — there is no
+  // documentation, issue, or PR to pin to. Verification on Prisma upgrade
+  // is empirical via two runtime guardrails in this helper:
+  //   1. The identity check below (line ~79): throws if $parent returns
+  //      the wrapped client itself.
+  //   2. The SET LOCAL assertion (line ~99): throws if SET LOCAL didn't
+  //      apply within the batch.
+  //
+  // If a future Prisma upgrade changes the $extends internals such that
+  // $parent is unavailable, returns the wrapped client, or breaks batch
+  // semantics, one of those two assertions will fire on the next call to
+  // withAdminTx and surface a descriptive error.
+  //
+  // Verified on Prisma 7.7.x (current package.json pinned version).
+  // Throw if unavailable — falling back to the wrapped client would
+  // reintroduce the broken pattern.
+  const unwrapped = (prismaAdmin as any).$parent as PrismaAdminBase | undefined;
   if (!unwrapped) {
     throw new Error(
       '[withAdminTx] prismaAdmin.$parent is unavailable. ' +
@@ -113,6 +128,16 @@ export async function withAdminTx<T extends readonly Prisma.PrismaPromise<unknow
   return results as any;
 }
 
-// Type alias for the unwrapped client. Consumers see the same surface
-// as prismaAdmin (model accessors, $executeRaw, etc.).
-type PrismaAdminUnwrapped = typeof prismaAdmin;
+// Type alias for the underlying _prismaAdmin base PrismaClient.
+//
+// IMPORTANT TYPING CAVEAT: at the type level, this is identical to
+// `typeof prismaAdmin` (the $extends-wrapped client). At runtime, the
+// value passed to the build() callback is the UNWRAPPED base client
+// accessed via $parent. The type system cannot distinguish them because
+// both expose the same model accessors and $executeRaw / $queryRaw —
+// $extends adds no new surface, it just intercepts dispatch.
+//
+// We rely on this identical surface so that `p.user.create(...)` inside
+// the callback compiles. If $extends ever adds new methods that aren't
+// on the base client, this type would need to be narrowed.
+type PrismaAdminBase = typeof prismaAdmin;
