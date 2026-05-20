@@ -42,6 +42,8 @@ export const AuditAction = {
   STAFF_INVITATION_SENT: "staff.invitation_sent",
   STAFF_INVITATION_ACCEPTED: "staff.invitation_accepted",
   ONBOARDING_STAFF_INVITE_SKIPPED: "onboarding.staff_invite_skipped",
+  ONBOARDING_AGREEMENTS_DRAFTED: "onboarding.agreements_drafted",
+  ONBOARDING_AGREEMENTS_SKIPPED: "onboarding.agreements_skipped",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

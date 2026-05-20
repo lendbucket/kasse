@@ -87,6 +87,14 @@ describe("onboardingErrorStatus helper (P1.A.5)", () => {
     assert.equal(onboardingErrorStatus("INVITE_NAME_REQUIRED"), 400);
   });
 
+  it("INVALID_AGREEMENT_TEMPLATE_TYPE → 400", () => {
+    assert.equal(onboardingErrorStatus("INVALID_AGREEMENT_TEMPLATE_TYPE"), 400);
+  });
+
+  it("INVITE_NO_STAFF_TO_AGREE → 409", () => {
+    assert.equal(onboardingErrorStatus("INVITE_NO_STAFF_TO_AGREE"), 409);
+  });
+
   it("unknown/validation codes default to 400", () => {
     assert.equal(onboardingErrorStatus("INVALID_EMAIL"), 400);
     assert.equal(onboardingErrorStatus("PASSWORD_TOO_WEAK"), 400);

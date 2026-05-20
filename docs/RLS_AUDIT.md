@@ -87,6 +87,7 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/organization-groups` | GET, POST | Lists/creates OrganizationGroups; tenant-scoped via org membership filter + withTenantScope; validates parent/permissionSet in tenant context on POST (P0.A.13) |
 | `/api/organization-groups/[id]` | GET, PATCH, DELETE | Reads/updates/deletes OrganizationGroup; tenant-scoped via org membership filter; PATCH includes cycle detection on parentGroupId changes (P0.A.13) |
 | `/api/onboarding/location` | POST | Creates first Location during onboarding; uses `withTenantScope` after JWT refresh provides organizationId. OnboardingSession writes via prismaAdmin (RLS requires superadmin for those tables). (P1.A.3b) |
+| `/api/onboarding/agreements` | POST | Creates DRAFT EmploymentAgreement rows for all staff at org+location during onboarding; dual-client (EmploymentAgreement writes via withTenantScope tx; OnboardingSession state via prismaAdmin in sessions.ts helpers AFTER tenant tx commits). (P1.A.6) |
 
 ### BYPASS_NEEDED — PRE_SESSION (public, no session required)
 
@@ -161,7 +162,7 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 
 ## Summary
 
-- TENANT_SCOPED: **33**
+- TENANT_SCOPED: **34**
 - BYPASS_NEEDED: **20**
   - PRE_SESSION: **9** (auth handlers + NextAuth + 3 onboarding pre-account routes + staff invite accept)
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
@@ -171,7 +172,7 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 55**
+**Total routes: 56**
 
 ## What happens next
 
@@ -1038,6 +1039,7 @@ No new tables. Uses existing Organization, Location, BusinessSettings, User tabl
 | `/api/onboarding/services` | POST | TENANT_SCOPED (P1.A.4) | Dual-client: Service.createMany via withTenantScope tx; OnboardingSession/StateTransition writes via prismaAdmin (sessions.ts helpers) AFTER the tenant tx commits. Same architecture as /api/onboarding/location. |
 | `/api/onboarding/staff-invite` | POST | TENANT_SCOPED (P1.A.5) | Dual-client. Staff.create + StaffInvitation.create via withTenantScope tx; OnboardingSession state via prismaAdmin in sessions.ts. |
 | `/api/staff/accept-invite` | POST | BYPASS_NEEDED — PRE_SESSION (P1.A.5) | Invitee has no session yet. User/Staff/StaffInvitation writes all via prismaAdmin (atomic across 3 tables not guaranteed, #95). |
+| `/api/onboarding/agreements` | POST | TENANT_SCOPED (P1.A.6) | Dual-client. EmploymentAgreement.createMany via withTenantScope tx; OnboardingSession state via prismaAdmin in sessions.ts. |
 | `/api/onboarding/refresh-session` | POST | BYPASS_NEEDED — SELF_READ | Returns user's own DB state for JWT refresh. Read-only, no mutations. |
 
 ### P1.A.3 Helper Functions
@@ -1084,3 +1086,27 @@ New table: StaffInvitation (RLS-enabled, 4 tenant isolation policies + superadmi
 | `createStaffInvitation` | `lib/onboarding/staff-invites` | Owner invites a stylist or skips. Creates Staff row (userId=null) + StaffInvitation with hashed token. State-as-claim-token serialization via SERVICES_SEEDED → STAFF_PENDING claim. |
 | `acceptStaffInvitation` | `lib/onboarding/staff-invites` | Consumes invitation token, creates User (role=STAFF), links Staff.userId, activates staff. All via prismaAdmin (no tenant scope — invitee has no session). |
 | `onboardingErrorStatus` | `lib/onboarding/error-status` | Maps OnboardingError codes to HTTP status codes. Extracted from duplicated logic in location.ts and services.ts (cycle 3 reviewer feedback on PR #96). |
+
+## P1.A.6 — Employment agreements scaffolding (2026-05-20)
+
+No new tables (uses existing EmploymentAgreement model from P0.G.4). Migration updates OnboardingSession state CHECK constraint to include AGREEMENTS_PENDING.
+
+### P1.A.6 API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/agreements` | POST | TENANT_SCOPED | Dual-client: EmploymentAgreement.createMany via withTenantScope tx; OnboardingSession state transitions via prismaAdmin in sessions.ts helpers AFTER tenant tx commits. Same architecture as /api/onboarding/staff-invite. Skip path uses same AGREEMENTS_PENDING sentinel mechanism. |
+
+### P1.A.6 Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `createEmploymentAgreementDrafts` | `lib/onboarding/agreements` | Owner selects templateType or skips. Creates one DRAFT EmploymentAgreement per active Staff at org+location. State-as-claim-token serialization via STAFF_INVITED → AGREEMENTS_PENDING claim. Scaffolding only — documentUrl is placeholder, status is DRAFT. |
+
+### P1.A.6 EmploymentAgreement RLS Gap
+
+⚠️ The existing EmploymentAgreement RLS policy is FOR ALL with NO superadmin bypass (unlike Location/Service/Staff/StaffInvitation patterns which include an `OR app.is_superadmin = 'true'` clause). This means prismaAdmin cannot write to EmploymentAgreement directly.
+
+P1.A.6 is unaffected: all EmploymentAgreement writes go through `args.tx` (the tenant-scoped transaction client from `withTenantScope`), which sets `app.current_org_id` and passes the tenant isolation policy.
+
+However, if a future janitor job, admin tool, or #95 `withAdminTx` work needs to write EmploymentAgreement rows via prismaAdmin, the RLS policy must be updated to include the superadmin OR clause. Tracked alongside issue #95.

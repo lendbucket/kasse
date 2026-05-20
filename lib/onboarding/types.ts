@@ -9,6 +9,7 @@ export const ONBOARDING_STATES = [
   'SERVICES_SEEDED',
   'STAFF_PENDING',
   'STAFF_INVITED',
+  'AGREEMENTS_PENDING',
   'AGREEMENTS_CONFIGURED',
   'COMPENSATION_CONFIGURED',
   'COMPLETED',
@@ -42,7 +43,8 @@ export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null
   SERVICES_PENDING: 'SERVICES_SEEDED',
   SERVICES_SEEDED: 'STAFF_PENDING',
   STAFF_PENDING: 'STAFF_INVITED',
-  STAFF_INVITED: 'AGREEMENTS_CONFIGURED',
+  STAFF_INVITED: 'AGREEMENTS_PENDING',
+  AGREEMENTS_PENDING: 'AGREEMENTS_CONFIGURED',
   AGREEMENTS_CONFIGURED: 'COMPENSATION_CONFIGURED',
   COMPENSATION_CONFIGURED: 'COMPLETED',
   COMPLETED: null,
@@ -50,6 +52,17 @@ export const ALLOWED_TRANSITIONS: Record<OnboardingState, OnboardingState | null
 
 /**
  * Steps the owner can explicitly skip without abandoning the flow.
+ *
+ * NOTE: This set governs the `skipStep` helper, NOT the `skip: true`
+ * flag on onboarding routes. The skip flag is route-specific and
+ * advances state through the same sentinel mechanism as the non-skip
+ * path (e.g., agreements route: STAFF_INVITED → AGREEMENTS_PENDING →
+ * AGREEMENTS_CONFIGURED, with no actual agreements created). The two
+ * mechanisms are distinct:
+ *   - SKIPPABLE_STATES: used by /api/onboarding/skip-step, advances
+ *     state from X to ALLOWED_TRANSITIONS[X] without doing any work.
+ *   - skip: true flag: used by step-specific routes, advances through
+ *     the same state path as non-skip but creates zero resources.
  */
 export const SKIPPABLE_STATES: ReadonlySet<OnboardingState> = new Set([
   'STAFF_INVITED',
@@ -168,7 +181,9 @@ export class OnboardingError extends Error {
       | 'INVITE_ALREADY_ACCEPTED'
       | 'INVITE_EXPIRED'
       | 'INVITE_NAME_REQUIRED'
-      | 'INVITE_EMAIL_ALREADY_USER',
+      | 'INVITE_EMAIL_ALREADY_USER'
+      | 'INVALID_AGREEMENT_TEMPLATE_TYPE'
+      | 'INVITE_NO_STAFF_TO_AGREE',
     message: string
   ) {
     super(message);
