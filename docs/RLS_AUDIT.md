@@ -1480,7 +1480,10 @@ Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
 ### P1.A.8 Routes
 
 No new API routes. The `/api/auth/[...nextauth]` handler covers the Google flow
-via the provider definition.
+via the provider definition. See existing classification in the route table
+above: `/api/auth/[...nextauth]` is BYPASS_NEEDED — PRE_SESSION (delegates
+entirely to lib/auth.ts which uses prismaAdmin; no direct DB calls in the
+route file).
 
 ### P1.A.8 RLS Impact
 

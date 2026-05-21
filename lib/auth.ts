@@ -66,9 +66,11 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider !== "google") return true
 
-      // SECURITY: refuse to link to an existing password account unless Google
-      // has verified the email. Combined with allowDangerousEmailAccountLinking,
-      // this is the actual account-takeover prevention.
+      // Defense-in-depth: refuse to proceed unless Google has marked the email
+      // as verified. PRIMARY protection against account takeover is Google's
+      // own OAuth flow (Google won't issue tokens for unverified addresses).
+      // This explicit check is belt-and-suspenders in case Google's behavior
+      // ever changes or a misconfigured profile slips through.
       if (!(profile as any)?.email_verified) {
         return false
       }
@@ -130,18 +132,24 @@ export const authOptions: NextAuthOptions = {
           }),
         ])
       } catch (err) {
-        // Concurrent first-time Google sign-in won the race — P2002 on User.email
+        // Only retry on User.email collisions (real concurrent sign-in race).
+        // Other P2002 targets (e.g., Organization.slug) get re-thrown immediately;
+        // the user retries with a fresh Date.now() and gets a different slug.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-          const raceWinner = await prismaAdmin.user.findUnique({
-            where: { email },
-          })
-          if (raceWinner) {
-            if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
-            await prismaAdmin.user.update({
-              where: { id: raceWinner.id },
-              data: { lastLoginAt: new Date() },
+          const target = (err.meta as { target?: string[] } | null)?.target
+          const isEmailCollision = Array.isArray(target) && target.includes("email")
+          if (isEmailCollision) {
+            const raceWinner = await prismaAdmin.user.findUnique({
+              where: { email },
             })
-            return true
+            if (raceWinner) {
+              if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+              await prismaAdmin.user.update({
+                where: { id: raceWinner.id },
+                data: { lastLoginAt: new Date() },
+              })
+              return true
+            }
           }
         }
         throw err

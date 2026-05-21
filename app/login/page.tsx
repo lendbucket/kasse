@@ -205,7 +205,6 @@ function LoginPageInner() {
               transition: "all 150ms", color: "#3c4043",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
               opacity: signingInWithGoogle ? 0.6 : 1,
-              marginBottom: 0,
             }}
             onMouseEnter={(e) => { if (!signingInWithGoogle) e.currentTarget.style.background = "#f8f9fa" }}
             onMouseLeave={(e) => { if (!signingInWithGoogle) e.currentTarget.style.background = "white" }}
