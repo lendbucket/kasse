@@ -4,9 +4,10 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
-import { Role } from "@prisma/client"
+import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
+import { withAdminTx } from "@/lib/admin/withAdminTx"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -65,6 +66,13 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider !== "google") return true
 
+      // SECURITY: refuse to link to an existing password account unless Google
+      // has verified the email. Combined with allowDangerousEmailAccountLinking,
+      // this is the actual account-takeover prevention.
+      if (!(profile as any)?.email_verified) {
+        return false
+      }
+
       if (!user.email) return false
 
       const email = user.email.toLowerCase()
@@ -85,44 +93,71 @@ export const authOptions: NextAuthOptions = {
         return true
       }
 
-      // First-time Google user — bootstrap full account (mirrors /api/auth/register)
+      // First-time Google user — bootstrap full account (mirrors /api/auth/register).
+      // All three creates are atomic via withAdminTx. Uses client-side ID generation
+      // so the batch form can reference orgId without intermediate results.
       const name = user.name || profile?.name || email.split("@")[0]
       const businessName = `${name}'s Business`
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
+      const orgId = crypto.randomUUID()
 
-      const org = await prismaAdmin.organization.create({
-        data: {
-          name: businessName,
-          slug,
-          plan: "trial",
-          planStatus: "trial",
-          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        },
-      })
-
-      await prismaAdmin.user.create({
-        data: {
-          name,
-          email,
-          password: null,
-          image: user.image || null,
-          emailVerified: new Date(),
-          role: Role.OWNER,
-          organizationId: org.id,
-          lastLoginAt: new Date(),
-        },
-      })
-
-      await prismaAdmin.businessSettings.create({
-        data: { organizationId: org.id },
-      })
+      try {
+        await withAdminTx((p) => [
+          p.organization.create({
+            data: {
+              id: orgId,
+              name: businessName,
+              slug,
+              plan: "trial",
+              planStatus: "trial",
+              trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+            },
+          }),
+          p.user.create({
+            data: {
+              name,
+              email,
+              password: null,
+              image: user.image || null,
+              emailVerified: new Date(),
+              role: Role.OWNER,
+              organizationId: orgId,
+              lastLoginAt: new Date(),
+            },
+          }),
+          p.businessSettings.create({
+            data: { organizationId: orgId },
+          }),
+        ])
+      } catch (err) {
+        // Concurrent first-time Google sign-in won the race — P2002 on User.email
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          const raceWinner = await prismaAdmin.user.findUnique({
+            where: { email },
+          })
+          if (raceWinner) {
+            if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+            await prismaAdmin.user.update({
+              where: { id: raceWinner.id },
+              data: { lastLoginAt: new Date() },
+            })
+            return true
+          }
+        }
+        throw err
+      }
 
       // PrismaAdapter creates the Account row after signIn returns true — don't create it here.
       return true
     },
     async jwt({ token, user, trigger }) {
       if (user) {
-        // For Google OAuth, user object doesn't include role/org — fetch from DB
+        // For Google OAuth, we look up by email rather than id because at this point
+        // in the NextAuth flow, user.id is the Google providerAccountId (numeric string),
+        // NOT the Kasse User.id. PrismaAdapter sets user.id to Kasse User.id ONLY after
+        // creating the Account row, which happens AFTER signIn returns true. Email is
+        // the only stable join key between the Google profile and the just-created/found
+        // User row at this exact callback boundary. Do not "fix" this to lookup by id.
         if (!(user as any).role && user.email) {
           const dbUser = await prismaAdmin.user.findUnique({
             where: { email: user.email.toLowerCase() },

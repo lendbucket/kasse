@@ -208,7 +208,7 @@ function LoginPageInner() {
               marginBottom: 0,
             }}
             onMouseEnter={(e) => { if (!signingInWithGoogle) e.currentTarget.style.background = "#f8f9fa" }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "white" }}
+            onMouseLeave={(e) => { if (!signingInWithGoogle) e.currentTarget.style.background = "white" }}
           >
             {signingInWithGoogle ? (
               <Loader2 size={16} className="animate-spin" />
