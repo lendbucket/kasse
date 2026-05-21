@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
+import GoogleProvider from "next-auth/providers/google"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
 import { Role } from "@prisma/client"
@@ -47,11 +48,96 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
+    // P1.A.8: Google OAuth signup. Skips password + email verification.
+    // First-time Google users get full account bootstrap (User + Org + BusinessSettings)
+    // via the signIn callback below. Existing-email collisions link the Google Account
+    // to the existing User via PrismaAdapter (allowDangerousEmailAccountLinking).
+    //
+    // Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in env. Without them, the
+    // provider exists but returns "OAuth client error" — graceful degradation.
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      allowDangerousEmailAccountLinking: true,
+    }),
   ],
   callbacks: {
+    async signIn({ user, account, profile }) {
+      if (account?.provider !== "google") return true
+
+      if (!user.email) return false
+
+      const email = user.email.toLowerCase()
+
+      const existingUser = await prismaAdmin.user.findUnique({
+        where: { email },
+        include: { accounts: true },
+      })
+
+      if (existingUser) {
+        if (!existingUser.isActive) {
+          throw new Error("ACCOUNT_DISABLED")
+        }
+        await prismaAdmin.user.update({
+          where: { id: existingUser.id },
+          data: { lastLoginAt: new Date() },
+        })
+        return true
+      }
+
+      // First-time Google user — bootstrap full account (mirrors /api/auth/register)
+      const name = user.name || profile?.name || email.split("@")[0]
+      const businessName = `${name}'s Business`
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
+
+      const org = await prismaAdmin.organization.create({
+        data: {
+          name: businessName,
+          slug,
+          plan: "trial",
+          planStatus: "trial",
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      })
+
+      await prismaAdmin.user.create({
+        data: {
+          name,
+          email,
+          password: null,
+          image: user.image || null,
+          emailVerified: new Date(),
+          role: Role.OWNER,
+          organizationId: org.id,
+          lastLoginAt: new Date(),
+        },
+      })
+
+      await prismaAdmin.businessSettings.create({
+        data: { organizationId: org.id },
+      })
+
+      // PrismaAdapter creates the Account row after signIn returns true — don't create it here.
+      return true
+    },
     async jwt({ token, user, trigger }) {
       if (user) {
-        // Initial sign-in — enrich with user properties
+        // For Google OAuth, user object doesn't include role/org — fetch from DB
+        if (!(user as any).role && user.email) {
+          const dbUser = await prismaAdmin.user.findUnique({
+            where: { email: user.email.toLowerCase() },
+            select: { id: true, role: true, organizationId: true, locationId: true },
+          })
+          if (dbUser) {
+            token.id = dbUser.id
+            token.role = dbUser.role
+            token.organizationId = dbUser.organizationId
+            token.locationId = dbUser.locationId
+          }
+          return token
+        }
+
+        // For credentials sign-in, user object has everything (existing path)
         token.id = user.id
         token.role = (user as any).role
         token.organizationId = (user as any).organizationId
