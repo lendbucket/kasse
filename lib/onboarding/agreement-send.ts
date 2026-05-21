@@ -14,6 +14,12 @@
  * DRAFT and the failure is recorded in the response. Step f (email) is
  * best-effort — DB rows are authoritative.
  *
+ * RESULT COUNTS (mutually exclusive, sum to total processed):
+ *   - deliveredCount: DB committed AND email delivered. Fully sent.
+ *   - degradedCount: DB committed but email failed. Token/PDF exist;
+ *     staff didn't get notified. Owner must follow up (P1.A.7-d).
+ *   - failedCount: DB not committed. Agreement stays at DRAFT, retryable.
+ *
  * ORDERING RATIONALE: PDF upload BEFORE DB write so documentUrl points
  * to a real storage path (not a placeholder). DB write BEFORE email so
  * that a delivered email always points to an existing token. Email last
@@ -38,7 +44,6 @@ import { auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 import { renderEmploymentAgreementPDF } from './agreement-pdf';
 import {
   uploadAgreementPDF,
-  createSignedDownloadUrl,
   buildStoragePathMarker,
 } from './agreement-storage';
 import {
@@ -96,14 +101,16 @@ function classifyAgreementSendError(err: unknown): string {
   return 'UNKNOWN_ERROR';
 }
 
-// CRITICAL: the prisma argument must be the tenant-scoped prisma instance
-// from @/lib/prisma. Do NOT pass prismaAdmin here — that would defeat
-// withTenantScope by wrapping a bypass-RLS client in a tenant-scope call.
+// args.prisma must be the tenant-scoped prisma instance from @/lib/prisma.
+// The type `typeof prisma` captures the specific PrismaClient shape from
+// that module — prismaAdmin has a different $extends wrapper (rolbypassrls)
+// so passing it here will produce a compile error if the wrappers diverge.
 // See docs/RLS_AUDIT.md "P1.A.7-b — Supabase Storage Integration".
-type AppPrismaClient = { $transaction: (...args: any[]) => any };
+import type { prisma as _tenantPrisma } from '@/lib/prisma';
+type TenantPrisma = typeof _tenantPrisma;
 
 export async function sendAllAgreementsForSession(args: {
-  prisma: AppPrismaClient;
+  prisma: TenantPrisma;
   ctx: TenantContext;
   input: {
     sessionId: string;
@@ -116,7 +123,7 @@ export async function sendAllAgreementsForSession(args: {
   ipAddress?: string | null;
   userAgent?: string | null;
 }): Promise<{
-  sentCount: number;
+  deliveredCount: number;
   failedCount: number;
   degradedCount: number;
   failures: Array<{ agreementId: string; staffName: string | null; error: string }>;
@@ -170,12 +177,12 @@ export async function sendAllAgreementsForSession(args: {
 
   // 3. If no agreements, return empty (handles skip-agreements path)
   if (agreements.length === 0) {
-    return { sentCount: 0, failedCount: 0, degradedCount: 0, failures: [], degraded: [] };
+    return { deliveredCount: 0, failedCount: 0, degradedCount: 0, failures: [], degraded: [] };
   }
 
   const resend = getResendClient();
   const results = {
-    sentCount: 0,
+    deliveredCount: 0,
     failedCount: 0,
     degradedCount: 0,
     failures: [] as Array<{ agreementId: string; staffName: string | null; error: string }>,
@@ -244,18 +251,13 @@ export async function sendAllAgreementsForSession(args: {
         pdfBytes,
       });
 
-      // Store a stable path marker in documentUrl (not a signed URL that expires)
+      // Store a stable path marker in documentUrl (not a signed URL that expires).
+      // Signed URLs are minted on demand by the signing flow (P1.A.7-c) — the
+      // email itself only contains the signing link, not a direct PDF preview.
       const storagePath = buildStoragePathMarker({
         organizationId: input.organizationId,
         agreementId: agreement.id,
         filename: 'unsigned.pdf',
-      });
-
-      // Mint a signed URL for the email only — same 7-day TTL as the signing token
-      const signedUrlTtlSec = Math.floor(SIGN_TOKEN_TTL_MS / 1000);
-      const { signedUrl: emailSignedUrl } = await createSignedDownloadUrl({
-        path,
-        expiresInSec: signedUrlTtlSec,
       });
 
       // c. Generate signing token
@@ -330,6 +332,7 @@ export async function sendAllAgreementsForSession(args: {
           html: emailContent.html,
           text: emailContent.text,
         });
+        results.deliveredCount++;
       } catch (emailErr) {
         // DEGRADED: DB rows committed at SENT but email didn't go out.
         // Recovery: owner re-triggers send for this agreement (P1.A.7-d).
@@ -346,12 +349,13 @@ export async function sendAllAgreementsForSession(args: {
             agreementId: agreement.id,
             staffId: staff.id,
             errorCode: errCode,
-            errorDetail: emailErr instanceof Error ? emailErr.message : String(emailErr),
+            errorName: emailErr instanceof Error ? emailErr.name : 'unknown',
+            // errorDetail intentionally omitted — Resend error messages embed
+            // recipient email addresses (PII). errCode + errorName is sufficient
+            // for debugging; raw message retrievable from Resend's own logs.
           }
         );
       }
-
-      results.sentCount++;
     } catch (err) {
       results.failedCount++;
       const errCode = classifyAgreementSendError(err);
@@ -366,7 +370,10 @@ export async function sendAllAgreementsForSession(args: {
           agreementId: agreement.id,
           staffId: staff.id,
           errorCode: errCode,
-          errorDetail: err instanceof Error ? err.message : String(err),
+          errorName: err instanceof Error ? err.name : 'unknown',
+          // errorDetail intentionally omitted — error messages may embed PII
+          // (e.g., Resend recipient address). errCode + errorName is sufficient
+          // for debugging via agreementId + staffId correlation.
         }
       );
     }
