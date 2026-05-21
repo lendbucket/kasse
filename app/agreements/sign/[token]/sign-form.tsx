@@ -27,6 +27,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_token: 'This signing link is not valid.',
   name_mismatch: 'The typed name does not match the name on file.',
   state_mismatch: 'This agreement is not in a signable state.',
+  sign_commit_failed:
+    'Your signature could not be saved. Please contact your employer ' +
+    'to have a new signing link sent.',
 };
 
 export default function SignForm({

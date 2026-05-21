@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   consumeAgreementSignToken,
   AgreementSignError,
+  AgreementSignCommitFailedError,
 } from '@/lib/onboarding/agreement-sign-consume';
 
 export const dynamic = 'force-dynamic';
@@ -73,6 +74,17 @@ export async function POST(
       { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
+    if (err instanceof AgreementSignCommitFailedError) {
+      // Token was consumed but signature commit failed. Staff member
+      // cannot retry — owner must re-issue in P1.A.7-d.
+      return NextResponse.json(
+        {
+          error: 'sign_commit_failed',
+          message: 'signature could not be recorded — please contact your employer',
+        },
+        { status: 500 }
+      );
+    }
     if (err instanceof AgreementSignError) {
       const status =
         err.code === 'INVALID_TOKEN' ? 400 :

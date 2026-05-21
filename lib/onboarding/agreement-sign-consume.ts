@@ -20,6 +20,19 @@ import { withAdminTx } from '@/lib/admin/withAdminTx';
 import { auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 import { hashAgreementToken } from './agreement-tokens';
 
+/**
+ * Thrown when the token consume succeeded but the agreement update
+ * (status SIGNED + signature evidence + audit log) failed inside
+ * withAdminTx. The token is permanently consumed; the staff member
+ * cannot retry. Owner must re-issue via P1.A.7-d.
+ */
+export class AgreementSignCommitFailedError extends Error {
+  constructor(public underlyingError: unknown) {
+    super('agreement sign commit failed after token consume');
+    this.name = 'AgreementSignCommitFailedError';
+  }
+}
+
 export class AgreementSignError extends Error {
   constructor(
     public code:
@@ -152,7 +165,7 @@ export async function consumeAgreementSignToken(args: {
         errorName: writeErr instanceof Error ? writeErr.name : 'unknown',
       }
     );
-    throw writeErr;
+    throw new AgreementSignCommitFailedError(writeErr);
   }
 
   return {

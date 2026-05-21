@@ -58,13 +58,17 @@ export default async function SignPage({
     redirect('/agreements/sign/error?reason=consumed');
   }
 
-  // Record viewedAt (idempotent — only set if NULL)
-  if (!tokenRow.agreement.viewedAt) {
-    await prismaAdmin.employmentAgreement.update({
-      where: { id: tokenRow.agreementId },
-      data: { viewedAt: new Date() },
-    });
-  }
+  // Record viewedAt — race-safe via updateMany WHERE viewedAt IS NULL.
+  // Two concurrent GETs both reading viewedAt=null would otherwise produce
+  // a last-write-wins overwrite. The WHERE clause makes the first write
+  // the only winner. Same pattern as the AgreementSignToken consume step.
+  await prismaAdmin.employmentAgreement.updateMany({
+    where: {
+      id: tokenRow.agreementId,
+      viewedAt: null,
+    },
+    data: { viewedAt: new Date() },
+  });
 
   // Mint a short-lived signed URL for the PDF preview
   const marker = parseStoragePathMarker(tokenRow.agreement.documentUrl);
