@@ -1322,3 +1322,53 @@ from P1.A.1.
 - reissueAgreementSignToken uses deleteMany (not delete) on the old token so the call is idempotent
 - completeIfAllSigned validates state === 'COMPENSATION_CONFIGURED' before advancing
 - force=true is recorded in audit log metadata (forced=true, unsignedCount) so partial-signing exits are auditable
+## Migration tracking drift cleanup (2026-05-21)
+
+The `_prisma_migrations` tracking table previously drifted from the on-disk migration set. **Resolved 2026-05-21.**
+
+**Direct SQL fix (via Supabase MCP):**
+Deleted orphan failed `20260508194352_relation_hardening` row (`id=41ba50b7-dafc-4e10-811f-d3a06e8577ab`, `applied_steps_count=0, finished_at=null` from an aborted apply; the retry row with `applied_steps_count=1` and proper `finished_at` is the authoritative record).
+
+**Backfilled tracking for 25 migrations applied via Supabase MCP:**
+
+Each was resolved via `npx prisma migrate resolve --applied <name>` which inserts the row with the correct SHA-256 checksum without re-running the SQL.
+
+- `20260511121142_rls_policies`
+- `20260512005451_kasse_app_role`
+- `20260518000001_p0g_pr1_services_clients_scheduling`
+- `20260518000002_p0g_pr1_cycle2_stylist_schedule_unique`
+- `20260518000003_p0g_pr2_appointments_recurring_booking`
+- `20260518000004_p0g_pr2_cycle2_rename_preauth_field`
+- `20260518000005_p0g_pr3_cart_device_order_payment`
+- `20260518000006_p0g_pr3_cycle2_idempotency_indexes`
+- `20260518000007_p0g_pr4_commission_tips_tax_inventory_marketing`
+- `20260518100000_p0h_pr2_feature_flags`
+- `20260518110000_p0h_pr3_locale_fields`
+- `20260518120000_p0i_pr1_custom_fields`
+- `20260518130000_p0i_pr2_tags`
+- `20260518140000_p0i_pr3_audit_indexes`
+- `20260518150000_p1_a_1_onboarding_state_machine`
+- `20260518160000_tighten_onboarding_email_check`
+- `20260518170000_p1_a_2_account_creation`
+- `20260518180000_p1_a_3b_add_location_pending_state`
+- `20260518190000_p1_a_4_add_services_pending_state`
+- `20260519200000_p1_a_5_staff_invitations_and_pending_state`
+- `20260520180000_p1_a_6_add_agreements_pending_state`
+- `20260520190000_p95_employment_agreement_superadmin_bypass`
+- `20260520200000_p1_a_7_add_compensation_pending_state`
+- `20260520210000_p1_a_7_b_agreement_sign_token`
+- `20260520211000_p1_a_7_b_kasse_agreements_bucket`
+
+**Verification:** `npx prisma migrate status` now reports "Database schema is up to date!"
+
+**Known cosmetic gap (not fixed by this cleanup):** 5 P0.A migrations have tracking rows but no on-disk `migration.sql` files:
+
+- `20260514160000_p0_a_6_permission_set_schema_sync`
+- `20260514160100_p0_a_6_permissionset_select_allow_system_rows`
+- `20260514210000_p0_a_11_user_custom_role_id`
+- `20260514230000_p0_a_13_groupid_move_to_location`
+- `20260515000000_p0_a_13_organizationgroup_add_organizationid`
+
+These were applied during P0.A ship via direct Supabase MCP SQL and the migration.sql files were never committed. Schema changes are in production and verified; tracking is accurate; only the historical file record is missing. Will be reverse-engineered from the live schema as a housekeeping PR before multi-developer onboarding. See `prisma/README.md` "Known cosmetic gap" section.
+
+**Process change going forward:** The new workflow in `prisma/README.md` requires that every schema PR runs `npx prisma migrate resolve --applied <name>` before merging. This prevents this kind of drift from recurring.
