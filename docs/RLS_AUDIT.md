@@ -1158,3 +1158,111 @@ and OnboardingStateTransition fromState/toState CHECK constraints.
 |--------|--------|---------|
 | `validateCompensationInput` | `lib/onboarding/compensation` | Pure validation: model-type-conditional field checks, date sanity |
 | `setCompensationForStaff` | `lib/onboarding/compensation` | Owner sets compensation for all non-skipped agreement staff. Pre-claim invariant: every staff with an agreement must have a corresponding compensation input. State-as-claim-token via AGREEMENTS_CONFIGURED -> COMPENSATION_PENDING. |
+
+## P1.A.7-b — Supabase Storage Integration + SUPABASE_SERVICE_ROLE_KEY exception (2026-05-20)
+
+**Status:** ACTIVE
+
+P1.A.7-b introduces the FIRST use of Supabase Storage and the FIRST
+use of SUPABASE_SERVICE_ROLE_KEY in this codebase. Per the standing
+rule in this document ("if you see SUPABASE_SERVICE_ROLE_KEY introduced
+in a PR, flag it as a SEVERE concern unless this audit doc has been
+updated to document the new bypass exception"), the bypass exception is
+documented here.
+
+### Why the service role key is needed
+
+Supabase Storage uses its own RLS layer on storage.objects. Server-side
+uploads from a Vercel function don't have a Supabase JWT — they need a
+credential that authenticates as a privileged backend identity. The
+service_role key is the standard pattern for backend-to-Storage flows.
+
+### Bypass scope
+
+SUPABASE_SERVICE_ROLE_KEY is used ONLY by:
+- `lib/onboarding/agreement-storage.ts` (uploads + signed URL minting)
+
+No other module reads this env var. Any future module that introduces a
+read MUST update this section.
+
+### Storage path convention
+
+All objects in kasse-agreements are stored as:
+  `<organizationId>/<agreementId>/<filename>`
+
+The `authenticated_read_own_org_kasse_agreements` policy enforces that
+clients can only read objects whose path prefix matches their
+`app.current_org_id` session variable. Defense-in-depth — the primary
+access pattern is signed URLs minted by the backend.
+
+### P1.A.7-b Tables
+
+| Table | Scoping Strategy | Policy |
+|-------|-----------------|--------|
+| `AgreementSignToken` | Direct `organizationId` column | 4 per-command policies (SELECT/INSERT/UPDATE/DELETE) with superadmin bypass |
+
+Table granted SELECT, INSERT, UPDATE, DELETE to `kasse_app` role.
+
+### P1.A.7-b API Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/agreements/send` | POST | TENANT_SCOPED | OWNER-only. Pre-batch reads (agreements, org) use withTenantScope (RLS-enforced). Multi-table atomic writes use withAdminTx (EmploymentAgreement.update + AgreementSignToken.create + audit log). PDF upload + Resend send happen after batch commits (best-effort, fail-soft logged as DEGRADED). |
+| `/api/onboarding/agreements/send-test` | POST | TENANT_SCOPED | Same as /send but recipient is the authenticated owner's email. PDF + token are still real. |
+
+### P1.A.7-b Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `renderEmploymentAgreementPDF` | `lib/onboarding/agreement-pdf` | Server-side PDF generation via @react-pdf/renderer |
+| `uploadAgreementPDF` | `lib/onboarding/agreement-storage` | Uploads PDF to kasse-agreements bucket via Storage REST API + SUPABASE_SERVICE_ROLE_KEY |
+| `createSignedDownloadUrl` | `lib/onboarding/agreement-storage` | Mints a time-limited signed URL for the agreement PDF |
+| `generateRawAgreementToken` | `lib/onboarding/agreement-tokens` | 32-byte random token, hex (64 chars) |
+| `hashAgreementToken` | `lib/onboarding/agreement-tokens` | SHA-256 of the raw token, hex |
+| `sendAllAgreementsForSession` | `lib/onboarding/agreement-send` | Orchestrator: per-agreement loop with isolated failures, withAdminTx for DB writes, PDF upload + Resend send after commit |
+| `renderAgreementSignEmail` | `lib/onboarding/emails/agreement-sign` | HTML + text email template for signing notification |
+| `buildCompensationSummary` | `lib/onboarding/emails/agreement-sign` | Brief compensation text for email body |
+| `buildStoragePathMarker` | `lib/onboarding/agreement-storage` | Stable path marker for documentUrl (not a signed URL) |
+| `parseStoragePathMarker` | `lib/onboarding/agreement-storage` | Parse marker back into orgId/agreementId/filename |
+
+### Storage path markers in documentUrl
+
+`EmploymentAgreement.documentUrl` stores a STORAGE PATH MARKER
+(format: `kasse-agreements://<orgId>/<agreementId>/<filename>`), NOT
+a signed URL. Signed download URLs are minted on demand via
+`createSignedDownloadUrl()` because they have a fixed TTL (currently
+7 days, matching the signing token). Storing a signed URL would
+create a time bomb where `documentUrl` becomes dead after 7 days.
+
+Recovery path: the storage path marker is stable. Any view that needs
+to display the PDF re-mints a signed URL from the path.
+
+Migration impact: existing DRAFT rows have `documentUrl='pending://...'`
+(set in P1.A.6). These get OVERWRITTEN to the storage path marker
+when the owner triggers send (P1.A.7-b). No migration is needed.
+
+### Migration tracking drift (2026-05-20)
+
+Brute-force verification during PR #101 review confirmed:
+- `_prisma_migrations` table has rows through `20260516200000_p0_d_1_plan_tier_system`
+- `prisma/migrations/` folder contains migrations through `20260520211000_p1_a_7_b_kasse_agreements_bucket`
+- ~22 migrations applied via Supabase MCP are not recorded in `_prisma_migrations`
+
+Production schema is correct. Migration tracking is drifted.
+
+Why this doesn't block production:
+- Vercel build runs `npm install && next build` only
+- `prisma migrate deploy` is not part of the deploy pipeline
+- All schema changes happen via Supabase MCP with manual SQL review
+
+Cleanup plan (not in this PR):
+- One-time PR to run `npx prisma migrate resolve --applied <each_name>`
+  for each unrecorded migration. Recompute checksums from the migration
+  files. Verify with `prisma migrate status`.
+- After cleanup, consider whether to add `prisma migrate deploy` to
+  the Vercel build (this requires MIGRATION_DATABASE_URL to be set
+  with postgres role permissions for storage policies).
+
+Until then: continue applying migrations via Supabase MCP only. Do
+NOT run `prisma migrate dev` or `prisma migrate deploy` against
+production.

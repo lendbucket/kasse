@@ -188,7 +188,9 @@ export class OnboardingError extends Error {
       | 'INVITE_NO_STAFF_TO_AGREE'
       | 'COMPENSATION_FIELDS_INCOMPLETE'
       | 'COMPENSATION_STAFF_MISMATCH'
-      | 'NOT_ALL_STAFF_HAVE_COMPENSATION',
+      | 'NOT_ALL_STAFF_HAVE_COMPENSATION'
+      | 'AGREEMENT_SEND_FAILED'
+      | 'COMPENSATION_REQUIRED_FOR_PDF',
     message: string
   ) {
     super(message);
