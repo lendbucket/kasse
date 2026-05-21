@@ -3,7 +3,9 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getLandingForRole } from "@/lib/permissions/role-landing";
+import { getActiveOnboardingSessionForOwner } from "@/lib/onboarding/sessions";
 import { Role } from "@prisma/client";
+import Link from "next/link";
 import DashboardClock from "./DashboardClock";
 import {
   TrendingDown,
@@ -51,6 +53,21 @@ export default async function DashboardPage() {
     });
   } catch (e) { console.error("Dashboard data error:", e); }
 
+  // Onboarding session check — surface the completion tile for owners.
+  // Uses the sessions.ts helper which wraps the prismaAdmin read with
+  // explicit documentation about the SUPERADMIN_PROTECTED bypass.
+  let onboardingSession: { id: string; state: string } | null = null;
+  if (session.user.organizationId && userRole === Role.OWNER) {
+    try {
+      onboardingSession = await getActiveOnboardingSessionForOwner({
+        userId: session.user.id,
+        organizationId: session.user.organizationId,
+      });
+    } catch {
+      // fail-soft — dashboard loads without the tile if helper fails
+    }
+  }
+
   const avgTicket = transactionCount > 0 ? todayRevenue / transactionCount : 0;
 
   const hours = ["10am", "11", "12", "1pm", "2", "3", "4", "5", "6", "7pm"];
@@ -91,6 +108,46 @@ export default async function DashboardPage() {
           <span style={{ fontSize: 14, color: "#374151" }}>Ask Kasse AI anything about your business...</span>
           <Sparkles size={18} strokeWidth={1.5} style={{ color: "#606E74", flexShrink: 0 }} />
         </div>
+
+        {/* Onboarding status tile — shown when owner has in-progress session */}
+        {onboardingSession && onboardingSession.state === 'COMPENSATION_CONFIGURED' && (
+          <div style={{
+            background: '#fef3c7',
+            border: '1px solid #fcd34d',
+            borderRadius: 12,
+            padding: 16,
+            marginBottom: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}>
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 600, color: '#92400e', margin: '0 0 4px' }}>
+                Finish onboarding
+              </h3>
+              <p style={{ fontSize: 13, color: '#92400e', margin: 0 }}>
+                Review employment agreement signing progress and complete setup.
+              </p>
+            </div>
+            <Link
+              href={`/dashboard/admin/agreements/${onboardingSession.id}`}
+              style={{
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#ffffff',
+                background: '#92400e',
+                borderRadius: 8,
+                textDecoration: 'none',
+                flexShrink: 0,
+              }}
+            >
+              Review agreements
+            </Link>
+          </div>
+        )}
 
         {/* Performance card */}
         <div className="card" style={{ padding: 24, marginBottom: 20 }}>

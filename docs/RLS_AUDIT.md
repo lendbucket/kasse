@@ -1293,3 +1293,32 @@ AgreementSignToken tables from P1.A.7-b.
 - Token regex `/^[0-9a-f]{64}$/` prevents arbitrary input from reaching DB
 - NAME_MISMATCH: case-insensitive compare of typed name vs staff.name. Intentional fraud friction, not a hard block if staff.name is empty
 - OnboardingSession state is NOT advanced. P1.A.7-d handles COMPENSATION_CONFIGURED -> COMPLETED
+
+## P1.A.7-d — Owner completion layer (2026-05-20)
+
+No new tables, no schema changes. Reuses EmploymentAgreement +
+AgreementSignToken from P1.A.7-b and OnboardingSession state machine
+from P1.A.1.
+
+### P1.A.7-d Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/onboarding/agreements/resend` | POST | TENANT_SCOPED | OWNER-only. Burns existing AgreementSignToken + creates fresh one + re-uploads PDF + sends email. Uses withTenantScope for reads, withAdminTx for the multi-table atomic write batch (deleteMany + create + update + audit). |
+| `/api/onboarding/session-complete` | POST | TENANT_SCOPED | OWNER-only. Counts signed/total via withTenantScope, advances OnboardingSession via transitionTo (which uses withAdminTx). Two paths: auto-advance if all signed, or force=true via owner explicit choice. Note: distinct from /api/onboarding/complete which handles the merchant application submission. |
+| `/dashboard/admin/agreements/[sessionId]` | GET (page) | TENANT_SCOPED | OWNER-only server component. getSigningProgress reads via withTenantScope. |
+
+### P1.A.7-d Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `getSigningProgress` | `lib/onboarding/agreement-completion` | Read-only snapshot of signing state for a session. RLS-enforced via withTenantScope. |
+| `reissueAgreementSignToken` | `lib/onboarding/agreement-completion` | Burn old token + create fresh one + re-send email. Atomic via withAdminTx. |
+| `completeIfAllSigned` | `lib/onboarding/agreement-completion` | Advance OnboardingSession COMPENSATION_CONFIGURED -> COMPLETED. Force flag bypasses all-signed check. Uses transitionTo. |
+
+### P1.A.7-d Security notes
+
+- All three routes are OWNER-only with explicit role check before any DB access
+- reissueAgreementSignToken uses deleteMany (not delete) on the old token so the call is idempotent
+- completeIfAllSigned validates state === 'COMPENSATION_CONFIGURED' before advancing
+- force=true is recorded in audit log metadata (forced=true, unsignedCount) so partial-signing exits are auditable

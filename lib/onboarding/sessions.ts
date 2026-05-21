@@ -115,6 +115,32 @@ export async function getSessionById(sessionId: string): Promise<OnboardingSessi
   return session as unknown as OnboardingSessionRecord | null;
 }
 
+/**
+ * Find the most recent active (non-COMPLETED, non-expired) OnboardingSession
+ * for a given user + organization. Returns null if no active session.
+ *
+ * Uses prismaAdmin because OnboardingSession is SUPERADMIN_PROTECTED —
+ * RLS policies on this table do not have a tenant-scoped read path.
+ * The userId + organizationId filter is the manual scope; ownership is
+ * enforced by the caller passing authenticated IDs.
+ */
+export async function getActiveOnboardingSessionForOwner(args: {
+  userId: string;
+  organizationId: string;
+}): Promise<{ id: string; state: string } | null> {
+  const session = await prismaAdmin.onboardingSession.findFirst({
+    where: {
+      userId: args.userId,
+      organizationId: args.organizationId,
+      state: { notIn: ['COMPLETED'] },
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true, state: true },
+  });
+  return session;
+}
+
 export async function getSessionByEmail(email: string): Promise<OnboardingSessionRecord | null> {
   const normalized = email.trim().toLowerCase();
   const session = await prismaAdmin.onboardingSession.findFirst({
