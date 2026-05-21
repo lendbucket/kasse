@@ -79,19 +79,31 @@ function getResendClient(): Resend {
  */
 function classifyAgreementSendError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes('[agreement-pdf]')) return 'PDF_RENDER_FAILED';
-  if (msg.includes('[agreement-storage] upload failed')) return 'STORAGE_UPLOAD_FAILED';
-  if (msg.includes('[agreement-storage] signed URL')) return 'SIGNED_URL_FAILED';
-  if (msg.includes('AgreementSignToken')) return 'TOKEN_CREATE_FAILED';
-  if (msg.includes('Resend') || msg.includes('email')) return 'EMAIL_SEND_FAILED';
+
+  // Order matters: check our own prefixed error messages first, before
+  // broad substring matches that could false-positive on DB error text.
+  if (msg.startsWith('[agreement-pdf]')) return 'PDF_RENDER_FAILED';
+  if (msg.startsWith('[agreement-storage] upload failed')) return 'STORAGE_UPLOAD_FAILED';
+  if (msg.startsWith('[agreement-storage] signed URL')) return 'SIGNED_URL_FAILED';
+
+  // Resend-specific patterns — match the domain or constructor prefix,
+  // not the generic word "email" which appears in constraint errors.
+  if (msg.includes('resend.com') || msg.startsWith('Resend ')) return 'EMAIL_SEND_FAILED';
+
+  // Prisma constraint errors (P200x family = unique/FK violations)
+  if (msg.startsWith('P200') || msg.startsWith('P201')) return 'TOKEN_CREATE_FAILED';
+
   return 'UNKNOWN_ERROR';
 }
 
-// Type alias for the prisma-like client accepted by withTenantScope
-type PrismaClientLike = { $transaction: (...args: any[]) => any };
+// CRITICAL: the prisma argument must be the tenant-scoped prisma instance
+// from @/lib/prisma. Do NOT pass prismaAdmin here — that would defeat
+// withTenantScope by wrapping a bypass-RLS client in a tenant-scope call.
+// See docs/RLS_AUDIT.md "P1.A.7-b — Supabase Storage Integration".
+type AppPrismaClient = { $transaction: (...args: any[]) => any };
 
 export async function sendAllAgreementsForSession(args: {
-  prisma: PrismaClientLike;
+  prisma: AppPrismaClient;
   ctx: TenantContext;
   input: {
     sessionId: string;
@@ -106,7 +118,9 @@ export async function sendAllAgreementsForSession(args: {
 }): Promise<{
   sentCount: number;
   failedCount: number;
+  degradedCount: number;
   failures: Array<{ agreementId: string; staffName: string | null; error: string }>;
+  degraded: Array<{ agreementId: string; staffName: string | null; reason: string }>;
 }> {
   const { input } = args;
 
@@ -156,15 +170,17 @@ export async function sendAllAgreementsForSession(args: {
 
   // 3. If no agreements, return empty (handles skip-agreements path)
   if (agreements.length === 0) {
-    return { sentCount: 0, failedCount: 0, failures: [] };
+    return { sentCount: 0, failedCount: 0, degradedCount: 0, failures: [], degraded: [] };
   }
 
   const resend = getResendClient();
-  const results: {
-    sentCount: number;
-    failedCount: number;
-    failures: Array<{ agreementId: string; staffName: string | null; error: string }>;
-  } = { sentCount: 0, failedCount: 0, failures: [] };
+  const results = {
+    sentCount: 0,
+    failedCount: 0,
+    degradedCount: 0,
+    failures: [] as Array<{ agreementId: string; staffName: string | null; error: string }>,
+    degraded: [] as Array<{ agreementId: string; staffName: string | null; reason: string }>,
+  };
 
   // 4. Per-agreement loop — isolated failures
   for (const agreement of agreements) {
@@ -249,12 +265,6 @@ export async function sendAllAgreementsForSession(args: {
       const now = new Date();
 
       // d. Atomic DB write: update agreement + create token + audit
-      // Uses withAdminTx for multi-table atomicity (superadmin context).
-      // The (p as any) cast is needed because the AgreementSignToken
-      // model was added in this PR and Prisma client types aren't
-      // regenerated until the next `prisma generate` (runs at build time
-      // via postinstall). The model IS in schema.prisma and the table
-      // exists in the database — the cast is a local dev limitation only.
       await withAdminTx((p) => [
         p.employmentAgreement.update({
           where: { id: agreement.id },
@@ -265,7 +275,7 @@ export async function sendAllAgreementsForSession(args: {
             expiresAt,
           },
         }),
-        (p as any).agreementSignToken.create({
+        p.agreementSignToken.create({
           data: {
             organizationId: input.organizationId,
             agreementId: agreement.id,
@@ -323,12 +333,19 @@ export async function sendAllAgreementsForSession(args: {
       } catch (emailErr) {
         // DEGRADED: DB rows committed at SENT but email didn't go out.
         // Recovery: owner re-triggers send for this agreement (P1.A.7-d).
+        const errCode = classifyAgreementSendError(emailErr);
+        results.degradedCount++;
+        results.degraded.push({
+          agreementId: agreement.id,
+          staffName: staff.name,
+          reason: errCode,
+        });
         console.error(
           '[DEGRADED_AGREEMENT_SEND] agreement marked SENT but email failed',
           {
             agreementId: agreement.id,
             staffId: staff.id,
-            errorCode: classifyAgreementSendError(emailErr),
+            errorCode: errCode,
             errorDetail: emailErr instanceof Error ? emailErr.message : String(emailErr),
           }
         );

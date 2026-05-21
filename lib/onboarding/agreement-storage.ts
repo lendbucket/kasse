@@ -121,8 +121,11 @@ export async function createSignedDownloadUrl(args: {
     );
   }
 
-  // Supabase Storage has used both signedURL and signedUrl across versions.
-  // Accept either to be resilient to API changes.
+  // Supabase Storage REST API field name varies by version:
+  // - Legacy (storage-api v0.x, v1.x through ~2024): returns signedURL (capital URL)
+  // - Modern (storage-api v1.x late 2024+): returns signedUrl (camelCase)
+  // Observed dual-field handling needed during P1.A.7-b development on
+  // 2026-05-20 against current Supabase Storage REST API. Accept either.
   const data = await res.json() as { signedURL?: string; signedUrl?: string };
   const rawSignedUrl = data.signedURL ?? data.signedUrl;
   if (!rawSignedUrl) {

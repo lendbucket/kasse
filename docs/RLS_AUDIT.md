@@ -1240,3 +1240,29 @@ to display the PDF re-mints a signed URL from the path.
 Migration impact: existing DRAFT rows have `documentUrl='pending://...'`
 (set in P1.A.6). These get OVERWRITTEN to the storage path marker
 when the owner triggers send (P1.A.7-b). No migration is needed.
+
+### Migration tracking drift (2026-05-20)
+
+Brute-force verification during PR #101 review confirmed:
+- `_prisma_migrations` table has rows through `20260516200000_p0_d_1_plan_tier_system`
+- `prisma/migrations/` folder contains migrations through `20260520211000_p1_a_7_b_kasse_agreements_bucket`
+- ~22 migrations applied via Supabase MCP are not recorded in `_prisma_migrations`
+
+Production schema is correct. Migration tracking is drifted.
+
+Why this doesn't block production:
+- Vercel build runs `npm install && next build` only
+- `prisma migrate deploy` is not part of the deploy pipeline
+- All schema changes happen via Supabase MCP with manual SQL review
+
+Cleanup plan (not in this PR):
+- One-time PR to run `npx prisma migrate resolve --applied <each_name>`
+  for each unrecorded migration. Recompute checksums from the migration
+  files. Verify with `prisma migrate status`.
+- After cleanup, consider whether to add `prisma migrate deploy` to
+  the Vercel build (this requires MIGRATION_DATABASE_URL to be set
+  with postgres role permissions for storage policies).
+
+Until then: continue applying migrations via Supabase MCP only. Do
+NOT run `prisma migrate dev` or `prisma migrate deploy` against
+production.
