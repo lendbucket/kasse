@@ -2,8 +2,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { prismaAdmin } from "@/lib/prismaAdmin";
 import { getLandingForRole } from "@/lib/permissions/role-landing";
+import { getActiveOnboardingSessionForOwner } from "@/lib/onboarding/sessions";
 import { Role } from "@prisma/client";
 import Link from "next/link";
 import DashboardClock from "./DashboardClock";
@@ -53,21 +53,19 @@ export default async function DashboardPage() {
     });
   } catch (e) { console.error("Dashboard data error:", e); }
 
-  // Onboarding session check — surface the completion tile for owners
+  // Onboarding session check — surface the completion tile for owners.
+  // Uses the sessions.ts helper which wraps the prismaAdmin read with
+  // explicit documentation about the SUPERADMIN_PROTECTED bypass.
   let onboardingSession: { id: string; state: string } | null = null;
   if (session.user.organizationId && userRole === Role.OWNER) {
     try {
-      onboardingSession = await prismaAdmin.onboardingSession.findFirst({
-        where: {
-          userId: session.user.id,
-          organizationId: session.user.organizationId,
-          state: { notIn: ['COMPLETED'] },
-          expiresAt: { gt: new Date() },
-        },
-        orderBy: { updatedAt: 'desc' },
-        select: { id: true, state: true },
+      onboardingSession = await getActiveOnboardingSessionForOwner({
+        userId: session.user.id,
+        organizationId: session.user.organizationId,
       });
-    } catch { /* fail-soft — dashboard loads without the tile */ }
+    } catch {
+      // fail-soft — dashboard loads without the tile if helper fails
+    }
   }
 
   const avgTicket = transactionCount > 0 ? todayRevenue / transactionCount : 0;

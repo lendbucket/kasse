@@ -68,6 +68,9 @@ export async function POST(req: Request) {
       locationId: session.user.locationId ?? null,
     });
 
+    // prisma is the tenant-scoped instance from @/lib/prisma.
+    // completeIfAllSigned wraps reads in withTenantScope and state
+    // transitions via transitionTo (withAdminTx) internally.
     const result = await completeIfAllSigned({
       prisma,
       ctx,

@@ -32,6 +32,8 @@ export default async function AgreementsAdminPage({
     locationId: session.user.locationId,
   });
 
+  // prisma is the tenant-scoped instance from @/lib/prisma.
+  // getSigningProgress wraps reads in withTenantScope internally.
   const progress = await getSigningProgress({
     prisma,
     ctx,

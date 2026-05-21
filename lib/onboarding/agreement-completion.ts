@@ -14,7 +14,7 @@ import { transitionTo, getSessionById } from './sessions';
 import { OnboardingError } from './types';
 import { auditLogCreateOp, AuditAction } from '@/lib/audit/write';
 import { renderEmploymentAgreementPDF } from './agreement-pdf';
-import { uploadAgreementPDF, buildStoragePathMarker } from './agreement-storage';
+import { uploadAgreementPDF } from './agreement-storage';
 import {
   generateRawAgreementToken,
   hashAgreementToken,
@@ -141,6 +141,9 @@ export async function reissueAgreementSignToken(args: {
   }
   if (session.organizationId !== args.input.organizationId) {
     throw new OnboardingError('ORG_SCOPE_MISMATCH', 'session org mismatch');
+  }
+  if (session.locationId !== args.input.locationId) {
+    throw new OnboardingError('ORG_SCOPE_MISMATCH', 'session location mismatch');
   }
 
   const data = await withTenantScope(args.prisma, args.ctx, async (tx) => {
@@ -321,6 +324,12 @@ export async function completeIfAllSigned(args: {
   if (!session) throw new OnboardingError('SESSION_NOT_FOUND', 'session not found');
   if (session.userId !== args.authenticatedUserId) {
     throw new OnboardingError('ORG_SCOPE_MISMATCH', 'session ownership mismatch');
+  }
+  if (session.organizationId !== args.input.organizationId) {
+    throw new OnboardingError('ORG_SCOPE_MISMATCH', 'session org mismatch');
+  }
+  if (session.locationId !== args.input.locationId) {
+    throw new OnboardingError('ORG_SCOPE_MISMATCH', 'session location mismatch');
   }
 
   if (session.state === 'COMPLETED') {

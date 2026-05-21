@@ -8,6 +8,10 @@ import { OnboardingError } from '@/lib/onboarding/types';
 import { onboardingErrorStatus } from '@/lib/onboarding/error-status';
 
 export const dynamic = 'force-dynamic';
+// 60s timeout (vs 30s elsewhere) because this route regenerates the
+// employment agreement PDF + uploads it to Supabase Storage before
+// the DB commit. PDF rendering can take ~5-15s; the headroom covers
+// network variance on the upload.
 export const maxDuration = 60;
 
 /**
@@ -70,6 +74,9 @@ export async function POST(req: Request) {
       locationId: session.user.locationId ?? null,
     });
 
+    // prisma is the tenant-scoped instance from @/lib/prisma.
+    // reissueAgreementSignToken wraps reads in withTenantScope and writes
+    // in withAdminTx internally — see lib/onboarding/agreement-completion.ts.
     const result = await reissueAgreementSignToken({
       prisma,
       ctx,

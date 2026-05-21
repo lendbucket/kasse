@@ -36,7 +36,7 @@ export default function AgreementsClient({
   const [reissuingId, setReissuingId] = useState<string | null>(null);
   const [completing, setCompleting] = useState(false);
   const [showForceConfirm, setShowForceConfirm] = useState(false);
-  const [completedAt, setCompletedAt] = useState<Date | null>(null);
+  const [isCompleted, setIsCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const allSigned = progress.total > 0 && progress.signedCount === progress.total;
@@ -79,7 +79,7 @@ export default function AgreementsClient({
         return;
       }
       if (data.advanced) {
-        setCompletedAt(new Date());
+        setIsCompleted(true);
         setTimeout(() => router.push('/dashboard'), 1500);
       } else if (data.reason === 'not_all_signed') {
         setError(`${data.signedCount} of ${data.total} signed — not all agreements signed yet.`);
@@ -94,7 +94,7 @@ export default function AgreementsClient({
     }
   }
 
-  if (completedAt) {
+  if (isCompleted) {
     return (
       <div style={{
         background: '#f0fdf4',
