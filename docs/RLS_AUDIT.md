@@ -1266,3 +1266,30 @@ Cleanup plan (not in this PR):
 Until then: continue applying migrations via Supabase MCP only. Do
 NOT run `prisma migrate dev` or `prisma migrate deploy` against
 production.
+
+## P1.A.7-c — Public signing UI + signature acceptance (2026-05-20)
+
+No new tables. No schema changes. Uses existing EmploymentAgreement +
+AgreementSignToken tables from P1.A.7-b.
+
+### P1.A.7-c Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/agreements/sign/[token]` | GET (page) | PUBLIC_PRE_SESSION | Token IS the auth. Reads AgreementSignToken + EmploymentAgreement via prismaAdmin (same pattern as /api/onboarding/verify). Token regex validated before DB query. Writes viewedAt (idempotent). |
+| `/api/agreements/sign/[token]` | POST | PUBLIC_PRE_SESSION | Atomic single-use consume. Token regex + JSON body validated. updateMany for race-safe consume + withAdminTx for agreement SIGNED + audit log. |
+| `/agreements/sign/error` | GET (page) | PUBLIC_STATIC | No DB access. Reads reason from search params. |
+
+### P1.A.7-c Helper Functions
+
+| Helper | Module | Purpose |
+|--------|--------|---------|
+| `consumeAgreementSignToken` | `lib/onboarding/agreement-sign-consume` | Atomic token consume + signature record. Race-safe via updateMany WHERE consumedAt IS NULL. |
+
+### P1.A.7-c Security notes
+
+- Hash comparison only — raw token never stored (same StaffInvitation pattern)
+- Two-write window: token consume (commit 1) may succeed but agreement update (commit 2, withAdminTx) may fail. Logged as AGREEMENT_SIGN_COMMIT_FAILED, recoverable via P1.A.7-d re-issue
+- Token regex `/^[0-9a-f]{64}$/` prevents arbitrary input from reaching DB
+- NAME_MISMATCH: case-insensitive compare of typed name vs staff.name. Intentional fraud friction, not a hard block if staff.name is empty
+- OnboardingSession state is NOT advanced. P1.A.7-d handles COMPENSATION_CONFIGURED -> COMPLETED

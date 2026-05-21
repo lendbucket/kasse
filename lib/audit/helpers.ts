@@ -47,6 +47,7 @@ export const AuditAction = {
   ONBOARDING_COMPENSATION_SET: "onboarding.compensation_set",
   ONBOARDING_AGREEMENT_SENT: "onboarding.agreement_sent",
   ONBOARDING_AGREEMENT_SEND_FAILED: "onboarding.agreement_send_failed",
+  ONBOARDING_AGREEMENT_SIGNED: "onboarding.agreement_signed",
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
