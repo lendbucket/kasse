@@ -1372,3 +1372,91 @@ Each was resolved via `npx prisma migrate resolve --applied <name>` which insert
 These were applied during P0.A ship via direct Supabase MCP SQL and the migration.sql files were never committed. Schema changes are in production and verified; tracking is accurate; only the historical file record is missing. Will be reverse-engineered from the live schema as a housekeeping PR before multi-developer onboarding. See `prisma/README.md` "Known cosmetic gap" section.
 
 **Process change going forward:** The new workflow in `prisma/README.md` requires that every schema PR runs `npx prisma migrate resolve --applied <name>` before merging. This prevents this kind of drift from recurring.
+
+## P0.5.3d — auth_rls_initplan performance optimization (2026-05-21)
+
+### Problem
+
+Supabase performance advisor reported **239 `auth_rls_initplan` warnings** across 89 tables. Each warning indicates that `current_setting()` calls inside RLS policies were being re-evaluated for every row during policy checks instead of once per query. At scale this produces 10–100x slower queries on large tenant datasets.
+
+### Root cause
+
+PostgreSQL's query planner treats `current_setting('app.X', true)` as a volatile function call that must be re-evaluated per row unless the planner can prove otherwise. Wrapping the call in `(SELECT ...)` creates an InitPlan node, which Postgres guarantees is evaluated exactly once per query and cached.
+
+Reference: https://supabase.com/docs/guides/database/postgres/row-level-security#call-functions-with-select
+
+### Fix
+
+Migration `20260521201207_p0_5_3d_rls_initplan_optimization` uses a `DO $$ ... $$` block that:
+
+1. Iterates over every `pg_policies` row in the `public` schema where `qual` or `with_check` contains `current_setting()`
+2. Applies `regexp_replace` to wrap each `current_setting('app.X', true)` call in `(SELECT current_setting('app.X', true))`
+3. Drops the old policy and creates the new one with the wrapped expression
+4. All in a single transaction — atomic rollback on any failure
+
+### Verification
+
+| Metric | Before | After |
+|---|---|---|
+| `auth_rls_initplan` warnings | 239 | 0 |
+| Policies still bare (`current_setting` not in `SELECT`) | 239 | 0 |
+| Policies wrapped (`SELECT current_setting`) | 0 | 239 |
+| Total policies using `current_setting` | 239 | 239 |
+
+Confirmed via `Supabase:get_advisors(type='performance')` immediately after the migration applied. The `auth_rls_initplan` lint category dropped from 239 findings to 0.
+
+### Semantic equivalence
+
+The `(SELECT ...)` wrapper changes **nothing** about what is evaluated — only how many times.
+
+- `set_config('app.X', value, true)` still sets the session variable transaction-locally via `SET LOCAL`
+- The value is still read inside the policy check
+- The row is still filtered by the same boolean expression
+- The wrapped expression is semantically identical to the bare call, just executed once per query instead of once per row
+
+This is a pure query-plan optimization with **zero behavioral change**. All existing RLS tenant-isolation behavior is preserved.
+
+### Excluded from rewrite
+
+- **`FeatureFlag` / `FeatureFlagAudit`** — policies use `is_current_user_superadmin()` SECURITY DEFINER function which Postgres already caches per-query (function volatility is STABLE)
+- **`FeatureFlag.featureflag_read`** — `USING (true)` policy has no `current_setting()` to wrap
+- **`OrganizationGroup.group_select`** — has a recursive CTE; the regex matches and rewrites the `current_setting()` calls within the CTE body without breaking the CTE structure (verified)
+
+### Storage normalization
+
+Note: Postgres internally normalizes the stored form of `(SELECT current_setting('app.X', true))` to `( SELECT current_setting('app.X'::text, true) AS current_setting)` with an automatic column alias. This is display formatting only — the AST is identical and the query plan optimization applies regardless.
+
+### Rollback (if ever needed)
+
+To reverse this optimization (not recommended unless investigating a regression):
+
+```sql
+DO $rollback$
+DECLARE
+  policy_record RECORD;
+  new_qual TEXT;
+  new_with_check TEXT;
+  drop_sql TEXT;
+  create_sql TEXT;
+BEGIN
+  FOR policy_record IN
+    SELECT tablename, policyname, cmd, qual, with_check
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND (qual LIKE '%SELECT current_setting%' OR with_check LIKE '%SELECT current_setting%')
+  LOOP
+    new_qual := regexp_replace(policy_record.qual, '\(\s*SELECT current_setting\(''(app\.[a-z_]+)''::text, true\)(\s+AS current_setting)?\s*\)', 'current_setting(''\1''::text, true)', 'g');
+    new_with_check := regexp_replace(policy_record.with_check, '\(\s*SELECT current_setting\(''(app\.[a-z_]+)''::text, true\)(\s+AS current_setting)?\s*\)', 'current_setting(''\1''::text, true)', 'g');
+
+    drop_sql := format('DROP POLICY %I ON public.%I', policy_record.policyname, policy_record.tablename);
+    EXECUTE drop_sql;
+
+    create_sql := format('CREATE POLICY %I ON public.%I FOR %s', policy_record.policyname, policy_record.tablename, policy_record.cmd);
+    IF new_qual IS NOT NULL THEN create_sql := create_sql || format(' USING (%s)', new_qual); END IF;
+    IF new_with_check IS NOT NULL THEN create_sql := create_sql || format(' WITH CHECK (%s)', new_with_check); END IF;
+    EXECUTE create_sql;
+  END LOOP;
+END;
+$rollback$;
+```
+
