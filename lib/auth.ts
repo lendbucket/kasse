@@ -1,11 +1,13 @@
 import type { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
+import GoogleProvider from "next-auth/providers/google"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
-import { Role } from "@prisma/client"
+import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
+import { withAdminTx } from "@/lib/admin/withAdminTx"
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -47,11 +49,138 @@ export const authOptions: NextAuthOptions = {
         }
       },
     }),
+    // P1.A.8: Google OAuth signup. Skips password + email verification.
+    // First-time Google users get full account bootstrap (User + Org + BusinessSettings)
+    // via the signIn callback below. Existing-email collisions link the Google Account
+    // to the existing User via PrismaAdapter (allowDangerousEmailAccountLinking).
+    //
+    // Requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in env. Without them, the
+    // provider exists but returns "OAuth client error" — graceful degradation.
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      allowDangerousEmailAccountLinking: true,
+    }),
   ],
   callbacks: {
+    async signIn({ user, account, profile }) {
+      if (account?.provider !== "google") return true
+
+      // Defense-in-depth: refuse to proceed unless Google has marked the email
+      // as verified. PRIMARY protection against account takeover is Google's
+      // own OAuth flow (Google won't issue tokens for unverified addresses).
+      // This explicit check is belt-and-suspenders in case Google's behavior
+      // ever changes or a misconfigured profile slips through.
+      if (!(profile as any)?.email_verified) {
+        return false
+      }
+
+      if (!user.email) return false
+
+      const email = user.email.toLowerCase()
+
+      const existingUser = await prismaAdmin.user.findUnique({
+        where: { email },
+        include: { accounts: true },
+      })
+
+      if (existingUser) {
+        if (!existingUser.isActive) {
+          throw new Error("ACCOUNT_DISABLED")
+        }
+        await prismaAdmin.user.update({
+          where: { id: existingUser.id },
+          data: { lastLoginAt: new Date() },
+        })
+        return true
+      }
+
+      // First-time Google user — bootstrap full account (mirrors /api/auth/register).
+      // All three creates are atomic via withAdminTx. Uses client-side ID generation
+      // so the batch form can reference orgId without intermediate results.
+      const name = user.name || profile?.name || email.split("@")[0]
+      const businessName = `${name}'s Business`
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
+      const orgId = crypto.randomUUID()
+
+      try {
+        await withAdminTx((p) => [
+          p.organization.create({
+            data: {
+              id: orgId,
+              name: businessName,
+              slug,
+              plan: "trial",
+              planStatus: "trial",
+              trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+            },
+          }),
+          p.user.create({
+            data: {
+              name,
+              email,
+              password: null,
+              image: user.image || null,
+              emailVerified: new Date(),
+              role: Role.OWNER,
+              organizationId: orgId,
+              lastLoginAt: new Date(),
+            },
+          }),
+          p.businessSettings.create({
+            data: { organizationId: orgId },
+          }),
+        ])
+      } catch (err) {
+        // Only retry on User.email collisions (real concurrent sign-in race).
+        // Other P2002 targets (e.g., Organization.slug) get re-thrown immediately;
+        // the user retries with a fresh Date.now() and gets a different slug.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          const target = (err.meta as { target?: string[] } | null)?.target
+          const isEmailCollision = Array.isArray(target) && target.includes("email")
+          if (isEmailCollision) {
+            const raceWinner = await prismaAdmin.user.findUnique({
+              where: { email },
+            })
+            if (raceWinner) {
+              if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+              await prismaAdmin.user.update({
+                where: { id: raceWinner.id },
+                data: { lastLoginAt: new Date() },
+              })
+              return true
+            }
+          }
+        }
+        throw err
+      }
+
+      // PrismaAdapter creates the Account row after signIn returns true — don't create it here.
+      return true
+    },
     async jwt({ token, user, trigger }) {
       if (user) {
-        // Initial sign-in — enrich with user properties
+        // For Google OAuth, we look up by email rather than id because at this point
+        // in the NextAuth flow, user.id is the Google providerAccountId (numeric string),
+        // NOT the Kasse User.id. PrismaAdapter sets user.id to Kasse User.id ONLY after
+        // creating the Account row, which happens AFTER signIn returns true. Email is
+        // the only stable join key between the Google profile and the just-created/found
+        // User row at this exact callback boundary. Do not "fix" this to lookup by id.
+        if (!(user as any).role && user.email) {
+          const dbUser = await prismaAdmin.user.findUnique({
+            where: { email: user.email.toLowerCase() },
+            select: { id: true, role: true, organizationId: true, locationId: true },
+          })
+          if (dbUser) {
+            token.id = dbUser.id
+            token.role = dbUser.role
+            token.organizationId = dbUser.organizationId
+            token.locationId = dbUser.locationId
+          }
+          return token
+        }
+
+        // For credentials sign-in, user object has everything (existing path)
         token.id = user.id
         token.role = (user as any).role
         token.organizationId = (user as any).organizationId
