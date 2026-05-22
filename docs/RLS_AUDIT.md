@@ -1499,3 +1499,44 @@ sign-ins land on /dashboard the same as credentials sign-ins. If/when the
 OnboardingSession flow is wired to /login (separate PR), Google users will
 need a path that transitions STARTED → ACCOUNT_CREATED directly on first
 sign-in, bypassing the EMAIL_VERIFIED + PASSWORD_SET intermediate states.
+
+## P1.A.9 — Apple Sign-In (2026-05-21)
+
+No new tables. No schema changes. Uses existing User + Account tables (NextAuth's
+PrismaAdapter standard). Structurally mirrors P1.A.8 (Google OAuth).
+
+### P1.A.9 Bootstrap flow
+
+Same as P1.A.8 — the signIn callback was generalized to handle both Google and
+Apple via an oauthProviders Set. First-time Apple user → withAdminTx atomic
+bootstrap creates Organization + BusinessSettings + User (role=OWNER,
+password=null, emailVerified=now()) via prismaAdmin. PrismaAdapter creates the
+Account row linking Apple to the User automatically after signIn returns true.
+
+Existing-email Apple user → signIn callback updates lastLoginAt. PrismaAdapter
+links the Apple Account to the existing User via allowDangerousEmailAccountLinking.
+Single User row, multiple Account rows (credentials, google, apple as applicable).
+
+Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
+
+### P1.A.9 Apple-specific notes
+
+- Apple-issued JWTs always have verified email claims — no `email_verified` check
+  needed (unlike Google, where the check is defense-in-depth)
+- Apple Private Email Relay addresses (`@privaterelay.appleid.com`) are accepted
+  as legitimate emails; no special handling
+- Apple sends the user's display name ONLY on the first sign-in consent screen.
+  Subsequent sign-ins do not include name. The bootstrap captures the name
+  correctly on first sign-in; existing users use their stored User.name field.
+
+### P1.A.9 Routes
+
+No new API routes. The `/api/auth/[...nextauth]` handler covers both Google and
+Apple OAuth flows via the provider definitions. Classification unchanged from
+P1.A.8: BYPASS_NEEDED — PRE_SESSION (delegates entirely to lib/auth.ts which
+uses prismaAdmin; no direct DB calls in the route file).
+
+### P1.A.9 RLS Impact
+
+None. All bootstrap writes go through prismaAdmin (same as /api/auth/register
+and Google OAuth from P1.A.8).

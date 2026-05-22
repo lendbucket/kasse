@@ -2,6 +2,7 @@ import type { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
+import AppleProvider from "next-auth/providers/apple"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
 import { Prisma, Role } from "@prisma/client"
@@ -61,18 +62,41 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       allowDangerousEmailAccountLinking: true,
     }),
+    // P1.A.9: Apple Sign-In. Mirrors Google OAuth architecture from P1.A.8.
+    // Apple-issued JWTs always have verified email claims, so no email_verified
+    // check is needed (unlike Google). Apple Private Email Relay addresses
+    // (xyz@privaterelay.appleid.com) are accepted as legitimate emails.
+    //
+    // Requires APPLE_CLIENT_ID (Services ID), APPLE_TEAM_ID, APPLE_KEY_ID, and
+    // APPLE_PRIVATE_KEY in env. Without them, the provider exists but returns
+    // "OAuth client error" — graceful degradation.
+    //
+    // In next-auth v4, Apple's clientSecret must be a signed JWT (ES256, 6-month
+    // max validity per Apple spec). Generate via https://bal.so/apple-gen-secret
+    // or apple-signin-auth library. APPLE_PRIVATE_KEY holds the PEM; the secret
+    // JWT is derived from it + APPLE_TEAM_ID + APPLE_KEY_ID offline.
+    AppleProvider({
+      clientId: process.env.APPLE_CLIENT_ID ?? "",
+      clientSecret: process.env.APPLE_PRIVATE_KEY ?? "",
+      allowDangerousEmailAccountLinking: true,
+    }),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (account?.provider !== "google") return true
+      // Credentials provider: pass through (existing logic handles validation)
+      if (!account?.provider || account.provider === "credentials") return true
 
-      // Defense-in-depth: refuse to proceed unless Google has marked the email
-      // as verified. PRIMARY protection against account takeover is Google's
-      // own OAuth flow (Google won't issue tokens for unverified addresses).
-      // This explicit check is belt-and-suspenders in case Google's behavior
-      // ever changes or a misconfigured profile slips through.
-      if (!(profile as any)?.email_verified) {
-        return false
+      // OAuth providers: Google and Apple share this bootstrap flow
+      const oauthProviders = new Set(["google", "apple"])
+      if (!oauthProviders.has(account.provider)) return true
+
+      // Provider-specific email verification:
+      // - Google: explicit email_verified check (defense-in-depth; Google's OAuth flow is primary protection)
+      // - Apple: skip — Apple-issued JWTs always have verified emails baked into the spec
+      if (account.provider === "google") {
+        if (!(profile as any)?.email_verified) {
+          return false
+        }
       }
 
       if (!user.email) return false
@@ -95,10 +119,15 @@ export const authOptions: NextAuthOptions = {
         return true
       }
 
-      // First-time Google user — bootstrap full account (mirrors /api/auth/register).
+      // First-time OAuth user — bootstrap full account (mirrors /api/auth/register).
       // All three creates are atomic via withAdminTx. Uses client-side ID generation
       // so the batch form can reference orgId without intermediate results.
-      const name = user.name || profile?.name || email.split("@")[0]
+      //
+      // Apple Private Email Relay: emails ending in @privaterelay.appleid.com are
+      // accepted as legitimate. The user's chosen display name comes from Apple's
+      // first-time consent screen; on subsequent sign-ins Apple does NOT re-send
+      // the name. The fallback to email.split("@")[0] handles missing names.
+      const name = user.name || (profile as any)?.name || email.split("@")[0]
       const businessName = `${name}'s Business`
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
       const orgId = crypto.randomUUID()
@@ -160,12 +189,13 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, trigger }) {
       if (user) {
-        // For Google OAuth, we look up by email rather than id because at this point
-        // in the NextAuth flow, user.id is the Google providerAccountId (numeric string),
-        // NOT the Kasse User.id. PrismaAdapter sets user.id to Kasse User.id ONLY after
-        // creating the Account row, which happens AFTER signIn returns true. Email is
-        // the only stable join key between the Google profile and the just-created/found
-        // User row at this exact callback boundary. Do not "fix" this to lookup by id.
+        // For OAuth sign-ins (Google or Apple), we look up by email rather than id
+        // because at this point in the NextAuth flow, user.id is the OAuth
+        // providerAccountId, NOT the Kasse User.id. PrismaAdapter sets user.id to
+        // Kasse User.id ONLY after creating the Account row, which happens AFTER
+        // signIn returns true. Email is the only stable join key between the
+        // OAuth profile and the just-created/found User row at this exact callback
+        // boundary. Do not "fix" this to lookup by id.
         if (!(user as any).role && user.email) {
           const dbUser = await prismaAdmin.user.findUnique({
             where: { email: user.email.toLowerCase() },
