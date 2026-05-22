@@ -1528,6 +1528,14 @@ Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
 - Apple sends the user's display name ONLY on the first sign-in consent screen.
   Subsequent sign-ins do not include name. The bootstrap captures the name
   correctly on first sign-in; existing users use their stored User.name field.
+- The Apple `clientSecret` is a pre-signed JWT (ES256, 90-day validity)
+  generated at module load via `generateAppleClientSecret()` in
+  `lib/auth.ts`. Apple's spec requires this format — passing the raw `.p8`
+  private key would result in `invalid_client` errors at the OAuth token
+  exchange step. The provider is conditionally registered: if any of the
+  four required env vars (APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID,
+  APPLE_PRIVATE_KEY) is missing or JWT generation fails, the provider is
+  excluded entirely.
 
 ### P1.A.9 Routes
 

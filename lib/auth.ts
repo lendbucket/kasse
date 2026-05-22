@@ -3,12 +3,58 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
 import AppleProvider from "next-auth/providers/apple"
+import jwt from "jsonwebtoken"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
 import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
+
+// Generate Apple client secret JWT once at module load. Apple's spec allows
+// up to 6 months validity; we use 90 days as a balance between rotation
+// pressure and operational stability. In serverless (Vercel), each cold start
+// re-runs this code path and gets a fresh JWT, so 90 days is comfortably
+// longer than any single function instance's lifetime.
+//
+// If any env var is missing, generateAppleClientSecret returns null and the
+// provider is excluded from the providers array entirely — the Apple button
+// on /login will fail gracefully at the signIn call (returns error inline
+// because redirect: false) rather than silently breaking after a deployment.
+function generateAppleClientSecret(): string | null {
+  const clientId = process.env.APPLE_CLIENT_ID
+  const teamId = process.env.APPLE_TEAM_ID
+  const keyId = process.env.APPLE_KEY_ID
+  const privateKey = process.env.APPLE_PRIVATE_KEY
+
+  if (!clientId || !teamId || !keyId || !privateKey) {
+    return null
+  }
+
+  // Vercel stores multi-line private keys with literal \n escapes;
+  // normalize to real newlines before signing.
+  const normalizedKey = privateKey.replace(/\\n/g, "\n")
+
+  try {
+    return jwt.sign(
+      {},
+      normalizedKey,
+      {
+        algorithm: "ES256",
+        expiresIn: "90d",
+        audience: "https://appleid.apple.com",
+        issuer: teamId,
+        subject: clientId,
+        keyid: keyId,
+      }
+    )
+  } catch (err) {
+    console.error("[auth] failed to generate Apple client secret JWT:", err)
+    return null
+  }
+}
+
+const appleClientSecret = generateAppleClientSecret()
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -62,24 +108,25 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       allowDangerousEmailAccountLinking: true,
     }),
-    // P1.A.9: Apple Sign-In. Mirrors Google OAuth architecture from P1.A.8.
-    // Apple-issued JWTs always have verified email claims, so no email_verified
-    // check is needed (unlike Google). Apple Private Email Relay addresses
-    // (xyz@privaterelay.appleid.com) are accepted as legitimate emails.
+    // P1.A.9: Apple Sign-In. Only registers if all four required env vars are
+    // present (APPLE_CLIENT_ID + APPLE_TEAM_ID + APPLE_KEY_ID + APPLE_PRIVATE_KEY)
+    // AND JWT generation succeeds. If credentials are missing, the provider is
+    // excluded entirely — preventing the broken-button trap where /login shows
+    // a Continue with Apple option that always fails at the OAuth redirect.
     //
-    // Requires APPLE_CLIENT_ID (Services ID), APPLE_TEAM_ID, APPLE_KEY_ID, and
-    // APPLE_PRIVATE_KEY in env. Without them, the provider exists but returns
-    // "OAuth client error" — graceful degradation.
-    //
-    // In next-auth v4, Apple's clientSecret must be a signed JWT (ES256, 6-month
-    // max validity per Apple spec). Generate via https://bal.so/apple-gen-secret
-    // or apple-signin-auth library. APPLE_PRIVATE_KEY holds the PEM; the secret
-    // JWT is derived from it + APPLE_TEAM_ID + APPLE_KEY_ID offline.
-    AppleProvider({
-      clientId: process.env.APPLE_CLIENT_ID ?? "",
-      clientSecret: process.env.APPLE_PRIVATE_KEY ?? "",
-      allowDangerousEmailAccountLinking: true,
-    }),
+    // The clientSecret here is a pre-signed JWT (ES256, 90-day validity, generated
+    // at module load via generateAppleClientSecret above). Apple's spec requires
+    // this format — passing raw PEM key would result in invalid_client errors at
+    // the token exchange step.
+    ...(appleClientSecret
+      ? [
+          AppleProvider({
+            clientId: process.env.APPLE_CLIENT_ID!,
+            clientSecret: appleClientSecret,
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
@@ -127,6 +174,18 @@ export const authOptions: NextAuthOptions = {
       // accepted as legitimate. The user's chosen display name comes from Apple's
       // first-time consent screen; on subsequent sign-ins Apple does NOT re-send
       // the name. The fallback to email.split("@")[0] handles missing names.
+
+      // Apple Private Email Relay UX trap: if user picked "Hide My Email", their
+      // relay address differs from any real email they may have used previously
+      // in a credentials or Google account. Account linking is by email — so a
+      // user with an existing real-email account silently gets a second account
+      // when they sign in with Apple+Hide. This is expected and correct per
+      // Apple's spec, but we log it so Robert can track frequency and address
+      // via merchant-facing UI if needed.
+      if (account?.provider === "apple" && email.endsWith("@privaterelay.appleid.com")) {
+        console.warn("[auth] Apple Private Email Relay address used for new account bootstrap:", email)
+      }
+
       const name = user.name || (profile as any)?.name || email.split("@")[0]
       const businessName = `${name}'s Business`
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()

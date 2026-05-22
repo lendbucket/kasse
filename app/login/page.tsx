@@ -224,13 +224,27 @@ function LoginPageInner() {
             {signingInWithGoogle ? "Signing in..." : "Continue with Google"}
           </button>
 
-          {/* Apple Sign-In button */}
+          {/* Apple Sign-In: button is rendered unconditionally. If APPLE_CLIENT_ID +
+             APPLE_TEAM_ID + APPLE_KEY_ID + APPLE_PRIVATE_KEY env vars aren't set in
+             Vercel, the AppleProvider in lib/auth.ts excludes itself from the
+             providers array and signIn("apple") returns { error: "OAuthSignin" }
+             inline (because redirect: false). We reset signingInWithApple in that
+             case and the button visibly stops loading. */}
           <button
             type="button"
             disabled={signingInWithApple}
-            onClick={() => {
+            onClick={async () => {
               setSigningInWithApple(true)
-              signIn("apple", { callbackUrl: "/dashboard" })
+              const result = await signIn("apple", { callbackUrl: "/dashboard", redirect: false })
+              if (result?.error) {
+                // Apple provider not registered (no env vars) or OAuth flow failed.
+                // signIn with redirect: false returns the error inline rather than
+                // redirecting to /login?error=... — reset state and surface gracefully.
+                console.warn("[auth] Apple sign-in failed:", result.error)
+                setSigningInWithApple(false)
+              } else if (result?.url) {
+                window.location.href = result.url
+              }
             }}
             style={{
               height: 44, width: "100%", borderRadius: 12,
