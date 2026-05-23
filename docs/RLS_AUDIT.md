@@ -1668,7 +1668,7 @@ current-version acceptance.
 
 ### Legal record properties
 
-- IP address captured via lib/rate-limit/check.ts:getLegalRecordIp(). Order
+- IP address captured via lib/http/headers.ts:getLegalRecordIp(). Order
   of preference: x-real-ip (Vercel-observed edge IP), then LAST hop of
   x-forwarded-for. Last-hop is whatever the most recent trusted proxy added
   (on Vercel: the edge; on Cloudflare-in-front-of-Vercel: the
@@ -1834,7 +1834,7 @@ means the PR ships safely before the Upstash account is provisioned.
 - 3-axis key defeats both "1 IP, many emails" (botnet cycling) and
   "1 email, many IPs" (distributed brute-force)
 
-IP extraction for rate-limiting uses lib/rate-limit/check.ts:getRateLimitIp
+IP extraction for rate-limiting uses lib/http/headers.ts:getRateLimitIp
 (prefers x-real-ip, falls back to FIRST hop of x-forwarded-for). This is
 intentionally distinct from legal-record IP extraction (getLegalRecordIp,
 LAST hop fallback) because rate-limit and legal records have different
@@ -1913,3 +1913,10 @@ No new routes, no DB writes from this PR (rate limit state lives in
 Upstash, not Postgres). The Upstash client is module-scoped, not
 tenant-scoped — appropriate since rate limit data is platform-level
 abuse-defense, not tenant data.
+
+**Module placement note:** getRateLimitIp and getLegalRecordIp live in
+`lib/http/headers.ts`, not in `lib/rate-limit/*`. The two helpers have
+intentionally different trust requirements and live together in a
+generic HTTP-utility module so they're reusable from non-rate-limit
+contexts (e.g. legal records). See PR #111 cycles 5–8 reviewer
+discussion for the rationale.
