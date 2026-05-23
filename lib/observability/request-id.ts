@@ -1,4 +1,7 @@
-import { randomUUID } from "crypto";
+// Web Crypto API instead of node:crypto. Required for Edge runtime
+// compatibility — this module is imported from middleware.ts which runs
+// in Edge. The global `crypto.randomUUID()` is available in both Node 19+
+// and Edge runtimes, so this works in API routes too.
 import type { NextRequest } from "next/server";
 
 export const REQUEST_ID_HEADER = "x-request-id";
@@ -13,7 +16,7 @@ export function getRequestId(req: NextRequest | Request): string {
   if (incoming && isValidRequestId(incoming)) {
     return incoming;
   }
-  return randomUUID();
+  return crypto.randomUUID();
 }
 
 /**
