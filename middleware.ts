@@ -72,12 +72,15 @@ export async function middleware(req: NextRequest) {
   };
 
   // P1.A.11: Helper to attach UTM cookie to ANY response (next, redirect, json)
+  // P1.A.11: Helper to attach UTM cookie to page responses only.
+  // API clients don't navigate with UTM params, so setting a cookie on a
+  // JSON error response achieves nothing.
   const withUtmCookie = (response: NextResponse): NextResponse => {
-    if (hasUtmInUrl) {
+    if (hasUtmInUrl && !pathname.startsWith("/api/")) {
       const cookieValue = JSON.stringify(utmFromUrl);
       response.cookies.set(UTM_COOKIE_NAME, cookieValue, {
         maxAge: UTM_COOKIE_TTL_DAYS * 24 * 60 * 60,
-        httpOnly: false,
+        httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
         path: "/",

@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
           emailVerifyToken: verifyToken,
           emailVerifyExp: verifyExp,
           // P1.A.11: UTM attribution from cookie
-          ...(hasAnyUtm(utm) && utm ? {
+          ...(hasAnyUtm(utm) ? {
             utmSource: utm.utmSource,
             utmMedium: utm.utmMedium,
             utmCampaign: utm.utmCampaign,

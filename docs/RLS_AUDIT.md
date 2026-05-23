@@ -1705,6 +1705,8 @@ yet justify an index, defer until P2+ analytics work).
 3. On registration (POST /api/auth/register) and on every sign-in (credentials
    + OAuth signIn callback), reads cookie and overwrites User row UTM fields
    if any are non-null (hasAnyUtm guard)
+4. Cookie is NOT set on responses to /api/* paths (API clients don't navigate
+   with UTM params; gating prevents pointless writes on JSON error responses)
 
 ### Overwrite policy
 
@@ -1731,4 +1733,4 @@ No new RLS-classified routes. No new BYPASS_NEEDED subtypes.
 - Path: /
 - Secure: true in production, false in dev
 - SameSite: lax
-- HttpOnly: false (intentional — client code may read for analytics/debugging; no PII risk since UTM params are marketing attribution data, not credentials)
+- HttpOnly: true (no client-side use case identified; XSS-safer default)

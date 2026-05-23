@@ -16,13 +16,17 @@ export interface UtmParams {
 function parseUtmCookie(rawValue: string | undefined): UtmParams | null {
   if (!rawValue) return null
   try {
-    const parsed = JSON.parse(rawValue) as Record<string, string>
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>
+    // Defensive: validate that values are strings before passing to Prisma.
+    // Even with HttpOnly, sanity-check against malformed cookie data.
+    const asString = (v: unknown): string | null =>
+      typeof v === "string" ? v.slice(0, 500) : null
     return {
-      utmSource: parsed.utm_source ?? null,
-      utmMedium: parsed.utm_medium ?? null,
-      utmCampaign: parsed.utm_campaign ?? null,
-      utmTerm: parsed.utm_term ?? null,
-      utmContent: parsed.utm_content ?? null,
+      utmSource: asString(parsed.utm_source),
+      utmMedium: asString(parsed.utm_medium),
+      utmCampaign: asString(parsed.utm_campaign),
+      utmTerm: asString(parsed.utm_term),
+      utmContent: asString(parsed.utm_content),
     }
   } catch {
     return null
@@ -50,7 +54,7 @@ export function readUtmFromRequest(req: NextRequest): UtmParams | null {
  * Returns true if any field in the params is non-null. Used as a precondition
  * for writes (don't overwrite User row with all-null payload).
  */
-export function hasAnyUtm(params: UtmParams | null): boolean {
+export function hasAnyUtm(params: UtmParams | null): params is UtmParams {
   if (!params) return false
   return !!(params.utmSource || params.utmMedium || params.utmCampaign || params.utmTerm || params.utmContent)
 }
