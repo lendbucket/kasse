@@ -146,7 +146,9 @@ export const authOptions: NextAuthOptions = {
       // Credentials provider: pass through (existing logic handles validation)
       if (!account?.provider || account.provider === "credentials") return true
 
-      // OAuth providers: Google and Apple share this bootstrap flow
+      // Non-OAuth providers (credentials) short-circuit here BEFORE the
+      // Apple-specific relay log below — intentional ordering. The relay log
+      // only fires for first-time bootstrap of an Apple Hide-My-Email address.
       if (!OAUTH_PROVIDERS.has(account.provider)) return true
 
       // Provider-specific email verification:
@@ -170,6 +172,16 @@ export const authOptions: NextAuthOptions = {
       if (existingUser) {
         if (!existingUser.isActive) {
           throw new Error("ACCOUNT_DISABLED")
+        }
+        // Parity with credentials provider: never let OAuth silently claim an
+        // unverified credentials account. The credentials provider throws
+        // EMAIL_NOT_VERIFIED for null emailVerified — match that here so an
+        // attacker who creates a real OAuth identity for a victim's email
+        // can't bypass the verification flow that protects unverified accounts.
+        // Apple JWTs and Google's email_verified guarantee the OAuth side is
+        // verified; this check guards the EXISTING Kasse account side.
+        if (!existingUser.emailVerified) {
+          throw new Error("EMAIL_NOT_VERIFIED")
         }
         await prismaAdmin.user.update({
           where: { id: existingUser.id },
@@ -249,6 +261,7 @@ export const authOptions: NextAuthOptions = {
             })
             if (raceWinner) {
               if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+              if (!raceWinner.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
               await prismaAdmin.user.update({
                 where: { id: raceWinner.id },
                 data: { lastLoginAt: new Date() },

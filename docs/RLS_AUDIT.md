@@ -1519,6 +1519,12 @@ Single User row, multiple Account rows (credentials, google, apple as applicable
 
 Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
 
+Email verification parity: starting in cycle 4 of this PR, OAuth sign-ins
+to an EXISTING Kasse account require existingUser.emailVerified to be set.
+This matches the credentials provider's EMAIL_NOT_VERIFIED throw and
+prevents an OAuth flow from silently claiming an unverified credentials
+account (e.g., one where the verification email was never received).
+
 ### P1.A.9 Apple-specific notes
 
 - Apple-issued JWTs always have verified email claims — no `email_verified` check

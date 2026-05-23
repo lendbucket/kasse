@@ -45,6 +45,7 @@ function LoginPageInner() {
   const [showResendVerify, setShowResendVerify] = useState(false)
   const [signingInWithGoogle, setSigningInWithGoogle] = useState(false)
   const [signingInWithApple, setSigningInWithApple] = useState(false)
+  const [oauthError, setOauthError] = useState<string | null>(null)
 
   // Sign up state
   const [regName, setRegName] = useState("")
@@ -191,11 +192,19 @@ function LoginPageInner() {
               style={{ objectFit: "contain", filter: "invert(1)", margin: "0 auto" }} priority />
           </div>
 
+          {/* OAuth error (Apple/Google failures surfaced inline) */}
+          {oauthError && (
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)", marginBottom: 8 }}>
+              <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{oauthError}</p>
+            </div>
+          )}
+
           {/* Google OAuth button */}
           <button
             type="button"
             disabled={signingInWithGoogle}
             onClick={() => {
+              setOauthError(null)
               setSigningInWithGoogle(true)
               signIn("google", { callbackUrl: "/dashboard" })
             }}
@@ -234,6 +243,7 @@ function LoginPageInner() {
             type="button"
             disabled={signingInWithApple}
             onClick={async () => {
+              setOauthError(null)
               setSigningInWithApple(true)
               const result = await signIn("apple", { callbackUrl: "/dashboard", redirect: false })
               if (result?.error) {
@@ -242,6 +252,10 @@ function LoginPageInner() {
                 // redirecting to /login?error=... — reset state and surface gracefully.
                 console.warn("[auth] Apple sign-in failed:", result.error)
                 setSigningInWithApple(false)
+                // Surface to user — silent un-spin is confusing. The error string from
+                // NextAuth is provider-agnostic ("OAuthSignin", "Callback", etc), so we
+                // show a user-friendly message instead of leaking provider internals.
+                setOauthError("Apple sign-in failed. Try another method or try again.")
               } else if (result?.url) {
                 window.location.href = result.url
               }
