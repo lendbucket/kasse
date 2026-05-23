@@ -12,6 +12,9 @@ import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import type { NextRequest } from "next/server"
+import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/read"
+import type { UtmParams } from "@/lib/utm/read"
 
 // Generate Apple client secret JWT once at module load. Apple's spec allows
 // up to 6 months validity; we use 90 days as a balance between rotation
@@ -114,7 +117,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) return null
         const user = await prismaAdmin.user.findUnique({
           where: { email: credentials.email.toLowerCase() },
@@ -125,9 +128,26 @@ export const authOptions: NextAuthOptions = {
         if (!user.isActive) throw new Error("ACCOUNT_DISABLED")
         const valid = await bcrypt.compare(credentials.password, user.password)
         if (!valid) return null
+        // P1.A.11: Read UTM cookie via the request passed to authorize.
+        // Safer than next/headers cookies() in this context — req is always populated.
+        let utm: UtmParams | null = null
+        try {
+          if (req) utm = readUtmFromRequest(req as unknown as NextRequest)
+        } catch (err) {
+          console.warn("[auth] failed to read UTM from credentials authorize req:", err)
+        }
         await prismaAdmin.user.update({
           where: { id: user.id },
-          data: { lastLoginAt: new Date() },
+          data: {
+            lastLoginAt: new Date(),
+            ...(hasAnyUtm(utm) ? {
+              utmSource: utm.utmSource,
+              utmMedium: utm.utmMedium,
+              utmCampaign: utm.utmCampaign,
+              utmTerm: utm.utmTerm,
+              utmContent: utm.utmContent,
+            } : {}),
+          },
         })
         return {
           id: user.id,
@@ -213,9 +233,25 @@ export const authOptions: NextAuthOptions = {
         if (!existingUser.emailVerified) {
           throw new Error("EMAIL_NOT_VERIFIED")
         }
+        // P1.A.11: overwrite UTM attribution on every sign-in if cookie present
+        let utm: UtmParams | null = null
+        try {
+          utm = await readUtmFromCookies()
+        } catch (err) {
+          console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
+        }
         await prismaAdmin.user.update({
           where: { id: existingUser.id },
-          data: { lastLoginAt: new Date() },
+          data: {
+            lastLoginAt: new Date(),
+            ...(hasAnyUtm(utm) ? {
+              utmSource: utm.utmSource,
+              utmMedium: utm.utmMedium,
+              utmCampaign: utm.utmCampaign,
+              utmTerm: utm.utmTerm,
+              utmContent: utm.utmContent,
+            } : {}),
+          },
         })
         return true
       }
@@ -250,6 +286,14 @@ export const authOptions: NextAuthOptions = {
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
       const orgId = crypto.randomUUID()
 
+      // P1.A.11: read UTM cookie for new-user bootstrap attribution
+      let utmForBootstrap: UtmParams | null = null
+      try {
+        utmForBootstrap = await readUtmFromCookies()
+      } catch (err) {
+        console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
+      }
+
       try {
         await withAdminTx((p) => [
           p.organization.create({
@@ -272,6 +316,14 @@ export const authOptions: NextAuthOptions = {
               role: Role.OWNER,
               organizationId: orgId,
               lastLoginAt: new Date(),
+              // P1.A.11: UTM attribution from cookie
+              ...(hasAnyUtm(utmForBootstrap) ? {
+                utmSource: utmForBootstrap.utmSource,
+                utmMedium: utmForBootstrap.utmMedium,
+                utmCampaign: utmForBootstrap.utmCampaign,
+                utmTerm: utmForBootstrap.utmTerm,
+                utmContent: utmForBootstrap.utmContent,
+              } : {}),
             },
           }),
           p.businessSettings.create({
@@ -292,9 +344,25 @@ export const authOptions: NextAuthOptions = {
             if (raceWinner) {
               if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
               if (!raceWinner.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
+              // P1.A.11: UTM attribution on race-winner path
+              let utmRace: UtmParams | null = null
+              try {
+                utmRace = await readUtmFromCookies()
+              } catch (err) {
+                console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
+              }
               await prismaAdmin.user.update({
                 where: { id: raceWinner.id },
-                data: { lastLoginAt: new Date() },
+                data: {
+                  lastLoginAt: new Date(),
+                  ...(hasAnyUtm(utmRace) ? {
+                    utmSource: utmRace.utmSource,
+                    utmMedium: utmRace.utmMedium,
+                    utmCampaign: utmRace.utmCampaign,
+                    utmTerm: utmRace.utmTerm,
+                    utmContent: utmRace.utmContent,
+                  } : {}),
+                },
               })
               return true
             }
