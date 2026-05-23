@@ -17,7 +17,21 @@
  */
 import { Redis } from "@upstash/redis"
 
-let cachedClient: Redis | null | undefined = undefined  // undefined = not yet attempted
+// Three-state sentinel:
+//   undefined = not yet attempted
+//   null      = attempted, constructor failed (cached — don't retry)
+//   Redis     = live, cached for process lifetime
+//
+// The "not configured" state (missing env vars) is NOT cached — env vars
+// added mid-session are picked up on the next call.
+//
+// NOTE ON CREDENTIAL ROTATION: Once a Redis client is successfully
+// constructed, it is permanently cached for the process lifetime. If
+// UPSTASH_REDIS_REST_TOKEN is rotated (e.g. via Upstash console), the
+// new token is NOT picked up by running Vercel instances until they
+// cold-start (typically on next deploy or after idle timeout). To force
+// pickup, trigger a redeploy of the Kasse project on Vercel.
+let cachedClient: Redis | null | undefined = undefined
 let hasWarnedAboutMissingEnvVars = false
 
 export function getRedisClient(): Redis | null {

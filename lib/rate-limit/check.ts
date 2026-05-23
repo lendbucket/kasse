@@ -21,12 +21,16 @@ export interface RateLimitResult {
   reset: number  // epoch ms of window reset
 }
 
-const FAIL_OPEN_RESULT: RateLimitResult = {
+// Frozen to prevent accidental mutation by callers. checkRateLimit returns
+// this reference directly when failing open; if a caller did
+// `const r = await checkRateLimit(...); r.remaining = 0;` they would
+// otherwise corrupt every subsequent fail-open response.
+const FAIL_OPEN_RESULT: RateLimitResult = Object.freeze({
   ok: true,
   remaining: -1,
   limit: -1,
   reset: 0,
-}
+})
 
 // Module-level cached limiter — Ratelimit instances are cheap but caching
 // avoids redundant config parsing on every check. The "not configured"
