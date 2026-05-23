@@ -1499,3 +1499,86 @@ sign-ins land on /dashboard the same as credentials sign-ins. If/when the
 OnboardingSession flow is wired to /login (separate PR), Google users will
 need a path that transitions STARTED → ACCOUNT_CREATED directly on first
 sign-in, bypassing the EMAIL_VERIFIED + PASSWORD_SET intermediate states.
+
+## P1.A.9 — Apple Sign-In (2026-05-21)
+
+No new tables. No schema changes. Uses existing User + Account tables (NextAuth's
+PrismaAdapter standard). Structurally mirrors P1.A.8 (Google OAuth).
+
+### P1.A.9 Bootstrap flow
+
+Same as P1.A.8 — the signIn callback was generalized to handle both Google and
+Apple via an oauthProviders Set. First-time Apple user → withAdminTx atomic
+bootstrap creates Organization + BusinessSettings + User (role=OWNER,
+password=null, emailVerified=now()) via prismaAdmin. PrismaAdapter creates the
+Account row linking Apple to the User automatically after signIn returns true.
+
+Existing-email Apple user → signIn callback updates lastLoginAt. PrismaAdapter
+links the Apple Account to the existing User via allowDangerousEmailAccountLinking.
+Single User row, multiple Account rows (credentials, google, apple as applicable).
+
+Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
+
+Email verification parity: starting in PR #107 (P1.A.9), OAuth sign-ins
+to an EXISTING Kasse account require existingUser.emailVerified to be set.
+This matches the credentials provider's EMAIL_NOT_VERIFIED throw and
+prevents an OAuth flow from silently claiming an unverified credentials
+account (e.g., one where the verification email was never received).
+
+### P1.A.9 Apple-specific notes
+
+- Apple-issued JWTs always have verified email claims — no `email_verified` check
+  needed (unlike Google, where the check is defense-in-depth)
+- Apple Private Email Relay addresses (`@privaterelay.appleid.com`) are accepted
+  as legitimate emails; no special handling
+- Apple sends the user's display name ONLY on the first sign-in consent screen.
+  Subsequent sign-ins do not include name. The bootstrap captures the name
+  correctly on first sign-in; existing users use their stored User.name field.
+- The Apple `clientSecret` is a pre-signed JWT (ES256, 90-day validity)
+  generated at module load via `generateAppleClientSecret()` in
+  `lib/auth.ts`. Apple's spec requires this format — passing the raw `.p8`
+  private key would result in `invalid_client` errors at the OAuth token
+  exchange step. The provider is conditionally registered: if any of the
+  four required env vars (APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID,
+  APPLE_PRIVATE_KEY) is missing or JWT generation fails, the provider is
+  excluded entirely.
+
+### P1.A.9 Account linking trust model
+
+Both GoogleProvider (P1.A.8) and AppleProvider (P1.A.9) set
+`allowDangerousEmailAccountLinking: true`. This means NextAuth's PrismaAdapter
+will link an OAuth Account row to any existing User row whose email matches
+the OAuth identity's email, with no additional handshake. The trust assumption
+is that:
+
+1. The OAuth provider (Google or Apple) has verified the user controls the
+   email address (Google: profile.email_verified check enforced in
+   lib/auth.ts signIn callback; Apple: guaranteed by Apple's JWT spec).
+2. The existing Kasse User row's emailVerified field is non-null. Added in
+   PR #107 (P1.A.9) to both the existingUser branch and the P2002-race
+   raceWinner branch — if a credentials-based account never completed
+   verification, OAuth sign-in throws EMAIL_NOT_VERIFIED instead of silently
+   claiming the account.
+
+Combined, these two checks mean an attacker would need to:
+- Control a Google or Apple identity with the target's email address
+  (requires actually controlling the email), AND
+- The target's Kasse account is already email-verified (so the
+  emailVerified check passes).
+
+The practical attack surface is "attacker controls the victim's email
+inbox" — at which point they could also use the credentials provider's
+forgot-password flow. The OAuth linking does not expand the attack surface
+beyond what email control already grants.
+
+### P1.A.9 Routes
+
+No new API routes. The `/api/auth/[...nextauth]` handler covers both Google and
+Apple OAuth flows via the provider definitions. Classification unchanged from
+P1.A.8: BYPASS_NEEDED — PRE_SESSION (delegates entirely to lib/auth.ts which
+uses prismaAdmin; no direct DB calls in the route file).
+
+### P1.A.9 RLS Impact
+
+None. All bootstrap writes go through prismaAdmin (same as /api/auth/register
+and Google OAuth from P1.A.8).

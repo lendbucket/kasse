@@ -1,13 +1,73 @@
+import { createHash } from "crypto"
 import type { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import GoogleProvider from "next-auth/providers/google"
+import AppleProvider from "next-auth/providers/apple"
+import jwt from "jsonwebtoken"
 import { prismaAdmin } from "./prismaAdmin"
 import bcrypt from "bcryptjs"
 import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
+
+// Generate Apple client secret JWT once at module load. Apple's spec allows
+// up to 6 months validity; we use 90 days as a balance between rotation
+// pressure and operational stability. In serverless (Vercel), each cold start
+// re-runs this code path and gets a fresh JWT, so 90 days is comfortably
+// longer than any single function instance's lifetime.
+//
+// If any env var is missing, generateAppleClientSecret returns null and the
+// provider is excluded from the providers array entirely — the Apple button
+// on /login will fail gracefully at the signIn call (returns error inline
+// because redirect: false) rather than silently breaking after a deployment.
+function generateAppleClientSecret(): string | null {
+  const clientId = process.env.APPLE_CLIENT_ID
+  const teamId = process.env.APPLE_TEAM_ID
+  const keyId = process.env.APPLE_KEY_ID
+  const privateKey = process.env.APPLE_PRIVATE_KEY
+
+  if (!clientId || !teamId || !keyId || !privateKey) {
+    return null
+  }
+
+  // Vercel stores multi-line private keys with literal \n escapes;
+  // normalize to real newlines before signing.
+  const normalizedKey = privateKey.replace(/\\n/g, "\n")
+
+  try {
+    return jwt.sign(
+      {},
+      normalizedKey,
+      {
+        algorithm: "ES256",
+        expiresIn: "90d",
+        audience: "https://appleid.apple.com",
+        issuer: teamId,
+        subject: clientId,
+        keyid: keyId,
+      }
+    )
+  } catch (err) {
+    console.error("[auth] failed to generate Apple client secret JWT:", err)
+    return null
+  }
+}
+
+// Long-lived process caveat: this JWT is computed once at module load. In a
+// persistent Node process (Docker, self-host) the JWT would expire after 90
+// days and signing would silently fail at Apple's token endpoint. Kasse's
+// current deployment is 100% Vercel serverless, so cold starts re-mint the
+// JWT well within the 90-day window. If Kasse ever moves to a persistent
+// runtime, add a startup health check that warns when the JWT is >60 days
+// old, or refactor clientSecret to be regenerated per-request (NextAuth v4
+// does not natively support function-typed clientSecret, so a workaround
+// would be needed).
+const appleClientSecret = generateAppleClientSecret()
+
+// Lifted to module scope to avoid reconstructing on every signIn invocation.
+const OAUTH_PROVIDERS = new Set(["google", "apple"])
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -61,18 +121,43 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
       allowDangerousEmailAccountLinking: true,
     }),
+    // P1.A.9: Apple Sign-In. Only registers if all four required env vars are
+    // present (APPLE_CLIENT_ID + APPLE_TEAM_ID + APPLE_KEY_ID + APPLE_PRIVATE_KEY)
+    // AND JWT generation succeeds. If credentials are missing, the provider is
+    // excluded entirely — preventing the broken-button trap where /login shows
+    // a Continue with Apple option that always fails at the OAuth redirect.
+    //
+    // The clientSecret here is a pre-signed JWT (ES256, 90-day validity, generated
+    // at module load via generateAppleClientSecret above). Apple's spec requires
+    // this format — passing raw PEM key would result in invalid_client errors at
+    // the token exchange step.
+    ...(appleClientSecret
+      ? [
+          AppleProvider({
+            clientId: process.env.APPLE_CLIENT_ID!,
+            clientSecret: appleClientSecret,
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (account?.provider !== "google") return true
+      // Credentials provider: pass through (existing logic handles validation)
+      if (!account?.provider || account.provider === "credentials") return true
 
-      // Defense-in-depth: refuse to proceed unless Google has marked the email
-      // as verified. PRIMARY protection against account takeover is Google's
-      // own OAuth flow (Google won't issue tokens for unverified addresses).
-      // This explicit check is belt-and-suspenders in case Google's behavior
-      // ever changes or a misconfigured profile slips through.
-      if (!(profile as any)?.email_verified) {
-        return false
+      // Non-OAuth providers (credentials) short-circuit here BEFORE the
+      // Apple-specific relay log below — intentional ordering. The relay log
+      // only fires for first-time bootstrap of an Apple Hide-My-Email address.
+      if (!OAUTH_PROVIDERS.has(account.provider)) return true
+
+      // Provider-specific email verification:
+      // - Google: explicit email_verified check (defense-in-depth; Google's OAuth flow is primary protection)
+      // - Apple: skip — Apple-issued JWTs always have verified emails baked into the spec
+      if (account.provider === "google") {
+        if (!(profile as any)?.email_verified) {
+          return false
+        }
       }
 
       if (!user.email) return false
@@ -88,6 +173,16 @@ export const authOptions: NextAuthOptions = {
         if (!existingUser.isActive) {
           throw new Error("ACCOUNT_DISABLED")
         }
+        // Parity with credentials provider: never let OAuth silently claim an
+        // unverified credentials account. The credentials provider throws
+        // EMAIL_NOT_VERIFIED for null emailVerified — match that here so an
+        // attacker who creates a real OAuth identity for a victim's email
+        // can't bypass the verification flow that protects unverified accounts.
+        // Apple JWTs and Google's email_verified guarantee the OAuth side is
+        // verified; this check guards the EXISTING Kasse account side.
+        if (!existingUser.emailVerified) {
+          throw new Error("EMAIL_NOT_VERIFIED")
+        }
         await prismaAdmin.user.update({
           where: { id: existingUser.id },
           data: { lastLoginAt: new Date() },
@@ -95,10 +190,32 @@ export const authOptions: NextAuthOptions = {
         return true
       }
 
-      // First-time Google user — bootstrap full account (mirrors /api/auth/register).
+      // First-time OAuth user — bootstrap full account (mirrors /api/auth/register).
       // All three creates are atomic via withAdminTx. Uses client-side ID generation
       // so the batch form can reference orgId without intermediate results.
-      const name = user.name || profile?.name || email.split("@")[0]
+      //
+      // Apple Private Email Relay: emails ending in @privaterelay.appleid.com are
+      // accepted as legitimate. The user's chosen display name comes from Apple's
+      // first-time consent screen; on subsequent sign-ins Apple does NOT re-send
+      // the name. The fallback to email.split("@")[0] handles missing names.
+
+      // Apple Private Email Relay UX trap: if user picked "Hide My Email", their
+      // relay address differs from any real email they may have used previously
+      // in a credentials or Google account. Account linking is by email — so a
+      // user with an existing real-email account silently gets a second account
+      // when they sign in with Apple+Hide. This is expected and correct per
+      // Apple's spec, but we log it so Robert can track frequency and address
+      // via merchant-facing UI if needed.
+      // Track frequency of Hide My Email signups without leaking the pseudonymous
+      // relay address. Apple relay addresses are privacy-preserving by design;
+      // logging them verbatim defeats that intent. The hash is short and stable
+      // per-address so frequency tracking is still possible without exposing the value.
+      if (account?.provider === "apple" && email.endsWith("@privaterelay.appleid.com")) {
+        const hashedEmail = createHash("sha256").update(email).digest("hex").slice(0, 8)
+        console.warn("[auth] Apple Private Email Relay used for new account bootstrap (hash:", hashedEmail + ")")
+      }
+
+      const name = user.name || (profile as any)?.name || email.split("@")[0]
       const businessName = `${name}'s Business`
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
       const orgId = crypto.randomUUID()
@@ -144,6 +261,7 @@ export const authOptions: NextAuthOptions = {
             })
             if (raceWinner) {
               if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+              if (!raceWinner.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
               await prismaAdmin.user.update({
                 where: { id: raceWinner.id },
                 data: { lastLoginAt: new Date() },
@@ -160,12 +278,13 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, trigger }) {
       if (user) {
-        // For Google OAuth, we look up by email rather than id because at this point
-        // in the NextAuth flow, user.id is the Google providerAccountId (numeric string),
-        // NOT the Kasse User.id. PrismaAdapter sets user.id to Kasse User.id ONLY after
-        // creating the Account row, which happens AFTER signIn returns true. Email is
-        // the only stable join key between the Google profile and the just-created/found
-        // User row at this exact callback boundary. Do not "fix" this to lookup by id.
+        // For OAuth sign-ins (Google or Apple), we look up by email rather than id
+        // because at this point in the NextAuth flow, user.id is the OAuth
+        // providerAccountId, NOT the Kasse User.id. PrismaAdapter sets user.id to
+        // Kasse User.id ONLY after creating the Account row, which happens AFTER
+        // signIn returns true. Email is the only stable join key between the
+        // OAuth profile and the just-created/found User row at this exact callback
+        // boundary. Do not "fix" this to lookup by id.
         if (!(user as any).role && user.email) {
           const dbUser = await prismaAdmin.user.findUnique({
             where: { email: user.email.toLowerCase() },
