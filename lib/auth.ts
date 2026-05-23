@@ -15,6 +15,7 @@ import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import type { NextRequest } from "next/server"
 import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/read"
 import type { UtmParams } from "@/lib/utm/read"
+import { readVisitorIdFromCookies, readVisitorIdFromRequest } from "@/lib/experiments/visitor"
 
 // Generate Apple client secret JWT once at module load. Apple's spec allows
 // up to 6 months validity; we use 90 days as a balance between rotation
@@ -136,6 +137,14 @@ export const authOptions: NextAuthOptions = {
         } catch (err) {
           console.warn("[auth] failed to read UTM from credentials authorize req:", err)
         }
+        // P1.A.12: read visitor ID for one-time bind
+        let visitorId: string | null = null
+        try {
+          if (req) visitorId = readVisitorIdFromRequest(req as unknown as NextRequest)
+        } catch (err) {
+          console.warn("[auth] failed to read visitor ID from credentials authorize req:", err)
+        }
+        const shouldBindVisitor = visitorId && !user.visitorId
         await prismaAdmin.user.update({
           where: { id: user.id },
           data: {
@@ -147,6 +156,7 @@ export const authOptions: NextAuthOptions = {
               utmTerm: utm.utmTerm,
               utmContent: utm.utmContent,
             } : {}),
+            ...(shouldBindVisitor ? { visitorId } : {}),
           },
         })
         return {
@@ -240,6 +250,14 @@ export const authOptions: NextAuthOptions = {
         } catch (err) {
           console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
         }
+        // P1.A.12: one-time visitor ID bind
+        let visitorId: string | null = null
+        try {
+          visitorId = await readVisitorIdFromCookies()
+        } catch (err) {
+          console.warn("[auth] failed to read visitor ID from OAuth existingUser cookies:", err)
+        }
+        const shouldBindVisitor = visitorId && !existingUser.visitorId
         await prismaAdmin.user.update({
           where: { id: existingUser.id },
           data: {
@@ -251,6 +269,7 @@ export const authOptions: NextAuthOptions = {
               utmTerm: utm.utmTerm,
               utmContent: utm.utmContent,
             } : {}),
+            ...(shouldBindVisitor ? { visitorId } : {}),
           },
         })
         return true
@@ -294,6 +313,14 @@ export const authOptions: NextAuthOptions = {
         console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
       }
 
+      // P1.A.12: read visitor ID for new-user bootstrap attribution
+      let visitorIdForBootstrap: string | null = null
+      try {
+        visitorIdForBootstrap = await readVisitorIdFromCookies()
+      } catch (err) {
+        console.warn("[auth] failed to read visitor ID from OAuth bootstrap cookies:", err)
+      }
+
       try {
         await withAdminTx((p) => [
           p.organization.create({
@@ -324,6 +351,8 @@ export const authOptions: NextAuthOptions = {
                 utmTerm: utmForBootstrap.utmTerm,
                 utmContent: utmForBootstrap.utmContent,
               } : {}),
+              // P1.A.12: visitor ID for A/B attribution
+              ...(visitorIdForBootstrap ? { visitorId: visitorIdForBootstrap } : {}),
             },
           }),
           p.businessSettings.create({
@@ -351,6 +380,14 @@ export const authOptions: NextAuthOptions = {
               } catch (err) {
                 console.warn("[auth] failed to read UTM cookie via next/headers in OAuth signIn:", err)
               }
+              // P1.A.12: one-time visitor ID bind on race-winner path
+              let visitorIdRace: string | null = null
+              try {
+                visitorIdRace = await readVisitorIdFromCookies()
+              } catch (err) {
+                console.warn("[auth] failed to read visitor ID from OAuth race-winner cookies:", err)
+              }
+              const shouldBindVisitorRace = visitorIdRace && !raceWinner.visitorId
               await prismaAdmin.user.update({
                 where: { id: raceWinner.id },
                 data: {
@@ -362,6 +399,7 @@ export const authOptions: NextAuthOptions = {
                     utmTerm: utmRace.utmTerm,
                     utmContent: utmRace.utmContent,
                   } : {}),
+                  ...(shouldBindVisitorRace ? { visitorId: visitorIdRace } : {}),
                 },
               })
               return true
