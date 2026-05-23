@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, type FormEvent, Suspense } from "react"
+import { useState, useEffect, useRef, type FormEvent, Suspense } from "react"
 import { signIn } from "next-auth/react"
 import { useSearchParams } from "next/navigation"
 import { CheckCircle2, Eye, EyeOff, Zap, Loader2 } from "lucide-react"
 import Image from "next/image"
+import Script from "next/script"
 
 type Tab = "signin" | "signup"
 
@@ -60,6 +61,77 @@ function LoginPageInner() {
   const [resendCooldown, setResendCooldown] = useState(0)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
 
+  // P1.A.14: Turnstile token for sign-up form bot defense
+  const [turnstileToken, setTurnstileToken] = useState("")
+  const turnstileWidgetIdRef = useRef<string | null>(null)
+  const turnstileContainerRef = useRef<HTMLDivElement>(null)
+
+  // P1.A.14: Render Turnstile widget on sign-up tab.
+  useEffect(() => {
+    if (tab !== "signup") return
+    if (regSuccess) return
+    if (!turnstileContainerRef.current) return
+
+    let cancelled = false
+    let attempts = 0
+    const tryRender = () => {
+      if (cancelled) return
+      if (typeof window === "undefined" || !window.turnstile) {
+        if (attempts++ < 20) {
+          setTimeout(tryRender, 100)
+        } else {
+          console.warn("[turnstile] script failed to load after 2s")
+        }
+        return
+      }
+      if (turnstileWidgetIdRef.current) {
+        try { window.turnstile.remove(turnstileWidgetIdRef.current) } catch {}
+        turnstileWidgetIdRef.current = null
+      }
+      const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+      if (!siteKey) {
+        console.warn("[turnstile] NEXT_PUBLIC_TURNSTILE_SITE_KEY missing — widget skipped")
+        return
+      }
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current!, {
+        sitekey: siteKey,
+        theme: "light",
+        size: "flexible",
+        action: "register",
+        callback: (token) => {
+          if (!cancelled) setTurnstileToken(token)
+        },
+        "error-callback": () => {
+          if (!cancelled) setTurnstileToken("")
+        },
+        "expired-callback": () => {
+          if (!cancelled) setTurnstileToken("")
+        },
+      })
+    }
+    tryRender()
+
+    return () => {
+      cancelled = true
+      if (turnstileWidgetIdRef.current && typeof window !== "undefined" && window.turnstile) {
+        try { window.turnstile.remove(turnstileWidgetIdRef.current) } catch {}
+        turnstileWidgetIdRef.current = null
+      }
+    }
+  }, [tab, regSuccess])
+
+  // P1.A.14: Reset Turnstile token after 4 minutes (token expires at 5).
+  useEffect(() => {
+    if (!turnstileToken) return
+    const timeout = setTimeout(() => {
+      setTurnstileToken("")
+      if (turnstileWidgetIdRef.current && typeof window !== "undefined" && window.turnstile) {
+        try { window.turnstile.reset(turnstileWidgetIdRef.current) } catch {}
+      }
+    }, 4 * 60 * 1000)
+    return () => clearTimeout(timeout)
+  }, [turnstileToken])
+
   async function handleSignIn(e: FormEvent) {
     e.preventDefault()
     if (!email || !password || signingIn) return
@@ -106,7 +178,14 @@ function LoginPageInner() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz, acceptedTerms }),
+        body: JSON.stringify({
+          name: regName,
+          email: regEmail,
+          password: regPw,
+          businessName: regBiz,
+          acceptedTerms,
+          turnstileToken,  // P1.A.14
+        }),
       })
       const data = await res.json()
       if (res.status === 429) {
@@ -460,18 +539,22 @@ function LoginPageInner() {
                   </a>
                 </label>
               </div>
+              {/* P1.A.14: Cloudflare Turnstile widget. Renders inline via
+                  useEffect after the script loads. The "flexible" size
+                  matches our form width. */}
+              <div ref={turnstileContainerRef} style={{ minHeight: 65, display: "flex", justifyContent: "center" }} />
               {regError && (
                 <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
                   <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{regError}</p>
                 </div>
               )}
-              <button type="submit" disabled={registering || !acceptedTerms}
+              <button type="submit" disabled={registering || !acceptedTerms || !turnstileToken}
                 style={{
                   height: 44, width: "100%", borderRadius: 12, border: "none",
                   background: "#606E74", color: "white", fontSize: 14, fontWeight: 600,
-                  cursor: acceptedTerms && !registering ? "pointer" : "not-allowed",
+                  cursor: acceptedTerms && turnstileToken && !registering ? "pointer" : "not-allowed",
                   transition: "all 150ms", marginTop: 4,
-                  opacity: registering || !acceptedTerms ? 0.6 : 1,
+                  opacity: registering || !acceptedTerms || !turnstileToken ? 0.6 : 1,
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}>
                 {registering && <Loader2 size={16} className="animate-spin" />}
@@ -522,6 +605,13 @@ function LoginPageInner() {
           }}>{pill}</span>
         ))}
       </div>
+
+      {/* P1.A.14: Cloudflare Turnstile script. Self-attaches window.turnstile.
+          afterInteractive ensures it's available when the widget renders. */}
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+        strategy="afterInteractive"
+      />
 
       <style>{`
         @keyframes kenBurns { from { transform: scale(1); } to { transform: scale(1.05); } }

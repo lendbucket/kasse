@@ -1920,3 +1920,75 @@ intentionally different trust requirements and live together in a
 generic HTTP-utility module so they're reusable from non-rate-limit
 contexts (e.g. legal records). See PR #111 cycles 5–8 reviewer
 discussion for the rationale.
+
+## P1.A.14 — Cloudflare Turnstile signup CAPTCHA (2026-05-23)
+
+### Infrastructure
+
+External dependency added: Cloudflare Turnstile. Env vars required:
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (public, loaded in client bundle)
+- `TURNSTILE_SECRET_KEY` (server-only, used in /api/auth/register)
+
+When env vars are missing, the verifier logs a startup warning and
+fail-opens (allows all requests). This means the PR ships safely before
+the Cloudflare account is provisioned. Dev/preview should use Cloudflare's
+documented test keys (always-pass) so the code path is identical to
+production.
+
+### Coverage
+
+- `/api/auth/register` (POST) — Turnstile token verified before any
+  business logic, after rate limit check.
+
+### NOT covered (deferred)
+
+- Sign-in (credentials authorize): rate limiting + correct-password
+  requirement is sufficient defense. Adding Turnstile to every login
+  would create unacceptable UX friction for legitimate users.
+- `/api/auth/forgot-password`: route doesn't exist yet. Will be added
+  when that route ships.
+- OAuth paths (Google, Apple): gated by Google/Apple anti-abuse, no
+  Turnstile needed.
+
+### Failure mode
+
+Fail-open. When Cloudflare's siteverify is unreachable, times out, or
+returns a non-2xx status:
+- Request is allowed through
+- console.warn is emitted with the failure reason
+- Vercel logs surface the failure for monitoring
+
+Rationale: same philosophy as rate limiting. Auth flows must NEVER be
+blocked by external infrastructure failures.
+
+### Token handling
+
+- Tokens expire 5 minutes after issuance per Cloudflare spec
+- Client-side useEffect resets the widget after 4 minutes to force a
+  fresh challenge if the user idled
+- Server-side verification rejects expired tokens with reason
+  "timeout-or-duplicate" (returned by Cloudflare)
+- Tokens are single-use: re-submitting the same token fails verification
+
+### RLS classification
+
+No new routes, no new DB writes from this PR. Turnstile state is
+stateless — verification happens on each /api/auth/register call.
+Module-scoped warning flag in `lib/turnstile/verify.ts` is platform-
+level (not tenant-scoped), appropriate for global verification state.
+
+### Hostname binding
+
+Cloudflare's Turnstile widget is bound to the domain configured in the
+dashboard. The site key only works on that domain. For Kasse:
+- Production site key: bound to `kasseapp.com` (covers all subdomains
+  including `portal.kasseapp.com`)
+- Dev/preview test key: bound to localhost (Cloudflare's test keys
+  accept any hostname)
+
+### IP forwarding
+
+The `remoteip` parameter passed to /siteverify uses the same
+`getRateLimitIp()` helper from `@/lib/http/headers`. Trust requirements
+are similar to rate limiting (first-hop x-forwarded-for is fine — token
+verification accuracy is helped by IP but not security-critical).
