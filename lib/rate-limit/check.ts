@@ -87,13 +87,33 @@ export async function checkRateLimit(
 }
 
 /**
- * Helper to extract trustworthy IP from a NextRequest. Mirrors the
- * x-real-ip + x-forwarded-for last-hop pattern used elsewhere.
+ * Helper to extract trustworthy client IP from request headers.
+ *
+ * Order of preference:
+ * 1. x-real-ip (set by Vercel edge to the observed client IP)
+ * 2. First value of x-forwarded-for (canonical "originating client" per MDN;
+ *    safe on Vercel because Vercel overwrites the entire x-forwarded-for
+ *    chain at the edge to prevent client-supplied spoofing)
+ * 3. null
+ *
+ * Why first-hop ([0]) instead of last-hop (.pop()):
+ * - On Vercel: both produce the same value (chain is overwritten to a single
+ *   trusted IP at the edge), so behavior is identical.
+ * - On non-Vercel: last-hop silently degrades to the most recent proxy's
+ *   address (e.g. a load balancer in front of the deployment), which is
+ *   constant per deployment and effectively destroys IP-based rate limiting.
+ * - First-hop is the canonical "originating client" interpretation per MDN
+ *   and what Vercel's own documentation examples use.
  */
 export function getClientIp(headers: Headers): string | null {
-  return (
-    headers.get("x-real-ip") ||
-    headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
-    null
-  )
+  const realIp = headers.get("x-real-ip")
+  if (realIp) return realIp
+
+  const forwardedFor = headers.get("x-forwarded-for")
+  if (forwardedFor) {
+    const firstHop = forwardedFor.split(",")[0]?.trim()
+    if (firstHop) return firstHop
+  }
+
+  return null
 }

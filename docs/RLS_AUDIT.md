@@ -1668,11 +1668,14 @@ current-version acceptance.
 
 ### Legal record properties
 
-- IP address captured from x-real-ip header (Vercel-observed edge IP, not
-  client-supplied). Falls back to last value of x-forwarded-for (also
-  edge-trustworthy) if x-real-ip is missing. The first value of
-  x-forwarded-for is client-supplied and spoofable — never used for legal
-  records.
+- IP address captured via lib/rate-limit/check.ts:getClientIp(). Order of
+  preference: x-real-ip (Vercel-observed edge IP), then first value of
+  x-forwarded-for. On Vercel both produce the same trusted value because
+  Vercel overwrites the entire x-forwarded-for chain at the edge for
+  spoofing prevention. First-hop is the canonical "originating client"
+  interpretation per MDN and is what Vercel's own documentation examples
+  use. The shared helper ensures consistent IP extraction across legal
+  records, rate limiting, and any future use cases.
 - User-agent captured from request headers
 - Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
   was accepted, not just THAT it was accepted

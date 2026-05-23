@@ -73,14 +73,9 @@ export async function POST(req: NextRequest) {
     // P1.A.12: read visitor ID for A/B attribution
     const visitorId = await readVisitorIdFromCookies()
 
-    // Use the trustworthy Vercel edge-observed IP for legal records, not the
-    // client-supplied x-forwarded-for first hop (which is spoofable). Order of
-    // preference: x-real-ip (set by Vercel edge), then last value of
-    // x-forwarded-for (last hop is the edge, also trustworthy), then null.
-    const ipAddress =
-      req.headers.get("x-real-ip") ||
-      req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
-      null
+    // Use the shared IP helper for legal records — consistent with rate limiting.
+    // See lib/rate-limit/check.ts:getClientIp() for the full rationale.
+    const ipAddress = getClientIp(req.headers)
     const userAgent = req.headers.get("user-agent") || null
 
     // Atomic batch: Org + User + BusinessSettings + TermsAcceptance
