@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { signOut, useSession } from "next-auth/react"
 import { Loader2 } from "lucide-react"
 import Image from "next/image"
 
 export default function TermsAcceptPage() {
+  const router = useRouter()
   const { update: updateSession } = useSession()
   const [accepted, setAccepted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -26,9 +28,13 @@ export default function TermsAcceptPage() {
         return
       }
 
-      // Refresh the JWT so middleware sees the updated acceptedTermsVersionId
+      // Refresh the JWT so middleware sees the updated acceptedTermsVersionId,
+      // then navigate via the Next.js router (avoids race between session
+      // cookie commit and hard navigation). router.refresh() forces server
+      // components to re-fetch with the new JWT state.
       await updateSession()
-      window.location.href = "/dashboard"
+      router.push("/dashboard")
+      router.refresh()
     } catch {
       setError("Something went wrong. Please try again.")
       setSubmitting(false)

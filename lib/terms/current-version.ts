@@ -29,6 +29,17 @@ export async function getCurrentTermsVersion() {
   return version
 }
 
+/**
+ * Server-side helper to check if a user has accepted the current TermsVersion.
+ *
+ * NOT USED BY THE MIDDLEWARE GATE — middleware compares JWT fields
+ * (currentTermsVersionId, acceptedTermsVersionId) without hitting the DB.
+ * This function exists for contexts that explicitly want a live DB check,
+ * which may diverge from the JWT-stamped state during the 60s
+ * getCurrentTermsVersion cache window or before useSession().update().
+ *
+ * RLS: uses prismaAdmin — see P1.A.10 in docs/RLS_AUDIT.md for classification.
+ */
 export async function userHasAcceptedCurrentTerms(userId: string): Promise<boolean> {
   const current = await getCurrentTermsVersion()
   // INTENTIONAL FAIL-OPEN: when no current TermsVersion exists, return true

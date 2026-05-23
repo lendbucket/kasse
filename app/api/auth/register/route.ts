@@ -42,7 +42,14 @@ export async function POST(req: NextRequest) {
     // Read current terms version BEFORE the batch (read, not part of batch)
     const currentTermsVersion = await getCurrentTermsVersion()
 
-    const ipAddress = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()) || null
+    // Use the trustworthy Vercel edge-observed IP for legal records, not the
+    // client-supplied x-forwarded-for first hop (which is spoofable). Order of
+    // preference: x-real-ip (set by Vercel edge), then last value of
+    // x-forwarded-for (last hop is the edge, also trustworthy), then null.
+    const ipAddress =
+      req.headers.get("x-real-ip") ||
+      req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
+      null
     const userAgent = req.headers.get("user-agent") || null
 
     // Atomic batch: Org + User + BusinessSettings + TermsAcceptance

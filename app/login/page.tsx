@@ -104,7 +104,7 @@ function LoginPageInner() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz, acceptedTerms: true }),
+        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz, acceptedTerms }),
       })
       const data = await res.json()
       if (!res.ok) {

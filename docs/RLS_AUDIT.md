@@ -1668,7 +1668,11 @@ current-version acceptance.
 
 ### Legal record properties
 
-- IP address captured from x-forwarded-for (Vercel sets this on edge)
+- IP address captured from x-real-ip header (Vercel-observed edge IP, not
+  client-supplied). Falls back to last value of x-forwarded-for (also
+  edge-trustworthy) if x-real-ip is missing. The first value of
+  x-forwarded-for is client-supplied and spoofable — never used for legal
+  records.
 - User-agent captured from request headers
 - Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
   was accepted, not just THAT it was accepted
