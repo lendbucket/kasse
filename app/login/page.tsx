@@ -112,10 +112,18 @@ function LoginPageInner() {
         if (!cancelled) setTurnstileToken(token)
       },
       "error-callback": () => {
-        if (!cancelled) setTurnstileToken("")
+        if (cancelled) return
+        setTurnstileToken("")
+        setRegError(
+          "Verification challenge failed to load. Check your connection or disable browser extensions blocking challenges.cloudflare.com.",
+        )
       },
       "expired-callback": () => {
-        if (!cancelled) setTurnstileToken("")
+        // Don't set regError on expiration — the widget itself shows a
+        // "click to try again" UI, and the proactive 4-minute reset above
+        // means this rarely fires in practice.
+        if (cancelled) return
+        setTurnstileToken("")
       },
     })
 
