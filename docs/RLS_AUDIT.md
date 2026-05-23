@@ -1733,3 +1733,75 @@ No new RLS-classified routes. No new BYPASS_NEEDED subtypes.
 - Secure: true in production, false in dev
 - SameSite: lax
 - HttpOnly: true (no client-side use case identified; XSS-safer default)
+
+## P1.A.12 — A/B test infrastructure with visitor identity (2026-05-23)
+
+### Schema
+
+Added one nullable TEXT column to User: visitorId. Index on visitorId for
+analytics joins (visitorId → User lookups when analyzing A/B test outcomes
+post-signup).
+
+### Visitor identity flow
+
+1. Middleware checks every request for a kasse_visitor_id cookie
+2. If missing or invalid (not a UUID v4), generates a new UUID via
+   crypto.randomUUID() and sets the cookie on the response
+3. Cookie persists for 365 days (rolling, refreshed on cookie-missing only)
+4. Cookie properties: HttpOnly, Secure in production, SameSite=Lax, Path=/
+5. Visitor ID is also propagated to server components via the
+   x-kasse-visitor-id request header (set by middleware)
+
+### A/B resolution flow
+
+1. lib/experiments/registry.ts defines experiments in code (typed array of
+   ExperimentDefinition)
+2. lib/experiments/resolve.ts hashes (experimentKey + visitorId) via SHA-256,
+   takes first 8 hex chars as integer, computes bucket position, walks
+   variant weights to find bucket
+3. Deterministic: same visitor always sees same variant for same experiment
+4. Independent across experiments: same visitor's buckets for different
+   experiments are independent (salted by experimentKey)
+5. No DB writes per page view — assignment is purely computational
+
+### Visitor → User binding
+
+On registration (POST /api/auth/register), the kasse_visitor_id cookie value
+is read and written to User.visitorId in the same withAdminTx batch.
+
+On every sign-in (credentials + 4 OAuth paths), visitorId is bound ONLY if
+the User's current visitorId is null. This is one-time bind: subsequent
+sign-ins with a different cookie do NOT overwrite the established identity.
+Different visitor identity binding policy from UTM (which overwrites on
+every sign-in for re-entry attribution).
+
+### Routes touched
+
+- `/api/auth/register` (existing route, P1.A.10 classification BYPASS_NEEDED — PRE_SESSION) — now reads kasse_visitor_id cookie via readVisitorIdFromCookies()
+- `/api/auth/[...nextauth]` (existing route, P1.A.8 classification BYPASS_NEEDED — PRE_SESSION) — lib/auth.ts now reads kasse_visitor_id cookie in credentials authorize() and signIn callback
+- `middleware.ts` — runs on every request matched by the existing matcher; sets kasse_visitor_id cookie if missing/invalid; propagates visitor ID via x-kasse-visitor-id header
+
+No new RLS-classified routes. No new BYPASS_NEEDED subtypes. visitorId field
+on User is part of the existing User table RLS posture.
+
+### Cookie properties
+
+- Name: kasse_visitor_id
+- Format: UUID v4 (e.g. 550e8400-e29b-41d4-a716-446655440000)
+- TTL: 365 days (rolling — re-set only when missing or invalid)
+- Path: /
+- Secure: true in production, false in dev
+- SameSite: lax
+- HttpOnly: true (no client-side use case)
+- Validation: middleware regex-validates UUID v4 format on read; tampered
+  values are replaced with a fresh UUID
+
+### Why hash-based and not stored assignments?
+
+Stored ExperimentAssignment rows would require a DB write on every first
+page visit with an active experiment. At scale that includes bots, crawlers,
+and bounced visitors who never matter to the experiment. Hash-based gives
+deterministic results without writes; the trade-off is that we can't query
+"who was in variant A?" from the DB — we'd need to recompute or log
+exposures. Exposure logging can be added later as additive P3+ work without
+changing the resolution logic.

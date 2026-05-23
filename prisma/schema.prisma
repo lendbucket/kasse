@@ -187,6 +187,7 @@ model User {
   utmCampaign                 String?
   utmTerm                     String?
   utmContent                  String?
+  visitorId                   String?  // P1.A.12: pre-signup visitor identity for A/B attribution
   accounts                    Account[]
   bookedAppointments          Appointment[]               @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[]  @relation("StatusChangedByUser")

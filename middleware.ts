@@ -1,6 +1,7 @@
 /**
  * Next.js middleware — request ID propagation (P0.H.1) + route-tree
- * permission guards (P0.A.7) + UTM capture (P1.A.11).
+ * permission guards (P0.A.7) + UTM capture (P1.A.11) + visitor identity
+ * (P1.A.12).
  *
  * 1. Every request gets a UUID v4 in the X-Request-Id header (or preserves
  *    an upstream-provided one). The ID is echoed back in the response.
@@ -8,6 +9,7 @@
  *    Unauthenticated users are redirected to /login; forbidden users get 403.
  * 3. UTM params from URL search params are captured into a 30-day cookie
  *    (kasse_utm) on every response.
+ * 4. Persistent visitor ID cookie (kasse_visitor_id) for A/B bucketing.
  *
  * Refs: docs/build-order/PHASE_0_FOUNDATION.md P0.A.7, P0.H.1
  */
@@ -26,6 +28,15 @@ const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_c
 const UTM_COOKIE_NAME = "kasse_utm";
 const UTM_COOKIE_TTL_DAYS = 30;
 
+// P1.A.12: Visitor ID constants
+const VISITOR_COOKIE_NAME = "kasse_visitor_id";
+const VISITOR_COOKIE_TTL_DAYS = 365;
+
+// Helper: UUID v4 format validation. Defensive against tampered cookies.
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -33,6 +44,16 @@ export async function middleware(req: NextRequest) {
   const requestId = getRequestId(req);
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set(REQUEST_ID_HEADER, requestId);
+
+  // --- P1.A.12: Visitor ID generation ---
+  // Read existing visitor ID from cookie or generate a new one
+  let visitorId = req.cookies.get(VISITOR_COOKIE_NAME)?.value;
+  if (!visitorId || !isValidUuid(visitorId)) {
+    visitorId = crypto.randomUUID();
+  }
+  const needsVisitorCookieWrite = !req.cookies.has(VISITOR_COOKIE_NAME) ||
+    req.cookies.get(VISITOR_COOKIE_NAME)?.value !== visitorId;
+  requestHeaders.set("x-kasse-visitor-id", visitorId);
 
   // --- P1.A.11: Capture UTM params from URL into cookie ---
   // Captures on every page request so attribution survives navigation from
@@ -88,6 +109,22 @@ export async function middleware(req: NextRequest) {
     return response;
   };
 
+  // P1.A.12: Helper to set the visitor cookie on responses. Unlike UTM, this
+  // fires on EVERY response (including /api/*) when the cookie is missing or
+  // invalid. Once set, it persists for 1 year so subsequent requests are no-ops.
+  const withVisitorCookie = (response: NextResponse): NextResponse => {
+    if (needsVisitorCookieWrite) {
+      response.cookies.set(VISITOR_COOKIE_NAME, visitorId, {
+        maxAge: VISITOR_COOKIE_TTL_DAYS * 24 * 60 * 60,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+      });
+    }
+    return response;
+  };
+
   if (result.ok) {
     // P1.A.10: Terms acceptance gate. Redirect authenticated users who haven't
     // accepted the current TermsVersion to /terms/accept. Compares JWT fields
@@ -106,13 +143,13 @@ export async function middleware(req: NextRequest) {
       const acceptedVersionId = token?.acceptedTermsVersionId as string | null | undefined;
 
       if (currentVersionId && acceptedVersionId !== currentVersionId) {
-        return withUtmCookie(withRequestId(NextResponse.redirect(new URL("/terms/accept", req.url))));
+        return withVisitorCookie(withUtmCookie(withRequestId(NextResponse.redirect(new URL("/terms/accept", req.url)))));
       }
     }
 
-    return withUtmCookie(withRequestId(
+    return withVisitorCookie(withUtmCookie(withRequestId(
       NextResponse.next({ request: { headers: requestHeaders } }),
-    ));
+    )));
   }
 
   if (result.reason === "unauthenticated") {
@@ -121,16 +158,16 @@ export async function middleware(req: NextRequest) {
       // withUtmCookie is a no-op here because of the !pathname.startsWith("/api/")
       // guard inside the helper. Wrapping is intentional for symmetry with page
       // responses — DO NOT remove the inner guard thinking it's redundant.
-      return withUtmCookie(withRequestId(
+      return withVisitorCookie(withUtmCookie(withRequestId(
         NextResponse.json(
           { error: "Unauthorized", code: 401 },
           { status: 401 },
         ),
-      ));
+      )));
     }
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    return withUtmCookie(withRequestId(NextResponse.redirect(loginUrl)));
+    return withVisitorCookie(withUtmCookie(withRequestId(NextResponse.redirect(loginUrl))));
   }
 
   // Forbidden
@@ -138,14 +175,14 @@ export async function middleware(req: NextRequest) {
     // withUtmCookie is a no-op here because of the !pathname.startsWith("/api/")
     // guard inside the helper. Wrapping is intentional for symmetry with page
     // responses — DO NOT remove the inner guard thinking it's redundant.
-    return withUtmCookie(withRequestId(
+    return withVisitorCookie(withUtmCookie(withRequestId(
       NextResponse.json(
         { error: "Forbidden", code: 403 },
         { status: 403 },
       ),
-    ));
+    )));
   }
-  return withUtmCookie(withRequestId(NextResponse.redirect(new URL("/dashboard", req.url))));
+  return withVisitorCookie(withUtmCookie(withRequestId(NextResponse.redirect(new URL("/dashboard", req.url)))));
 }
 
 export const config = {

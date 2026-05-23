@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
+import { readVisitorIdFromCookies } from "@/lib/experiments/visitor"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
 import crypto from "crypto"
@@ -45,6 +46,9 @@ export async function POST(req: NextRequest) {
 
     // P1.A.11: read UTM cookie for attribution
     const utm = await readUtmFromCookies()
+
+    // P1.A.12: read visitor ID for A/B attribution
+    const visitorId = await readVisitorIdFromCookies()
 
     // Use the trustworthy Vercel edge-observed IP for legal records, not the
     // client-supplied x-forwarded-for first hop (which is spoofable). Order of
@@ -89,6 +93,8 @@ export async function POST(req: NextRequest) {
             utmTerm: utm.utmTerm,
             utmContent: utm.utmContent,
           } : {}),
+          // P1.A.12: visitor ID for A/B attribution
+          ...(visitorId ? { visitorId } : {}),
         },
       }),
       p.businessSettings.create({
