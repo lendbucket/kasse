@@ -71,10 +71,9 @@ export async function middleware(req: NextRequest) {
     return response;
   };
 
-  // P1.A.11: Helper to attach UTM cookie to ANY response (next, redirect, json)
-  // P1.A.11: Helper to attach UTM cookie to page responses only.
-  // API clients don't navigate with UTM params, so setting a cookie on a
-  // JSON error response achieves nothing.
+  // P1.A.11: Helper to attach UTM cookie. Inner guard ensures cookie is
+  // only set on page responses (not API), preventing pointless writes on
+  // JSON error responses. Wrapping API responses is intentional for symmetry.
   const withUtmCookie = (response: NextResponse): NextResponse => {
     if (hasUtmInUrl && !pathname.startsWith("/api/")) {
       const cookieValue = JSON.stringify(utmFromUrl);
@@ -119,6 +118,9 @@ export async function middleware(req: NextRequest) {
   if (result.reason === "unauthenticated") {
     // Redirect to login for page requests; 401 JSON for API routes
     if (pathname.startsWith("/api/")) {
+      // withUtmCookie is a no-op here because of the !pathname.startsWith("/api/")
+      // guard inside the helper. Wrapping is intentional for symmetry with page
+      // responses — DO NOT remove the inner guard thinking it's redundant.
       return withUtmCookie(withRequestId(
         NextResponse.json(
           { error: "Unauthorized", code: 401 },
@@ -133,6 +135,9 @@ export async function middleware(req: NextRequest) {
 
   // Forbidden
   if (pathname.startsWith("/api/")) {
+    // withUtmCookie is a no-op here because of the !pathname.startsWith("/api/")
+    // guard inside the helper. Wrapping is intentional for symmetry with page
+    // responses — DO NOT remove the inner guard thinking it's redundant.
     return withUtmCookie(withRequestId(
       NextResponse.json(
         { error: "Forbidden", code: 403 },

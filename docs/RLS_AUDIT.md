@@ -1700,8 +1700,7 @@ yet justify an index, defer until P2+ analytics work).
 1. Middleware scans every page request for utm_* search params (utm_source,
    utm_medium, utm_campaign, utm_term, utm_content)
 2. If any present, sets/refreshes the kasse_utm cookie (JSON-encoded, 30-day
-   TTL, Secure in production, SameSite=Lax, NOT HttpOnly because client code
-   may want to read for debugging)
+   TTL, Secure in production, SameSite=Lax, HttpOnly: true)
 3. On registration (POST /api/auth/register) and on every sign-in (credentials
    + OAuth signIn callback), reads cookie and overwrites User row UTM fields
    if any are non-null (hasAnyUtm guard)

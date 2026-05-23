@@ -130,7 +130,12 @@ export const authOptions: NextAuthOptions = {
         if (!valid) return null
         // P1.A.11: Read UTM cookie via the request passed to authorize.
         // Safer than next/headers cookies() in this context — req is always populated.
-        const utm = req ? readUtmFromRequest(req as unknown as NextRequest) : null
+        let utm: UtmParams | null = null
+        try {
+          if (req) utm = readUtmFromRequest(req as unknown as NextRequest)
+        } catch (err) {
+          console.warn("[auth] failed to read UTM from credentials authorize req:", err)
+        }
         await prismaAdmin.user.update({
           where: { id: user.id },
           data: {

@@ -46,6 +46,14 @@ export async function readUtmFromCookies(): Promise<UtmParams | null> {
  * For use inside NextRequest contexts (middleware or NextRequest-typed handlers).
  */
 export function readUtmFromRequest(req: NextRequest): UtmParams | null {
+  // Defensive: NextRequest.cookies should always be defined, but the
+  // credentials authorize() path uses `as unknown as NextRequest` casting
+  // from NextAuth's req which is typed as standard Request (no .cookies).
+  // Production usage works because NextAuth in App Router actually passes
+  // NextRequest, but a NextAuth version change could break that assumption.
+  if (!req || !req.cookies || typeof req.cookies.get !== "function") {
+    return null
+  }
   const raw = req.cookies.get("kasse_utm")?.value
   return parseUtmCookie(raw)
 }
