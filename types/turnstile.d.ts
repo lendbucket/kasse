@@ -7,6 +7,8 @@
  *
  * Docs: https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/
  */
+// `export {}` forces this file to be parsed as a module (not a script),
+// so the `declare global` block below correctly augments the global scope.
 export {}
 
 declare global {

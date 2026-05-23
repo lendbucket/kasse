@@ -122,7 +122,7 @@ export async function verifyTurnstileToken(
   } catch (err) {
     console.warn(
       "[turnstile] siteverify request failed — failing open. " +
-      `err=${(err as Error).message}`,
+      `err=${err instanceof Error ? err.message : String(err)}`,
     )
     return { ok: true }  // FAIL-OPEN on network/timeout error
   }

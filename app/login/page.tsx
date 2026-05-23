@@ -63,7 +63,14 @@ function LoginPageInner() {
 
   // P1.A.14: Turnstile token for sign-up form bot defense
   const [turnstileToken, setTurnstileToken] = useState("")
-  const [turnstileScriptLoaded, setTurnstileScriptLoaded] = useState(false)
+  // P1.A.14: Initialize from existing global. After a full route navigation
+  // away from /login and back, the Turnstile script is already cached by
+  // Next.js — <Script onLoad> won't re-fire. Without this lazy initializer,
+  // turnstileScriptLoaded would stay `false` forever on re-mount and the
+  // widget would never render, permanently disabling the submit button.
+  const [turnstileScriptLoaded, setTurnstileScriptLoaded] = useState(
+    () => typeof window !== "undefined" && !!window.turnstile
+  )
   const turnstileWidgetIdRef = useRef<string | null>(null)
   const turnstileContainerRef = useRef<HTMLDivElement>(null)
 
