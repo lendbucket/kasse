@@ -14,6 +14,7 @@ import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import type { NextRequest } from "next/server"
 import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/read"
+import { checkRateLimit } from "@/lib/rate-limit/check"
 import type { UtmParams } from "@/lib/utm/read"
 import { readVisitorIdFromCookies, readVisitorIdFromRequest } from "@/lib/experiments/visitor"
 
@@ -120,6 +121,19 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) return null
+
+        // P1.A.13: Rate limit by IP + endpoint + email. authorize() receives req
+        // as second arg; use its headers for IP detection.
+        const reqHeaders = req?.headers
+        const clientIp =
+          (reqHeaders?.get?.("x-real-ip") as string | null) ||
+          (reqHeaders?.get?.("x-forwarded-for") as string | null)?.split(",").pop()?.trim() ||
+          null
+        const rl = await checkRateLimit("signin-credentials", clientIp, credentials.email ?? null)
+        if (!rl.ok) {
+          throw new Error("RATE_LIMITED")
+        }
+
         const user = await prismaAdmin.user.findUnique({
           where: { email: credentials.email.toLowerCase() },
           include: { organization: true },

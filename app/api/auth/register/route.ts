@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit/check"
 import { readVisitorIdFromCookies } from "@/lib/experiments/visitor"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
@@ -15,6 +16,28 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export async function POST(req: NextRequest) {
   try {
     const { name, email, password, businessName, acceptedTerms } = await req.json()
+
+    // P1.A.13: Rate limit by IP + endpoint + email. Returns 429 if exceeded.
+    // Fail-open on infrastructure errors — logged via console.warn.
+    const clientIp = getClientIp(req.headers)
+    const rl = await checkRateLimit("register", clientIp, email ?? null)
+    if (!rl.ok) {
+      return NextResponse.json(
+        {
+          error: "Too many registration attempts. Please try again in a few minutes.",
+          retryAfter: Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))),
+            "X-RateLimit-Limit": String(rl.limit),
+            "X-RateLimit-Remaining": String(rl.remaining),
+            "X-RateLimit-Reset": String(Math.ceil(rl.reset / 1000)),
+          },
+        },
+      )
+    }
 
     if (!name || !email || !password || !businessName) {
       return NextResponse.json({ error: "All fields required" }, { status: 400 })

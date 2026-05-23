@@ -1805,3 +1805,64 @@ deterministic results without writes; the trade-off is that we can't query
 "who was in variant A?" from the DB — we'd need to recompute or log
 exposures. Exposure logging can be added later as additive P3+ work without
 changing the resolution logic.
+
+## P1.A.13 — Rate limiting via Upstash Redis (2026-05-23)
+
+### Infrastructure
+
+External dependency added: Upstash Redis. Env vars required:
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
+
+When env vars are missing (e.g. dev environment without Upstash setup),
+the rate limiter logs a single startup-time warning and fail-opens. This
+means the PR ships safely before the Upstash account is provisioned.
+
+### Limits
+
+10 attempts per 10 minutes per (IP, endpoint, identifier).
+
+- Algorithm: sliding window (via @upstash/ratelimit)
+- Identifier resolves to email when available, otherwise falls back to IP
+- 3-axis key defeats both "1 IP, many emails" (botnet cycling) and
+  "1 email, many IPs" (distributed brute-force)
+
+### Routes protected (this PR)
+
+- `/api/auth/register` (POST) — endpoint key: "register"
+- `/api/auth/[...nextauth]` credentials authorize() — endpoint key:
+  "signin-credentials". OAuth paths (Google + Apple) are NOT
+  rate-limited at this layer — they're already gated by Google/Apple's
+  own anti-abuse infrastructure and our domain verification.
+
+### Routes deferred
+
+- `/api/auth/forgot-password` — does not exist yet. Will be added when
+  the forgot-password flow ships (likely P1.A.16 or P1.B).
+- `/api/auth/verify-email` — token-based, single-use, sufficient on its
+  own. Adding rate limit here would lock out users with email retry
+  loops; defer until abuse is observed.
+
+### Failure mode
+
+Fail-open. When Upstash returns an error or times out:
+- Request is allowed through
+- `console.warn` is emitted with endpoint + error message
+- Vercel logs surface the failure for monitoring
+
+Rationale: auth flows must NEVER be blocked by rate-limit infrastructure
+failures. The cost of a brief abuse window during an Upstash outage is
+strictly less than the cost of locking out legitimate users.
+
+### Error surfaces
+
+- HTTP 429 with Retry-After, X-RateLimit-* headers from /api/auth/register
+- NextAuth throws "RATE_LIMITED" error code from credentials authorize,
+  surfaced in app/login/page.tsx as user-friendly copy
+
+### RLS classification
+
+No new routes, no DB writes from this PR (rate limit state lives in
+Upstash, not Postgres). The Upstash client is module-scoped, not
+tenant-scoped — appropriate since rate limit data is platform-level
+abuse-defense, not tenant data.
