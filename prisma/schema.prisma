@@ -182,6 +182,11 @@ model User {
   role                        Role                        @default(STAFF)
   customRoleId                String?
   locale                      String?
+  utmSource                   String?
+  utmMedium                   String?
+  utmCampaign                 String?
+  utmTerm                     String?
+  utmContent                  String?
   accounts                    Account[]
   bookedAppointments          Appointment[]               @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[]  @relation("StatusChangedByUser")

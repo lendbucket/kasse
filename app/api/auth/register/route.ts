@@ -3,6 +3,7 @@ import { Role } from "@prisma/client"
 import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
 import crypto from "crypto"
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
     // Read current terms version BEFORE the batch (read, not part of batch)
     const currentTermsVersion = await getCurrentTermsVersion()
 
+    // P1.A.11: read UTM cookie for attribution
+    const utm = await readUtmFromCookies()
+
     // Use the trustworthy Vercel edge-observed IP for legal records, not the
     // client-supplied x-forwarded-for first hop (which is spoofable). Order of
     // preference: x-real-ip (set by Vercel edge), then last value of
@@ -77,6 +81,14 @@ export async function POST(req: NextRequest) {
           organizationId: orgId,
           emailVerifyToken: verifyToken,
           emailVerifyExp: verifyExp,
+          // P1.A.11: UTM attribution from cookie
+          ...(hasAnyUtm(utm) && utm ? {
+            utmSource: utm.utmSource,
+            utmMedium: utm.utmMedium,
+            utmCampaign: utm.utmCampaign,
+            utmTerm: utm.utmTerm,
+            utmContent: utm.utmContent,
+          } : {}),
         },
       }),
       p.businessSettings.create({

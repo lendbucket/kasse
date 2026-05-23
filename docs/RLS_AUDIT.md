@@ -1685,3 +1685,50 @@ current-version acceptance.
   refuse to hard-delete and require soft-delete via isActive=false).
   This is intentional: legal record retention must outlast user
   lifecycle and survive operational mistakes.
+
+## P1.A.11 — UTM tracking with cookie persistence (2026-05-23)
+
+### Schema
+
+Added 5 nullable TEXT columns to User: utmSource, utmMedium, utmCampaign,
+utmTerm, utmContent. No new tables. No new indexes (UTM fields are written
+during signup/signin and read for analytics dashboards — no query patterns
+yet justify an index, defer until P2+ analytics work).
+
+### Capture flow
+
+1. Middleware scans every page request for utm_* search params (utm_source,
+   utm_medium, utm_campaign, utm_term, utm_content)
+2. If any present, sets/refreshes the kasse_utm cookie (JSON-encoded, 30-day
+   TTL, Secure in production, SameSite=Lax, NOT HttpOnly because client code
+   may want to read for debugging)
+3. On registration (POST /api/auth/register) and on every sign-in (credentials
+   + OAuth signIn callback), reads cookie and overwrites User row UTM fields
+   if any are non-null (hasAnyUtm guard)
+
+### Overwrite policy
+
+Every sign-in overwrites UTM fields if cookie present. This tracks re-entry
+attribution — e.g., a user signs up via utm_campaign=launch_email, then later
+clicks utm_campaign=spring_promo and signs in — the User row records the
+most recent attribution. Original signup attribution is NOT preserved
+separately (deliberate: simpler schema, retention-focused analytics treat
+the most recent touchpoint as authoritative).
+
+### Routes touched
+
+- `/api/auth/register` (existing route, P1.A.10 classification BYPASS_NEEDED — PRE_SESSION) — now reads kasse_utm cookie via readUtmFromCookies()
+- `/api/auth/[...nextauth]` (existing route, P1.A.8 classification BYPASS_NEEDED — PRE_SESSION) — lib/auth.ts now reads kasse_utm cookie in credentials authorize() and signIn callback
+- `middleware.ts` — runs on every request matched by the existing matcher; sets/refreshes kasse_utm cookie when utm_* params present in URL
+
+No new RLS-classified routes. No new BYPASS_NEEDED subtypes.
+
+### Cookie properties
+
+- Name: kasse_utm
+- Format: JSON object with keys utm_source, utm_medium, utm_campaign, utm_term, utm_content
+- TTL: 30 days (rolling — refreshed on every request with UTM params)
+- Path: /
+- Secure: true in production, false in dev
+- SameSite: lax
+- HttpOnly: false (intentional — client code may read for analytics/debugging; no PII risk since UTM params are marketing attribution data, not credentials)

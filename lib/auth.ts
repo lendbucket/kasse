@@ -12,6 +12,7 @@ import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
 
 // Generate Apple client secret JWT once at module load. Apple's spec allows
 // up to 6 months validity; we use 90 days as a balance between rotation
@@ -125,9 +126,20 @@ export const authOptions: NextAuthOptions = {
         if (!user.isActive) throw new Error("ACCOUNT_DISABLED")
         const valid = await bcrypt.compare(credentials.password, user.password)
         if (!valid) return null
+        // P1.A.11: overwrite UTM attribution on every sign-in if cookie present
+        const utm = await readUtmFromCookies()
         await prismaAdmin.user.update({
           where: { id: user.id },
-          data: { lastLoginAt: new Date() },
+          data: {
+            lastLoginAt: new Date(),
+            ...(hasAnyUtm(utm) && utm ? {
+              utmSource: utm.utmSource,
+              utmMedium: utm.utmMedium,
+              utmCampaign: utm.utmCampaign,
+              utmTerm: utm.utmTerm,
+              utmContent: utm.utmContent,
+            } : {}),
+          },
         })
         return {
           id: user.id,
@@ -213,9 +225,20 @@ export const authOptions: NextAuthOptions = {
         if (!existingUser.emailVerified) {
           throw new Error("EMAIL_NOT_VERIFIED")
         }
+        // P1.A.11: overwrite UTM attribution on every sign-in if cookie present
+        const utm = await readUtmFromCookies()
         await prismaAdmin.user.update({
           where: { id: existingUser.id },
-          data: { lastLoginAt: new Date() },
+          data: {
+            lastLoginAt: new Date(),
+            ...(hasAnyUtm(utm) && utm ? {
+              utmSource: utm.utmSource,
+              utmMedium: utm.utmMedium,
+              utmCampaign: utm.utmCampaign,
+              utmTerm: utm.utmTerm,
+              utmContent: utm.utmContent,
+            } : {}),
+          },
         })
         return true
       }
@@ -250,6 +273,9 @@ export const authOptions: NextAuthOptions = {
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
       const orgId = crypto.randomUUID()
 
+      // P1.A.11: read UTM cookie for new-user bootstrap attribution
+      const utmForBootstrap = await readUtmFromCookies()
+
       try {
         await withAdminTx((p) => [
           p.organization.create({
@@ -272,6 +298,14 @@ export const authOptions: NextAuthOptions = {
               role: Role.OWNER,
               organizationId: orgId,
               lastLoginAt: new Date(),
+              // P1.A.11: UTM attribution from cookie
+              ...(hasAnyUtm(utmForBootstrap) && utmForBootstrap ? {
+                utmSource: utmForBootstrap.utmSource,
+                utmMedium: utmForBootstrap.utmMedium,
+                utmCampaign: utmForBootstrap.utmCampaign,
+                utmTerm: utmForBootstrap.utmTerm,
+                utmContent: utmForBootstrap.utmContent,
+              } : {}),
             },
           }),
           p.businessSettings.create({
@@ -292,9 +326,20 @@ export const authOptions: NextAuthOptions = {
             if (raceWinner) {
               if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
               if (!raceWinner.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
+              // P1.A.11: UTM attribution on race-winner path
+              const utmRace = await readUtmFromCookies()
               await prismaAdmin.user.update({
                 where: { id: raceWinner.id },
-                data: { lastLoginAt: new Date() },
+                data: {
+                  lastLoginAt: new Date(),
+                  ...(hasAnyUtm(utmRace) && utmRace ? {
+                    utmSource: utmRace.utmSource,
+                    utmMedium: utmRace.utmMedium,
+                    utmCampaign: utmRace.utmCampaign,
+                    utmTerm: utmRace.utmTerm,
+                    utmContent: utmRace.utmContent,
+                  } : {}),
+                },
               })
               return true
             }

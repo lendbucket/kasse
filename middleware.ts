@@ -1,11 +1,13 @@
 /**
  * Next.js middleware — request ID propagation (P0.H.1) + route-tree
- * permission guards (P0.A.7).
+ * permission guards (P0.A.7) + UTM capture (P1.A.11).
  *
  * 1. Every request gets a UUID v4 in the X-Request-Id header (or preserves
  *    an upstream-provided one). The ID is echoed back in the response.
  * 2. checkRouteAccess() evaluates the path against the routeMap.
  *    Unauthenticated users are redirected to /login; forbidden users get 403.
+ * 3. UTM params from URL search params are captured into a 30-day cookie
+ *    (kasse_utm) on every response.
  *
  * Refs: docs/build-order/PHASE_0_FOUNDATION.md P0.A.7, P0.H.1
  */
@@ -19,6 +21,11 @@ import {
   REQUEST_ID_HEADER,
 } from "@/lib/observability/request-id";
 
+// P1.A.11: UTM capture constants
+const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
+const UTM_COOKIE_NAME = "kasse_utm";
+const UTM_COOKIE_TTL_DAYS = 30;
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -26,6 +33,20 @@ export async function middleware(req: NextRequest) {
   const requestId = getRequestId(req);
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set(REQUEST_ID_HEADER, requestId);
+
+  // --- P1.A.11: Capture UTM params from URL into cookie ---
+  // Captures on every page request so attribution survives navigation from
+  // landing → other pages → /login. Cookie persists for 30 days and is read
+  // at sign-in / registration to populate User row attribution fields.
+  const utmFromUrl: Record<string, string> = {};
+  for (const key of UTM_KEYS) {
+    const value = req.nextUrl.searchParams.get(key);
+    if (value) {
+      // Trim + clamp at 500 chars (defensive against absurd-length UTM values)
+      utmFromUrl[key] = value.slice(0, 500).trim();
+    }
+  }
+  const hasUtmInUrl = Object.keys(utmFromUrl).length > 0;
 
   // Build session shape from JWT token (NextAuth stores role + org in JWT)
   const token = await getToken({ req });
@@ -50,6 +71,21 @@ export async function middleware(req: NextRequest) {
     return response;
   };
 
+  // P1.A.11: Helper to attach UTM cookie to ANY response (next, redirect, json)
+  const withUtmCookie = (response: NextResponse): NextResponse => {
+    if (hasUtmInUrl) {
+      const cookieValue = JSON.stringify(utmFromUrl);
+      response.cookies.set(UTM_COOKIE_NAME, cookieValue, {
+        maxAge: UTM_COOKIE_TTL_DAYS * 24 * 60 * 60,
+        httpOnly: false,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+      });
+    }
+    return response;
+  };
+
   if (result.ok) {
     // P1.A.10: Terms acceptance gate. Redirect authenticated users who haven't
     // accepted the current TermsVersion to /terms/accept. Compares JWT fields
@@ -68,40 +104,40 @@ export async function middleware(req: NextRequest) {
       const acceptedVersionId = token?.acceptedTermsVersionId as string | null | undefined;
 
       if (currentVersionId && acceptedVersionId !== currentVersionId) {
-        return withRequestId(NextResponse.redirect(new URL("/terms/accept", req.url)));
+        return withUtmCookie(withRequestId(NextResponse.redirect(new URL("/terms/accept", req.url))));
       }
     }
 
-    return withRequestId(
+    return withUtmCookie(withRequestId(
       NextResponse.next({ request: { headers: requestHeaders } }),
-    );
+    ));
   }
 
   if (result.reason === "unauthenticated") {
     // Redirect to login for page requests; 401 JSON for API routes
     if (pathname.startsWith("/api/")) {
-      return withRequestId(
+      return withUtmCookie(withRequestId(
         NextResponse.json(
           { error: "Unauthorized", code: 401 },
           { status: 401 },
         ),
-      );
+      ));
     }
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    return withRequestId(NextResponse.redirect(loginUrl));
+    return withUtmCookie(withRequestId(NextResponse.redirect(loginUrl)));
   }
 
   // Forbidden
   if (pathname.startsWith("/api/")) {
-    return withRequestId(
+    return withUtmCookie(withRequestId(
       NextResponse.json(
         { error: "Forbidden", code: 403 },
         { status: 403 },
       ),
-    );
+    ));
   }
-  return withRequestId(NextResponse.redirect(new URL("/dashboard", req.url)));
+  return withUtmCookie(withRequestId(NextResponse.redirect(new URL("/dashboard", req.url))));
 }
 
 export const config = {
