@@ -1543,6 +1543,34 @@ account (e.g., one where the verification email was never received).
   APPLE_PRIVATE_KEY) is missing or JWT generation fails, the provider is
   excluded entirely.
 
+### P1.A.9 Account linking trust model
+
+Both GoogleProvider (P1.A.8) and AppleProvider (P1.A.9) set
+`allowDangerousEmailAccountLinking: true`. This means NextAuth's PrismaAdapter
+will link an OAuth Account row to any existing User row whose email matches
+the OAuth identity's email, with no additional handshake. The trust assumption
+is that:
+
+1. The OAuth provider (Google or Apple) has verified the user controls the
+   email address (Google: profile.email_verified check enforced in
+   lib/auth.ts signIn callback; Apple: guaranteed by Apple's JWT spec).
+2. The existing Kasse User row's emailVerified field is non-null. Added in
+   cycle 4 of P1.A.9 to both the existingUser branch and the P2002-race
+   raceWinner branch — if a credentials-based account never completed
+   verification, OAuth sign-in throws EMAIL_NOT_VERIFIED instead of silently
+   claiming the account.
+
+Combined, these two checks mean an attacker would need to:
+- Control a Google or Apple identity with the target's email address
+  (requires actually controlling the email), AND
+- The target's Kasse account is already email-verified (so the
+  emailVerified check passes).
+
+The practical attack surface is "attacker controls the victim's email
+inbox" — at which point they could also use the credentials provider's
+forgot-password flow. The OAuth linking does not expand the attack surface
+beyond what email control already grants.
+
 ### P1.A.9 Routes
 
 No new API routes. The `/api/auth/[...nextauth]` handler covers both Google and
