@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import { getLegalRecordIp } from "@/lib/rate-limit/check"
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -15,14 +16,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No terms version available" }, { status: 500 })
   }
 
-  // Use the trustworthy Vercel edge-observed IP for legal records, not the
-  // client-supplied x-forwarded-for first hop (which is spoofable). Order of
-  // preference: x-real-ip (set by Vercel edge), then last value of
-  // x-forwarded-for (last hop is the edge, also trustworthy), then null.
-  const ipAddress =
-    req.headers.get("x-real-ip") ||
-    req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
-    null
+  const ipAddress = getLegalRecordIp(req.headers)
   const userAgent = req.headers.get("user-agent") || null
 
   try {

@@ -8,6 +8,12 @@
  * Required env vars (Vercel):
  * - UPSTASH_REDIS_REST_URL
  * - UPSTASH_REDIS_REST_TOKEN
+ *
+ * NOTE FOR LOCAL DEV: This module's cache state persists across Next.js HMR
+ * cycles. After adding/changing UPSTASH_REDIS_REST_* env vars, restart the
+ * dev server (Ctrl+C, then `npm run dev`) to clear the cache. The "missing
+ * env vars" warning is logged once at first call; subsequent calls return
+ * the cached null without re-checking.
  */
 import { Redis } from "@upstash/redis"
 

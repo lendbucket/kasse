@@ -1668,14 +1668,18 @@ current-version acceptance.
 
 ### Legal record properties
 
-- IP address captured via lib/rate-limit/check.ts:getClientIp(). Order of
-  preference: x-real-ip (Vercel-observed edge IP), then first value of
-  x-forwarded-for. On Vercel both produce the same trusted value because
-  Vercel overwrites the entire x-forwarded-for chain at the edge for
-  spoofing prevention. First-hop is the canonical "originating client"
-  interpretation per MDN and is what Vercel's own documentation examples
-  use. The shared helper ensures consistent IP extraction across legal
-  records, rate limiting, and any future use cases.
+- IP address captured via lib/rate-limit/check.ts:getLegalRecordIp(). Order
+  of preference: x-real-ip (Vercel-observed edge IP), then LAST hop of
+  x-forwarded-for. Last-hop is whatever the most recent trusted proxy added
+  (on Vercel: the edge; on Cloudflare-in-front-of-Vercel: the
+  CF-Connecting-IP-equivalent value). The first hop of x-forwarded-for can
+  be client-supplied and spoofed, so it is never used for legal records.
+
+  Different trust requirements from rate-limit IP extraction
+  (getRateLimitIp). For rate-limit, IP-axis degradation is acceptable
+  (falls back to email-only limiting). For legal records, an attacker-
+  controlled IP would corrupt the audit trail. The two helpers are
+  intentionally separate.
 - User-agent captured from request headers
 - Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
   was accepted, not just THAT it was accepted
@@ -1829,6 +1833,22 @@ means the PR ships safely before the Upstash account is provisioned.
 - Identifier resolves to email when available, otherwise falls back to IP
 - 3-axis key defeats both "1 IP, many emails" (botnet cycling) and
   "1 email, many IPs" (distributed brute-force)
+
+IP extraction for rate-limiting uses lib/rate-limit/check.ts:getRateLimitIp
+(prefers x-real-ip, falls back to FIRST hop of x-forwarded-for). This is
+intentionally distinct from legal-record IP extraction (getLegalRecordIp,
+LAST hop fallback) because rate-limit and legal records have different
+trust requirements. Do not consolidate the two helpers. See the P1.A.10
+"Legal record properties" subsection for the legal-record extraction
+rationale.
+
+For NextAuth's credentials authorize() callback specifically, IP is
+extracted via a private helper getRateLimitIpFromNextAuthReq in lib/auth.ts.
+This is because NextAuth v4 types `req.headers` as
+`Record<string, string | string[] | undefined>` — a plain object, NOT a
+WHATWG Headers instance. Using getRateLimitIp(req.headers as Headers) would
+silently return null for every lookup and degrade rate-limit to email-only
+on the credentials sign-in path.
 
 ### Routes protected (this PR)
 

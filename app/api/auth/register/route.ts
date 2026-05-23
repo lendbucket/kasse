@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
-import { checkRateLimit, getClientIp } from "@/lib/rate-limit/check"
+import { checkRateLimit, getRateLimitIp, getLegalRecordIp } from "@/lib/rate-limit/check"
 import { readVisitorIdFromCookies } from "@/lib/experiments/visitor"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
@@ -19,18 +19,19 @@ export async function POST(req: NextRequest) {
 
     // P1.A.13: Rate limit by IP + endpoint + email. Returns 429 if exceeded.
     // Fail-open on infrastructure errors — logged via console.warn.
-    const clientIp = getClientIp(req.headers)
+    const clientIp = getRateLimitIp(req.headers)
     const rl = await checkRateLimit("register", clientIp, email ?? null)
     if (!rl.ok) {
+      const retryAfterSec = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))
       return NextResponse.json(
         {
           error: "Too many registration attempts. Please try again in a few minutes.",
-          retryAfter: Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000)),
+          retryAfter: retryAfterSec,
         },
         {
           status: 429,
           headers: {
-            "Retry-After": String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))),
+            "Retry-After": String(retryAfterSec),
             "X-RateLimit-Limit": String(rl.limit),
             "X-RateLimit-Remaining": String(rl.remaining),
             "X-RateLimit-Reset": String(Math.ceil(rl.reset / 1000)),
@@ -73,9 +74,9 @@ export async function POST(req: NextRequest) {
     // P1.A.12: read visitor ID for A/B attribution
     const visitorId = await readVisitorIdFromCookies()
 
-    // Use the shared IP helper for legal records — consistent with rate limiting.
-    // See lib/rate-limit/check.ts:getClientIp() for the full rationale.
-    const ipAddress = getClientIp(req.headers)
+    // Use getLegalRecordIp for legal records — different trust requirements from
+    // rate-limit IP extraction. See lib/rate-limit/check.ts for the full rationale.
+    const ipAddress = getLegalRecordIp(req.headers)
     const userAgent = req.headers.get("user-agent") || null
 
     // Atomic batch: Org + User + BusinessSettings + TermsAcceptance
