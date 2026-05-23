@@ -1622,9 +1622,19 @@ the URLs and hashes.
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
 | `/api/terms/accept` | POST | BYPASS_NEEDED — SELF_WRITE | Authenticated user creates a TermsAcceptance row for themselves; uses session.user.id from server-verified NextAuth. prismaAdmin used because TermsAcceptance is a cross-tenant legal record, not org-scoped business data. Same pattern as SELF_READ but for writes. |
-| `/terms/accept` | GET (page) | BYPASS_NEEDED — SELF_WRITE | Server-rendered page; same auth boundary as the POST route. |
-| `/terms` | GET (page) | PUBLIC_STATIC | No auth, no DB. Stub page. |
-| `/privacy` | GET (page) | PUBLIC_STATIC | No auth, no DB. Stub page. |
+
+### P1.A.10 Pages (middleware-gated)
+
+These are server-rendered pages with no direct DB access. Auth and access
+control are handled by middleware. Listed for completeness — they do not
+belong in the RLS Routes taxonomy (which classifies database client choice
+per API route).
+
+| Page | Access Control |
+|------|---------------|
+| `/terms` | Public, no auth |
+| `/privacy` | Public, no auth |
+| `/terms/accept` | Authenticated. Middleware redirects unauthenticated users to /login. Page is a client component that calls /api/terms/accept (classified above as BYPASS_NEEDED — SELF_WRITE). |
 
 ### P1.A.10 Tables
 

@@ -49,48 +49,43 @@ export async function POST(req: NextRequest) {
     // Mirrors the withAdminTx pattern from P1.A.7-d / P1.A.8 / P1.A.9.
     // Uses client-side ID generation so the batch can reference orgId/userId
     // without intermediate results.
-    await withAdminTx((p) => {
-      const ops: any[] = [
-        p.organization.create({
-          data: {
-            id: orgId,
-            name: businessName,
-            slug,
-            plan: "trial",
-            planStatus: "trial",
-            trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          },
-        }),
-        p.user.create({
-          data: {
-            id: userId,
-            name,
-            email: email.toLowerCase(),
-            password: hashedPassword,
-            role: Role.OWNER,
-            organizationId: orgId,
-            emailVerifyToken: verifyToken,
-            emailVerifyExp: verifyExp,
-          },
-        }),
-        p.businessSettings.create({
-          data: { organizationId: orgId },
-        }),
-      ]
-      if (currentTermsVersion) {
-        ops.push(
-          p.termsAcceptance.create({
+    await withAdminTx((p) => [
+      p.organization.create({
+        data: {
+          id: orgId,
+          name: businessName,
+          slug,
+          plan: "trial",
+          planStatus: "trial",
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      }),
+      p.user.create({
+        data: {
+          id: userId,
+          name,
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          role: Role.OWNER,
+          organizationId: orgId,
+          emailVerifyToken: verifyToken,
+          emailVerifyExp: verifyExp,
+        },
+      }),
+      p.businessSettings.create({
+        data: { organizationId: orgId },
+      }),
+      ...(currentTermsVersion
+        ? [p.termsAcceptance.create({
             data: {
               userId,
               termsVersionId: currentTermsVersion.id,
               ipAddress,
               userAgent,
             },
-          })
-        )
-      }
-      return ops
-    })
+          })]
+        : []),
+    ])
 
     // Verification email sent AFTER the batch commits — best-effort, fail-soft.
     // If the email fails, the user record still exists and can re-trigger

@@ -78,6 +78,16 @@ async function injectTermsVersionIntoToken(token: any, userId: string) {
   const currentVersion = await getCurrentTermsVersion()
   token.currentTermsVersionId = currentVersion?.id ?? null
 
+  // Visibility: if no current version exists, the middleware gate
+  // short-circuits (currentVersionId is falsy in the comparison). Users
+  // signing up during a null-version window are silently exempt UNTIL the
+  // next sign-in WITH a version present. In production this branch should
+  // never fire (v1.0.0 is seeded in the migration), but dev/staging
+  // environments may hit it if the seed didn't run.
+  if (!currentVersion) {
+    console.warn("[auth] injectTermsVersionIntoToken: no current TermsVersion exists; user", userId, "will not be gated by terms middleware until a version is configured.")
+  }
+
   if (currentVersion && userId) {
     const acceptance = await prismaAdmin.termsAcceptance.findUnique({
       where: { userId_termsVersionId: { userId, termsVersionId: currentVersion.id } },
