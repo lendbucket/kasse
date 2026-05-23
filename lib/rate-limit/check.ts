@@ -54,7 +54,9 @@ function getLimiter(): Ratelimit | null {
  * Check whether the (ip, endpoint, identifier) combo has exceeded the limit.
  *
  * @param endpoint - logical name, e.g. "register" or "signin-credentials"
- * @param ip - client IP from x-real-ip (preferred) or last-hop x-forwarded-for
+ * @param ip - client IP from getRateLimitIp() (x-real-ip preferred,
+ *             first-hop x-forwarded-for fallback) or
+ *             getRateLimitIpFromNextAuthReq() in lib/auth.ts
  * @param identifier - email if present, otherwise fall back to ip itself
  *                    (so unauthenticated requests still get IP-only limiting)
  */

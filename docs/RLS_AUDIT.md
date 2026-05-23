@@ -1850,6 +1850,30 @@ WHATWG Headers instance. Using getRateLimitIp(req.headers as Headers) would
 silently return null for every lookup and degrade rate-limit to email-only
 on the credentials sign-in path.
 
+**Rate limit fires before input validation (intentional).** A request with
+no email body hits the rate-limit check first, where the identifier falls
+back to the client IP. The result: empty-body and valid-email requests
+land on different rate-limit keys (IP-only vs IP+email). This is a known
+minor axis-of-attack asymmetry — a bot can probe the input-validation
+layer without burning an email-bound rate-limit slot. We accept this
+because:
+
+1. The IP-axis still catches volume from any single source at 10/10min,
+   regardless of body shape
+2. Reversing the order — validation first, rate-limit after — creates a
+   "free probe" channel where attackers can hit the validation layer
+   millions of times without ever consuming a rate-limit slot. That's a
+   worse trade-off
+3. The asymmetry only matters once volume gets high enough to exhaust the
+   IP-axis, at which point the 10/10min already triggered
+
+If real-world abuse shows the asymmetry being exploited (e.g. logs show
+high volume of no-email POSTs with the same IP cycling under the 10/10min
+threshold), this can be tightened in a follow-up by either:
+- Lowering the limit specifically for malformed requests
+- Adding a separate "register-malformed" endpoint key
+- Moving rate-limit after validation (accepts the free-probe risk)
+
 ### Routes protected (this PR)
 
 - `/api/auth/register` (POST) — endpoint key: "register"
