@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
-import { getLegalRecordIp } from "@/lib/rate-limit/check"
+import { getLegalRecordIp } from "@/lib/http/headers"
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
