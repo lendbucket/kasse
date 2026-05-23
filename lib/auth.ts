@@ -11,6 +11,7 @@ import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
+import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 
 // Generate Apple client secret JWT once at module load. Apple's spec allows
 // up to 6 months validity; we use 90 days as a balance between rotation
@@ -68,6 +69,35 @@ const appleClientSecret = generateAppleClientSecret()
 
 // Lifted to module scope to avoid reconstructing on every signIn invocation.
 const OAUTH_PROVIDERS = new Set(["google", "apple"])
+
+// P1.A.10: Inject currentTermsVersionId + acceptedTermsVersionId into the JWT.
+// Called at sign-in and on explicit session refresh (useSession().update()).
+// Middleware compares these two values on every authenticated request to gate
+// access without a DB call per request.
+async function injectTermsVersionIntoToken(token: any, userId: string) {
+  const currentVersion = await getCurrentTermsVersion()
+  token.currentTermsVersionId = currentVersion?.id ?? null
+
+  // Visibility: if no current version exists, the middleware gate
+  // short-circuits (currentVersionId is falsy in the comparison). Users
+  // signing up during a null-version window are silently exempt UNTIL the
+  // next sign-in WITH a version present. In production this branch should
+  // never fire (v1.0.0 is seeded in the migration), but dev/staging
+  // environments may hit it if the seed didn't run.
+  if (!currentVersion) {
+    console.warn("[auth] injectTermsVersionIntoToken: no current TermsVersion exists; user", userId, "will not be gated by terms middleware until a version is configured.")
+  }
+
+  if (currentVersion && userId) {
+    const acceptance = await prismaAdmin.termsAcceptance.findUnique({
+      where: { userId_termsVersionId: { userId, termsVersionId: currentVersion.id } },
+      select: { termsVersionId: true },
+    })
+    token.acceptedTermsVersionId = acceptance?.termsVersionId ?? null
+  } else {
+    token.acceptedTermsVersionId = null
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -296,6 +326,8 @@ export const authOptions: NextAuthOptions = {
             token.organizationId = dbUser.organizationId
             token.locationId = dbUser.locationId
           }
+          // P1.A.10: inject terms version metadata into JWT for middleware gate
+          await injectTermsVersionIntoToken(token, token.id as string)
           return token
         }
 
@@ -304,6 +336,8 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role
         token.organizationId = (user as any).organizationId
         token.locationId = (user as any).locationId
+        // P1.A.10: inject terms version metadata into JWT for middleware gate
+        await injectTermsVersionIntoToken(token, user.id)
         return token
       }
 
@@ -329,6 +363,8 @@ export const authOptions: NextAuthOptions = {
             token.role = freshUser.role
             token.locationId = freshUser.locationId
           }
+          // P1.A.10: refresh terms acceptance state in JWT
+          await injectTermsVersionIntoToken(token, token.id as string)
         } catch (err) {
           // The 'update' trigger is an explicit client signal — useSession().update()
           // was called and the caller expects fresh data. Silent swallow would leave

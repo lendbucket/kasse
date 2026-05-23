@@ -116,6 +116,23 @@ Routes that use `prismaAdmin` to read the authenticated user's OWN row (via `ses
 
 This bucket persists past P1.A.3b (the location-route TENANT_SCOPED flip that closes most ORG_BOOTSTRAP usage). refresh-session stays because the JWT staleness scenario isn't unique to onboarding.
 
+### BYPASS_NEEDED — SELF_WRITE (authenticated user writes own row)
+
+Same security property as SELF_READ but for write operations. Routes that
+use `prismaAdmin` to create or update a row belonging to the authenticated
+user, with the row scoped by `session.user.id` exclusively. Justification
+for `prismaAdmin`: the data being written is cross-tenant (legal records,
+account-level state) and not part of any specific organization's tenant
+scope.
+
+**Security property**: `session.user.id` is server-verified by NextAuth.
+The query writes a row with `userId: session.user.id` exclusively — the
+caller cannot write a row attributed to another user.
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/terms/accept` | POST | Creates TermsAcceptance row for caller (SELF_WRITE — P1.A.10). Cross-tenant legal record, not org-scoped. |
+
 ### BYPASS_NEEDED — ORG_BOOTSTRAP (authenticated, no org yet)
 
 Used during the bootstrap window of onboarding for one operation: org-create (no org exists yet, so `withTenantScope` has no tenant to scope by). The bootstrap call uses `prismaAdmin` because there's no tenant context. Ownership is verified via the OnboardingSession row (session.userId must match the authenticated caller). Mandatory audit logging of the bootstrap event.
@@ -1582,3 +1599,89 @@ uses prismaAdmin; no direct DB calls in the route file).
 
 None. All bootstrap writes go through prismaAdmin (same as /api/auth/register
 and Google OAuth from P1.A.8).
+
+## P1.A.10 — Terms + Privacy acceptance with version tracking (2026-05-23)
+
+### Schema
+
+Two new tables: TermsVersion (master list of policy versions with body
+hashes and content URLs) and TermsAcceptance (per-user, per-version
+acceptance records with IP, userAgent, timestamp).
+
+User model gets a reverse relation `acceptances TermsAcceptance[]`.
+
+### Bootstrap
+
+Initial TermsVersion v1.0.0 is seeded in the migration with placeholder
+content URLs (/terms, /privacy) pointing to "Coming soon" stub pages.
+Real attorney-drafted documents land in a follow-up PR; that PR updates
+the URLs and hashes.
+
+### P1.A.10 Routes
+
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/terms/accept` | POST | BYPASS_NEEDED — SELF_WRITE | Authenticated user creates a TermsAcceptance row for themselves; uses session.user.id from server-verified NextAuth. prismaAdmin used because TermsAcceptance is a cross-tenant legal record, not org-scoped business data. Same pattern as SELF_READ but for writes. |
+
+### P1.A.10 Pages (middleware-gated)
+
+These are server-rendered pages with no direct DB access. Auth and access
+control are handled by middleware. Listed for completeness — they do not
+belong in the RLS Routes taxonomy (which classifies database client choice
+per API route).
+
+| Page | Access Control |
+|------|---------------|
+| `/terms` | Public, no auth |
+| `/privacy` | Public, no auth |
+| `/terms/accept` | Authenticated. Middleware redirects unauthenticated users to /login. Page is a client component that calls /api/terms/accept (classified above as BYPASS_NEEDED — SELF_WRITE). |
+
+### P1.A.10 Tables
+
+| Table | Scoping Strategy | Notes |
+|-------|-----------------|-------|
+| `TermsVersion` | PLATFORM_SCOPED | No RLS. Public-read policy data. Server-side writes only via attorney-PR migration. |
+| `TermsAcceptance` | PLATFORM_SCOPED | No RLS. Cross-tenant legal record. Server-side access only via prismaAdmin through /api/terms/accept and lib/auth.ts JWT injection. No client-side reads. |
+
+Both tables follow the same pattern as FeatureFlag/FeatureFlagAudit (P0.H.2)
+and AuditLog (P0.5.3b-3a) — platform-scoped tables with no tenant column,
+access controlled at the application layer via prismaAdmin and explicit
+role/session checks rather than RLS policies.
+
+### Re-acceptance flow
+
+JWT carries two fields: currentTermsVersionId (effective version at JWT
+mint time) and acceptedTermsVersionId (user's most recent acceptance).
+Middleware compares them on every authenticated, non-exempt request.
+If they differ, redirect to /terms/accept.
+
+The JWT is refreshed on sign-in and on explicit useSession().update()
+calls. After a user accepts, the /terms/accept client calls
+session.update() to refresh the JWT with the new acceptance, then
+window.location.href = /dashboard.
+
+### Exempt routes
+
+The middleware terms check excludes: /api/*, /_next/*, /login, /logout,
+/terms, /privacy, /terms/accept. All other authenticated routes require
+current-version acceptance.
+
+### Legal record properties
+
+- IP address captured from x-real-ip header (Vercel-observed edge IP, not
+  client-supplied). Falls back to last value of x-forwarded-for (also
+  edge-trustworthy) if x-real-ip is missing. The first value of
+  x-forwarded-for is client-supplied and spoofable — never used for legal
+  records.
+- User-agent captured from request headers
+- Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
+  was accepted, not just THAT it was accepted
+- TermsAcceptance rows are NEVER auto-deleted. Both FK relations use
+  onDelete: Restrict — user deletion blocks at the DB level if any
+  TermsAcceptance rows reference that User, and TermsVersion deletion
+  blocks if any TermsAcceptance references that version. Future user-
+  deletion flows must explicitly handle TermsAcceptance rows
+  (anonymize by setting userId to a sentinel "deleted user" row, OR
+  refuse to hard-delete and require soft-delete via isActive=false).
+  This is intentional: legal record retention must outlast user
+  lifecycle and survive operational mistakes.

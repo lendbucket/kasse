@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { Role } from "@prisma/client"
 import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
+import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
 import crypto from "crypto"
 import { getVerificationEmailHtml } from "@/lib/emails/verification"
@@ -10,10 +12,14 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, password, businessName } = await req.json()
+    const { name, email, password, businessName, acceptedTerms } = await req.json()
 
     if (!name || !email || !password || !businessName) {
       return NextResponse.json({ error: "All fields required" }, { status: 400 })
+    }
+
+    if (!acceptedTerms) {
+      return NextResponse.json({ error: "You must accept the Terms of Service and Privacy Policy" }, { status: 400 })
     }
 
     if (password.length < 8) {
@@ -30,33 +36,67 @@ export async function POST(req: NextRequest) {
     const verifyExp = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     const slug = businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
+    const orgId = crypto.randomUUID()
+    const userId = crypto.randomUUID()
 
-    const org = await prismaAdmin.organization.create({
-      data: {
-        name: businessName,
-        slug,
-        plan: "trial",
-        planStatus: "trial",
-        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-      },
-    })
+    // Read current terms version BEFORE the batch (read, not part of batch)
+    const currentTermsVersion = await getCurrentTermsVersion()
 
-    await prismaAdmin.user.create({
-      data: {
-        name,
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        role: Role.OWNER,
-        organizationId: org.id,
-        emailVerifyToken: verifyToken,
-        emailVerifyExp: verifyExp,
-      },
-    })
+    // Use the trustworthy Vercel edge-observed IP for legal records, not the
+    // client-supplied x-forwarded-for first hop (which is spoofable). Order of
+    // preference: x-real-ip (set by Vercel edge), then last value of
+    // x-forwarded-for (last hop is the edge, also trustworthy), then null.
+    const ipAddress =
+      req.headers.get("x-real-ip") ||
+      req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
+      null
+    const userAgent = req.headers.get("user-agent") || null
 
-    await prismaAdmin.businessSettings.create({
-      data: { organizationId: org.id },
-    })
+    // Atomic batch: Org + User + BusinessSettings + TermsAcceptance
+    // Mirrors the withAdminTx pattern from P1.A.7-d / P1.A.8 / P1.A.9.
+    // Uses client-side ID generation so the batch can reference orgId/userId
+    // without intermediate results.
+    await withAdminTx((p) => [
+      p.organization.create({
+        data: {
+          id: orgId,
+          name: businessName,
+          slug,
+          plan: "trial",
+          planStatus: "trial",
+          trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+        },
+      }),
+      p.user.create({
+        data: {
+          id: userId,
+          name,
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          role: Role.OWNER,
+          organizationId: orgId,
+          emailVerifyToken: verifyToken,
+          emailVerifyExp: verifyExp,
+        },
+      }),
+      p.businessSettings.create({
+        data: { organizationId: orgId },
+      }),
+      ...(currentTermsVersion
+        ? [p.termsAcceptance.create({
+            data: {
+              userId,
+              termsVersionId: currentTermsVersion.id,
+              ipAddress,
+              userAgent,
+            },
+          })]
+        : []),
+    ])
 
+    // Verification email sent AFTER the batch commits — best-effort, fail-soft.
+    // If the email fails, the user record still exists and can re-trigger
+    // via the resend flow on /login.
     const verifyUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${verifyToken}`
 
     await resend.emails.send({

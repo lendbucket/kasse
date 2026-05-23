@@ -205,6 +205,7 @@ model User {
   sentInvitations             StaffInvitation[]           @relation("StaffInvitationInviter")
   acceptedInvitations         StaffInvitation[]           @relation("StaffInvitationAcceptedUser")
   createdTags                 Tag[]                       @relation("TagCreatedBy")
+  termsAcceptances            TermsAcceptance[]
   customRole                  PermissionSet?              @relation("UserCustomRole", fields: [customRoleId], references: [id])
   organization                Organization?               @relation(fields: [organizationId], references: [id])
 
@@ -2342,6 +2343,37 @@ enum VerticalId {
   chiropractic
   physical_therapy
   general
+}
+
+model TermsVersion {
+  id                String             @id @default(cuid())
+  version           String             @unique
+  effectiveAt       DateTime
+  termsContentUrl   String
+  privacyContentUrl String
+  termsBodyHash     String
+  privacyBodyHash   String
+  createdAt         DateTime           @default(now())
+
+  acceptances       TermsAcceptance[]
+
+  @@index([effectiveAt])
+}
+
+model TermsAcceptance {
+  id              String       @id @default(cuid())
+  userId          String
+  termsVersionId  String
+  ipAddress       String?
+  userAgent       String?
+  acceptedAt      DateTime     @default(now())
+
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  termsVersion    TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, termsVersionId])
+  @@index([userId])
+  @@index([termsVersionId])
 }
 
 enum PlanTier {
