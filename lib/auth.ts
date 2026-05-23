@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import type { NextAuthOptions } from "next-auth"
 import { PrismaAdapter } from "@auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
@@ -54,7 +55,19 @@ function generateAppleClientSecret(): string | null {
   }
 }
 
+// Long-lived process caveat: this JWT is computed once at module load. In a
+// persistent Node process (Docker, self-host) the JWT would expire after 90
+// days and signing would silently fail at Apple's token endpoint. Kasse's
+// current deployment is 100% Vercel serverless, so cold starts re-mint the
+// JWT well within the 90-day window. If Kasse ever moves to a persistent
+// runtime, add a startup health check that warns when the JWT is >60 days
+// old, or refactor clientSecret to be regenerated per-request (NextAuth v4
+// does not natively support function-typed clientSecret, so a workaround
+// would be needed).
 const appleClientSecret = generateAppleClientSecret()
+
+// Lifted to module scope to avoid reconstructing on every signIn invocation.
+const OAUTH_PROVIDERS = new Set(["google", "apple"])
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prismaAdmin) as any,
@@ -134,8 +147,7 @@ export const authOptions: NextAuthOptions = {
       if (!account?.provider || account.provider === "credentials") return true
 
       // OAuth providers: Google and Apple share this bootstrap flow
-      const oauthProviders = new Set(["google", "apple"])
-      if (!oauthProviders.has(account.provider)) return true
+      if (!OAUTH_PROVIDERS.has(account.provider)) return true
 
       // Provider-specific email verification:
       // - Google: explicit email_verified check (defense-in-depth; Google's OAuth flow is primary protection)
@@ -182,8 +194,13 @@ export const authOptions: NextAuthOptions = {
       // when they sign in with Apple+Hide. This is expected and correct per
       // Apple's spec, but we log it so Robert can track frequency and address
       // via merchant-facing UI if needed.
+      // Track frequency of Hide My Email signups without leaking the pseudonymous
+      // relay address. Apple relay addresses are privacy-preserving by design;
+      // logging them verbatim defeats that intent. The hash is short and stable
+      // per-address so frequency tracking is still possible without exposing the value.
       if (account?.provider === "apple" && email.endsWith("@privaterelay.appleid.com")) {
-        console.warn("[auth] Apple Private Email Relay address used for new account bootstrap:", email)
+        const hashedEmail = createHash("sha256").update(email).digest("hex").slice(0, 8)
+        console.warn("[auth] Apple Private Email Relay used for new account bootstrap (hash:", hashedEmail + ")")
       }
 
       const name = user.name || (profile as any)?.name || email.split("@")[0]
