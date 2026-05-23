@@ -33,6 +33,8 @@
     "@sentry/nextjs": "^10.53.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/papaparse": "^5.5.2",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

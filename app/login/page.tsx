@@ -76,6 +76,8 @@ function LoginPageInner() {
         if (res.error.includes("EMAIL_NOT_VERIFIED")) {
           setSignInError("Please verify your email. Check your inbox.")
           setShowResendVerify(true)
+        } else if (res.error === "RATE_LIMITED") {
+          setSignInError("Too many sign-in attempts. Please wait a few minutes before trying again.")
         } else if (res.error.includes("ACCOUNT_DISABLED")) {
           setSignInError("This account has been disabled. Contact support.")
         } else {
@@ -107,6 +109,21 @@ function LoginPageInner() {
         body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz, acceptedTerms }),
       })
       const data = await res.json()
+      if (res.status === 429) {
+        const retryAfterSec = typeof data.retryAfter === "number" ? data.retryAfter : null
+        let message: string
+        if (retryAfterSec === null) {
+          message = data.error || "Too many registration attempts. Please try again in a few minutes."
+        } else if (retryAfterSec < 60) {
+          message = `Too many registration attempts. Please try again in ${retryAfterSec} seconds.`
+        } else {
+          const mins = Math.ceil(retryAfterSec / 60)
+          message = `Too many registration attempts. Please try again in ${mins} minute${mins === 1 ? "" : "s"}.`
+        }
+        setRegError(message)
+        setRegistering(false)
+        return
+      }
       if (!res.ok) {
         setRegError(data.error || "Registration failed")
       } else {

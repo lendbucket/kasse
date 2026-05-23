@@ -14,8 +14,43 @@ import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import type { NextRequest } from "next/server"
 import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/read"
+import { checkRateLimit } from "@/lib/rate-limit/check"
 import type { UtmParams } from "@/lib/utm/read"
 import { readVisitorIdFromCookies, readVisitorIdFromRequest } from "@/lib/experiments/visitor"
+
+/**
+ * Extract client IP from NextAuth's authorize() req.headers.
+ *
+ * NextAuth v4's `authorize(credentials, req)` types `req.headers` as
+ * `Record<string, string | string[] | undefined>` — a plain object, NOT a
+ * WHATWG Headers instance. Using `getRateLimitIp(req.headers as Headers)`
+ * would call `.get()` on a plain object and return undefined for every
+ * lookup, silently degrading rate-limit to email-only.
+ *
+ * This function reads via plain-object indexing and normalizes string-array
+ * values (multi-header case) to a single string by taking the first element.
+ *
+ * Mirrors getRateLimitIp's strategy: prefer x-real-ip, fall back to first
+ * hop of x-forwarded-for. Same trust requirements as getRateLimitIp (this
+ * is rate-limit use, not legal-record use).
+ */
+function getRateLimitIpFromNextAuthReq(reqHeaders: unknown): string | null {
+  if (!reqHeaders || typeof reqHeaders !== "object") return null
+  const h = reqHeaders as Record<string, string | string[] | undefined>
+
+  const realIpRaw = h["x-real-ip"]
+  const realIp = Array.isArray(realIpRaw) ? realIpRaw[0] : realIpRaw
+  if (realIp) return realIp
+
+  const xffRaw = h["x-forwarded-for"]
+  const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw
+  if (xff) {
+    const firstHop = xff.split(",")[0]?.trim()
+    if (firstHop) return firstHop
+  }
+
+  return null
+}
 
 // Generate Apple client secret JWT once at module load. Apple's spec allows
 // up to 6 months validity; we use 90 days as a balance between rotation
@@ -119,7 +154,21 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
+        // P1.A.13: Rate limit fires BEFORE input validation, matching the
+        // register-route philosophy documented in RLS_AUDIT.md. A bot probing
+        // empty credentials would otherwise bypass rate limiting on this path.
+        // Type-guard the email so non-string values fall back to IP-only.
+        const clientIp = getRateLimitIpFromNextAuthReq(req?.headers)
+        const credEmail = typeof credentials?.email === "string" && credentials.email
+          ? credentials.email
+          : null
+        const rl = await checkRateLimit("signin-credentials", clientIp, credEmail)
+        if (!rl.ok) {
+          throw new Error("RATE_LIMITED")
+        }
+
         if (!credentials?.email || !credentials?.password) return null
+
         const user = await prismaAdmin.user.findUnique({
           where: { email: credentials.email.toLowerCase() },
           include: { organization: true },

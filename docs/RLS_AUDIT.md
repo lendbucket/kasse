@@ -1668,11 +1668,18 @@ current-version acceptance.
 
 ### Legal record properties
 
-- IP address captured from x-real-ip header (Vercel-observed edge IP, not
-  client-supplied). Falls back to last value of x-forwarded-for (also
-  edge-trustworthy) if x-real-ip is missing. The first value of
-  x-forwarded-for is client-supplied and spoofable — never used for legal
-  records.
+- IP address captured via lib/rate-limit/check.ts:getLegalRecordIp(). Order
+  of preference: x-real-ip (Vercel-observed edge IP), then LAST hop of
+  x-forwarded-for. Last-hop is whatever the most recent trusted proxy added
+  (on Vercel: the edge; on Cloudflare-in-front-of-Vercel: the
+  CF-Connecting-IP-equivalent value). The first hop of x-forwarded-for can
+  be client-supplied and spoofed, so it is never used for legal records.
+
+  Different trust requirements from rate-limit IP extraction
+  (getRateLimitIp). For rate-limit, IP-axis degradation is acceptable
+  (falls back to email-only limiting). For legal records, an attacker-
+  controlled IP would corrupt the audit trail. The two helpers are
+  intentionally separate.
 - User-agent captured from request headers
 - Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
   was accepted, not just THAT it was accepted
@@ -1805,3 +1812,104 @@ deterministic results without writes; the trade-off is that we can't query
 "who was in variant A?" from the DB — we'd need to recompute or log
 exposures. Exposure logging can be added later as additive P3+ work without
 changing the resolution logic.
+
+## P1.A.13 — Rate limiting via Upstash Redis (2026-05-23)
+
+### Infrastructure
+
+External dependency added: Upstash Redis. Env vars required:
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
+
+When env vars are missing (e.g. dev environment without Upstash setup),
+the rate limiter logs a single startup-time warning and fail-opens. This
+means the PR ships safely before the Upstash account is provisioned.
+
+### Limits
+
+10 attempts per 10 minutes per (IP, endpoint, identifier).
+
+- Algorithm: sliding window (via @upstash/ratelimit)
+- Identifier resolves to email when available, otherwise falls back to IP
+- 3-axis key defeats both "1 IP, many emails" (botnet cycling) and
+  "1 email, many IPs" (distributed brute-force)
+
+IP extraction for rate-limiting uses lib/rate-limit/check.ts:getRateLimitIp
+(prefers x-real-ip, falls back to FIRST hop of x-forwarded-for). This is
+intentionally distinct from legal-record IP extraction (getLegalRecordIp,
+LAST hop fallback) because rate-limit and legal records have different
+trust requirements. Do not consolidate the two helpers. See the P1.A.10
+"Legal record properties" subsection for the legal-record extraction
+rationale.
+
+For NextAuth's credentials authorize() callback specifically, IP is
+extracted via a private helper getRateLimitIpFromNextAuthReq in lib/auth.ts.
+This is because NextAuth v4 types `req.headers` as
+`Record<string, string | string[] | undefined>` — a plain object, NOT a
+WHATWG Headers instance. Using getRateLimitIp(req.headers as Headers) would
+silently return null for every lookup and degrade rate-limit to email-only
+on the credentials sign-in path.
+
+**Rate limit fires before input validation (intentional).** A request with
+no email body hits the rate-limit check first, where the identifier falls
+back to the client IP. The result: empty-body and valid-email requests
+land on different rate-limit keys (IP-only vs IP+email). This is a known
+minor axis-of-attack asymmetry — a bot can probe the input-validation
+layer without burning an email-bound rate-limit slot. We accept this
+because:
+
+1. The IP-axis still catches volume from any single source at 10/10min,
+   regardless of body shape
+2. Reversing the order — validation first, rate-limit after — creates a
+   "free probe" channel where attackers can hit the validation layer
+   millions of times without ever consuming a rate-limit slot. That's a
+   worse trade-off
+3. The asymmetry only matters once volume gets high enough to exhaust the
+   IP-axis, at which point the 10/10min already triggered
+
+If real-world abuse shows the asymmetry being exploited (e.g. logs show
+high volume of no-email POSTs with the same IP cycling under the 10/10min
+threshold), this can be tightened in a follow-up by either:
+- Lowering the limit specifically for malformed requests
+- Adding a separate "register-malformed" endpoint key
+- Moving rate-limit after validation (accepts the free-probe risk)
+
+### Routes protected (this PR)
+
+- `/api/auth/register` (POST) — endpoint key: "register"
+- `/api/auth/[...nextauth]` credentials authorize() — endpoint key:
+  "signin-credentials". OAuth paths (Google + Apple) are NOT
+  rate-limited at this layer — they're already gated by Google/Apple's
+  own anti-abuse infrastructure and our domain verification.
+
+### Routes deferred
+
+- `/api/auth/forgot-password` — does not exist yet. Will be added when
+  the forgot-password flow ships (likely P1.A.16 or P1.B).
+- `/api/auth/verify-email` — token-based, single-use, sufficient on its
+  own. Adding rate limit here would lock out users with email retry
+  loops; defer until abuse is observed.
+
+### Failure mode
+
+Fail-open. When Upstash returns an error or times out:
+- Request is allowed through
+- `console.warn` is emitted with endpoint + error message
+- Vercel logs surface the failure for monitoring
+
+Rationale: auth flows must NEVER be blocked by rate-limit infrastructure
+failures. The cost of a brief abuse window during an Upstash outage is
+strictly less than the cost of locking out legitimate users.
+
+### Error surfaces
+
+- HTTP 429 with Retry-After, X-RateLimit-* headers from /api/auth/register
+- NextAuth throws "RATE_LIMITED" error code from credentials authorize,
+  surfaced in app/login/page.tsx as user-friendly copy
+
+### RLS classification
+
+No new routes, no DB writes from this PR (rate limit state lives in
+Upstash, not Postgres). The Upstash client is module-scoped, not
+tenant-scoped — appropriate since rate limit data is platform-level
+abuse-defense, not tenant data.

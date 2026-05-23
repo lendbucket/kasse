@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
+import { checkRateLimit, getRateLimitIp, getLegalRecordIp } from "@/lib/rate-limit/check"
 import { readVisitorIdFromCookies } from "@/lib/experiments/visitor"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
@@ -15,6 +16,33 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 export async function POST(req: NextRequest) {
   try {
     const { name, email, password, businessName, acceptedTerms } = await req.json()
+
+    // P1.A.13: Rate limit by IP + endpoint + email. Returns 429 if exceeded.
+    // Fail-open on infrastructure errors — logged via console.warn.
+    const clientIp = getRateLimitIp(req.headers)
+    // Defensive: req.json() returns any. Email might be undefined, empty string,
+    // number, or object if the client sends malformed JSON. Only pass to
+    // rate-limit when it's a non-empty string; otherwise fall back to IP-only.
+    const rateLimitIdentifier = typeof email === "string" && email ? email : null
+    const rl = await checkRateLimit("register", clientIp, rateLimitIdentifier)
+    if (!rl.ok) {
+      const retryAfterSec = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))
+      return NextResponse.json(
+        {
+          error: "Too many registration attempts. Please try again in a few minutes.",
+          retryAfter: retryAfterSec,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfterSec),
+            "X-RateLimit-Limit": String(rl.limit),
+            "X-RateLimit-Remaining": String(rl.remaining),
+            "X-RateLimit-Reset": String(Math.ceil(rl.reset / 1000)),
+          },
+        },
+      )
+    }
 
     if (!name || !email || !password || !businessName) {
       return NextResponse.json({ error: "All fields required" }, { status: 400 })
@@ -50,14 +78,9 @@ export async function POST(req: NextRequest) {
     // P1.A.12: read visitor ID for A/B attribution
     const visitorId = await readVisitorIdFromCookies()
 
-    // Use the trustworthy Vercel edge-observed IP for legal records, not the
-    // client-supplied x-forwarded-for first hop (which is spoofable). Order of
-    // preference: x-real-ip (set by Vercel edge), then last value of
-    // x-forwarded-for (last hop is the edge, also trustworthy), then null.
-    const ipAddress =
-      req.headers.get("x-real-ip") ||
-      req.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ||
-      null
+    // Use getLegalRecordIp for legal records — different trust requirements from
+    // rate-limit IP extraction. See lib/rate-limit/check.ts for the full rationale.
+    const ipAddress = getLegalRecordIp(req.headers)
     const userAgent = req.headers.get("user-agent") || null
 
     // Atomic batch: Org + User + BusinessSettings + TermsAcceptance
