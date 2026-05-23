@@ -116,6 +116,23 @@ Routes that use `prismaAdmin` to read the authenticated user's OWN row (via `ses
 
 This bucket persists past P1.A.3b (the location-route TENANT_SCOPED flip that closes most ORG_BOOTSTRAP usage). refresh-session stays because the JWT staleness scenario isn't unique to onboarding.
 
+### BYPASS_NEEDED — SELF_WRITE (authenticated user writes own row)
+
+Same security property as SELF_READ but for write operations. Routes that
+use `prismaAdmin` to create or update a row belonging to the authenticated
+user, with the row scoped by `session.user.id` exclusively. Justification
+for `prismaAdmin`: the data being written is cross-tenant (legal records,
+account-level state) and not part of any specific organization's tenant
+scope.
+
+**Security property**: `session.user.id` is server-verified by NextAuth.
+The query writes a row with `userId: session.user.id` exclusively — the
+caller cannot write a row attributed to another user.
+
+| Route | Method(s) | Reason |
+|-------|-----------|--------|
+| `/api/terms/accept` | POST | Creates TermsAcceptance row for caller (SELF_WRITE — P1.A.10). Cross-tenant legal record, not org-scoped. |
+
 ### BYPASS_NEEDED — ORG_BOOTSTRAP (authenticated, no org yet)
 
 Used during the bootstrap window of onboarding for one operation: org-create (no org exists yet, so `withTenantScope` has no tenant to scope by). The bootstrap call uses `prismaAdmin` because there's no tenant context. Ownership is verified via the OnboardingSession row (session.userId must match the authenticated caller). Mandatory audit logging of the bootstrap event.
@@ -1600,19 +1617,26 @@ content URLs (/terms, /privacy) pointing to "Coming soon" stub pages.
 Real attorney-drafted documents land in a follow-up PR; that PR updates
 the URLs and hashes.
 
-### RLS classification
+### P1.A.10 Routes
 
-- POST /api/terms/accept — BYPASS_NEEDED — TENANT-SCOPED via session.user.id;
-  uses prismaAdmin to bypass RLS because TermsAcceptance is a global
-  (cross-tenant) legal record, not a tenant-scoped business record.
-- GET /terms/accept — BYPASS_NEEDED — TENANT-SCOPED via session.user.id;
-  same reason as above.
-- GET /terms, GET /privacy — PUBLIC, no auth required.
-- TermsVersion table: NO RLS. Public read at the SQL level (just policy
-  definitions, no PII).
-- TermsAcceptance table: NO RLS. Server-side access only via prismaAdmin
-  through /api/terms/accept and middleware JWT injection. No client-side
-  Supabase reads of this table.
+| Route | Method(s) | Classification | Reason |
+|-------|-----------|---------------|--------|
+| `/api/terms/accept` | POST | BYPASS_NEEDED — SELF_WRITE | Authenticated user creates a TermsAcceptance row for themselves; uses session.user.id from server-verified NextAuth. prismaAdmin used because TermsAcceptance is a cross-tenant legal record, not org-scoped business data. Same pattern as SELF_READ but for writes. |
+| `/terms/accept` | GET (page) | BYPASS_NEEDED — SELF_WRITE | Server-rendered page; same auth boundary as the POST route. |
+| `/terms` | GET (page) | PUBLIC_STATIC | No auth, no DB. Stub page. |
+| `/privacy` | GET (page) | PUBLIC_STATIC | No auth, no DB. Stub page. |
+
+### P1.A.10 Tables
+
+| Table | Scoping Strategy | Notes |
+|-------|-----------------|-------|
+| `TermsVersion` | PLATFORM_SCOPED | No RLS. Public-read policy data. Server-side writes only via attorney-PR migration. |
+| `TermsAcceptance` | PLATFORM_SCOPED | No RLS. Cross-tenant legal record. Server-side access only via prismaAdmin through /api/terms/accept and lib/auth.ts JWT injection. No client-side reads. |
+
+Both tables follow the same pattern as FeatureFlag/FeatureFlagAudit (P0.H.2)
+and AuditLog (P0.5.3b-3a) — platform-scoped tables with no tenant column,
+access controlled at the application layer via prismaAdmin and explicit
+role/session checks rather than RLS policies.
 
 ### Re-acceptance flow
 
@@ -1638,11 +1662,12 @@ current-version acceptance.
 - User-agent captured from request headers
 - Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
   was accepted, not just THAT it was accepted
-- TermsAcceptance rows are NEVER deleted (onDelete: Restrict on
-  termsVersion relation prevents cascade); legal record retention
-  outlasts user lifecycle
-- User deletion DOES cascade-delete acceptance rows via onDelete: Cascade
-  on the user relation. If long-term legal retention beyond user lifecycle
-  is required by regulation, the user-deletion flow should soft-delete
-  (set isActive=false) instead of hard-delete, which is the current pattern
-  for OWNER accounts. Documented for the future user-deletion PR.
+- TermsAcceptance rows are NEVER auto-deleted. Both FK relations use
+  onDelete: Restrict — user deletion blocks at the DB level if any
+  TermsAcceptance rows reference that User, and TermsVersion deletion
+  blocks if any TermsAcceptance references that version. Future user-
+  deletion flows must explicitly handle TermsAcceptance rows
+  (anonymize by setting userId to a sentinel "deleted user" row, OR
+  refuse to hard-delete and require soft-delete via isActive=false).
+  This is intentional: legal record retention must outlast user
+  lifecycle and survive operational mistakes.

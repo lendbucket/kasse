@@ -2368,7 +2368,7 @@ model TermsAcceptance {
   userAgent       String?
   acceptedAt      DateTime     @default(now())
 
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   termsVersion    TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
 
   @@unique([userId, termsVersionId])

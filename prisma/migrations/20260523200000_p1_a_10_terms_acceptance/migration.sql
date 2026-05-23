@@ -40,7 +40,7 @@ CREATE INDEX "TermsAcceptance_termsVersionId_idx" ON "TermsAcceptance"("termsVer
 CREATE UNIQUE INDEX "TermsAcceptance_userId_termsVersionId_key" ON "TermsAcceptance"("userId", "termsVersionId");
 
 -- AddForeignKey
-ALTER TABLE "TermsAcceptance" ADD CONSTRAINT "TermsAcceptance_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "TermsAcceptance" ADD CONSTRAINT "TermsAcceptance_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "TermsAcceptance" ADD CONSTRAINT "TermsAcceptance_termsVersionId_fkey" FOREIGN KEY ("termsVersionId") REFERENCES "TermsVersion"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

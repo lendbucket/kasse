@@ -3,6 +3,7 @@ import { Role } from "@prisma/client"
 import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
+import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
 import crypto from "crypto"
 import { getVerificationEmailHtml } from "@/lib/emails/verification"
@@ -35,50 +36,65 @@ export async function POST(req: NextRequest) {
     const verifyExp = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     const slug = businessName.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
+    const orgId = crypto.randomUUID()
+    const userId = crypto.randomUUID()
 
-    // P1.A.10: fetch current terms version for acceptance recording
+    // Read current terms version BEFORE the batch (read, not part of batch)
     const currentTermsVersion = await getCurrentTermsVersion()
 
-    const org = await prismaAdmin.organization.create({
-      data: {
-        name: businessName,
-        slug,
-        plan: "trial",
-        planStatus: "trial",
-        trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-      },
+    const ipAddress = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()) || null
+    const userAgent = req.headers.get("user-agent") || null
+
+    // Atomic batch: Org + User + BusinessSettings + TermsAcceptance
+    // Mirrors the withAdminTx pattern from P1.A.7-d / P1.A.8 / P1.A.9.
+    // Uses client-side ID generation so the batch can reference orgId/userId
+    // without intermediate results.
+    await withAdminTx((p) => {
+      const ops: any[] = [
+        p.organization.create({
+          data: {
+            id: orgId,
+            name: businessName,
+            slug,
+            plan: "trial",
+            planStatus: "trial",
+            trialEndsAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+          },
+        }),
+        p.user.create({
+          data: {
+            id: userId,
+            name,
+            email: email.toLowerCase(),
+            password: hashedPassword,
+            role: Role.OWNER,
+            organizationId: orgId,
+            emailVerifyToken: verifyToken,
+            emailVerifyExp: verifyExp,
+          },
+        }),
+        p.businessSettings.create({
+          data: { organizationId: orgId },
+        }),
+      ]
+      if (currentTermsVersion) {
+        ops.push(
+          p.termsAcceptance.create({
+            data: {
+              userId,
+              termsVersionId: currentTermsVersion.id,
+              ipAddress,
+              userAgent,
+            },
+          })
+        )
+      }
+      return ops
     })
 
-    const newUser = await prismaAdmin.user.create({
-      data: {
-        name,
-        email: email.toLowerCase(),
-        password: hashedPassword,
-        role: Role.OWNER,
-        organizationId: org.id,
-        emailVerifyToken: verifyToken,
-        emailVerifyExp: verifyExp,
-      },
-    })
-
-    await prismaAdmin.businessSettings.create({
-      data: { organizationId: org.id },
-    })
-
-    // P1.A.10: record terms acceptance atomically with registration
-    if (currentTermsVersion) {
-      const ipAddress = (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()) || null
-      const userAgent = req.headers.get("user-agent") || null
-      await prismaAdmin.termsAcceptance.create({
-        data: {
-          userId: newUser.id,
-          termsVersionId: currentTermsVersion.id,
-          ipAddress,
-          userAgent,
-        },
-      })
-    }
-
+    // Verification email sent AFTER the batch commits — best-effort, fail-soft.
+    // If the email fails, the user record still exists and can re-trigger
+    // via the resend flow on /login.
     const verifyUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${verifyToken}`
 
     await resend.emails.send({
