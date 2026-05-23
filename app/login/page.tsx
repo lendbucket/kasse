@@ -76,7 +76,7 @@ function LoginPageInner() {
         if (res.error.includes("EMAIL_NOT_VERIFIED")) {
           setSignInError("Please verify your email. Check your inbox.")
           setShowResendVerify(true)
-        } else if (res.error.includes("RATE_LIMITED")) {
+        } else if (res.error === "RATE_LIMITED") {
           setSignInError("Too many sign-in attempts. Please wait a few minutes before trying again.")
         } else if (res.error.includes("ACCOUNT_DISABLED")) {
           setSignInError("This account has been disabled. Contact support.")
