@@ -29,22 +29,25 @@ const FAIL_OPEN_RESULT: RateLimitResult = {
 }
 
 // Module-level cached limiter — Ratelimit instances are cheap but caching
-// avoids redundant config parsing on every check.
-// NOTE FOR LOCAL DEV: This cache persists across Next.js HMR cycles. After
-// adding/changing UPSTASH_REDIS_REST_* env vars, restart the dev server.
+// avoids redundant config parsing on every check. The "not configured"
+// state is NOT cached so env vars added mid-session are picked up.
 let cachedLimiter: Ratelimit | null = null
 
 function getLimiter(): Ratelimit | null {
   if (cachedLimiter) return cachedLimiter
 
   const redis = getRedisClient()
-  if (!redis) return null
+  if (!redis) {
+    // Don't cache null — if Redis becomes available on a later call,
+    // we want getLimiter to pick it up without process restart.
+    return null
+  }
 
   cachedLimiter = new Ratelimit({
     redis,
-    limiter: Ratelimit.slidingWindow(10, "10 m"),  // 10 attempts per 10 minutes
+    limiter: Ratelimit.slidingWindow(10, "10 m"),
     prefix: "kasse:rl",
-    analytics: false,  // skip analytics writes — saves Upstash command count
+    analytics: false,
   })
 
   return cachedLimiter

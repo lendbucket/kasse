@@ -110,7 +110,17 @@ function LoginPageInner() {
       })
       const data = await res.json()
       if (res.status === 429) {
-        setRegError(data.error || "Too many registration attempts. Please try again in a few minutes.")
+        const retryAfterSec = typeof data.retryAfter === "number" ? data.retryAfter : null
+        let message: string
+        if (retryAfterSec === null) {
+          message = data.error || "Too many registration attempts. Please try again in a few minutes."
+        } else if (retryAfterSec < 60) {
+          message = `Too many registration attempts. Please try again in ${retryAfterSec} seconds.`
+        } else {
+          const mins = Math.ceil(retryAfterSec / 60)
+          message = `Too many registration attempts. Please try again in ${mins} minute${mins === 1 ? "" : "s"}.`
+        }
+        setRegError(message)
         setRegistering(false)
         return
       }
