@@ -20,7 +20,11 @@ export async function POST(req: NextRequest) {
     // P1.A.13: Rate limit by IP + endpoint + email. Returns 429 if exceeded.
     // Fail-open on infrastructure errors — logged via console.warn.
     const clientIp = getRateLimitIp(req.headers)
-    const rl = await checkRateLimit("register", clientIp, email ?? null)
+    // Defensive: req.json() returns any. Email might be undefined, empty string,
+    // number, or object if the client sends malformed JSON. Only pass to
+    // rate-limit when it's a non-empty string; otherwise fall back to IP-only.
+    const rateLimitIdentifier = typeof email === "string" && email ? email : null
+    const rl = await checkRateLimit("register", clientIp, rateLimitIdentifier)
     if (!rl.ok) {
       const retryAfterSec = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))
       return NextResponse.json(

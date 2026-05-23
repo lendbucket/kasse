@@ -154,14 +154,20 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        if (!credentials?.email || !credentials?.password) return null
-
-        // P1.A.13: Rate limit by IP + endpoint + email.
+        // P1.A.13: Rate limit fires BEFORE input validation, matching the
+        // register-route philosophy documented in RLS_AUDIT.md. A bot probing
+        // empty credentials would otherwise bypass rate limiting on this path.
+        // Type-guard the email so non-string values fall back to IP-only.
         const clientIp = getRateLimitIpFromNextAuthReq(req?.headers)
-        const rl = await checkRateLimit("signin-credentials", clientIp, credentials.email ?? null)
+        const credEmail = typeof credentials?.email === "string" && credentials.email
+          ? credentials.email
+          : null
+        const rl = await checkRateLimit("signin-credentials", clientIp, credEmail)
         if (!rl.ok) {
           throw new Error("RATE_LIMITED")
         }
+
+        if (!credentials?.email || !credentials?.password) return null
 
         const user = await prismaAdmin.user.findUnique({
           where: { email: credentials.email.toLowerCase() },

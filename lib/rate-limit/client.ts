@@ -60,7 +60,9 @@ export function getRedisClient(): Redis | null {
 }
 
 /**
- * Test helper: reset the cached client AND warning flag. Only use in tests.
+ * @internal — test use only. Resets the cached Redis client and warning
+ * flag so subsequent calls re-attempt initialization. Not intended for
+ * production code paths.
  */
 export function _resetRedisClient(): void {
   cachedClient = undefined

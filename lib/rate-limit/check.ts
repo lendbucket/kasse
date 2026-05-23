@@ -71,7 +71,12 @@ export async function checkRateLimit(
   const limiter = getLimiter()
   if (!limiter) return FAIL_OPEN_RESULT
 
-  // Normalize: lowercase email, strip whitespace, fall back to ip
+  // Degenerate case: if ip is null, both normalizedIp and normalizedIdentifier
+  // collapse to "unknown-ip", making the key `endpoint:unknown-ip:unknown-ip`.
+  // All null-IP traffic shares one rate-limit bucket. This is intentional —
+  // we still want SOME limiting on null-IP requests (e.g. tests, server-to-
+  // server probes that don't set forwarded headers), but at low priority
+  // since legitimate users always have an IP from Vercel's edge.
   const normalizedIp = (ip ?? "unknown-ip").trim().toLowerCase()
   const normalizedIdentifier = (identifier ?? normalizedIp).trim().toLowerCase()
   const key = `${endpoint}:${normalizedIp}:${normalizedIdentifier}`
