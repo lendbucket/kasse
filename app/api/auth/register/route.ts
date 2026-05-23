@@ -53,11 +53,15 @@ export async function POST(req: NextRequest) {
     const tokenToVerify = typeof turnstileToken === "string" ? turnstileToken : null
     const turnstileResult = await verifyTurnstileToken(tokenToVerify, clientIp)
     if (!turnstileResult.ok) {
+      // Log the Cloudflare error code server-side for debugging but DON'T
+      // surface it in the response — bot operators can use detailed error
+      // codes ("timeout-or-duplicate", "invalid-input-response") as an
+      // oracle to refine their tooling. The user-facing message is enough.
+      console.warn(
+        `[turnstile] verification failed for ${clientIp ?? "unknown-ip"}: ${turnstileResult.reason ?? "no reason"}`,
+      )
       return NextResponse.json(
-        {
-          error: "Verification failed. Please try again.",
-          reason: turnstileResult.reason,
-        },
+        { error: "Verification failed. Please try again." },
         { status: 400 },
       )
     }

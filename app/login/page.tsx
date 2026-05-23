@@ -63,62 +63,64 @@ function LoginPageInner() {
 
   // P1.A.14: Turnstile token for sign-up form bot defense
   const [turnstileToken, setTurnstileToken] = useState("")
+  const [turnstileScriptLoaded, setTurnstileScriptLoaded] = useState(false)
   const turnstileWidgetIdRef = useRef<string | null>(null)
   const turnstileContainerRef = useRef<HTMLDivElement>(null)
 
   // P1.A.14: Render Turnstile widget on sign-up tab.
+  // Gated on turnstileScriptLoaded (set by <Script onLoad>) instead of
+  // polling — eliminates race on slow mobile connections.
   useEffect(() => {
     if (tab !== "signup") return
     if (regSuccess) return
+    if (!turnstileScriptLoaded) return
     if (!turnstileContainerRef.current) return
+    if (typeof window === "undefined" || !window.turnstile) {
+      // Defensive: script said it loaded but the global isn't there.
+      console.warn("[turnstile] script reported loaded but window.turnstile missing")
+      return
+    }
+
+    // Clean up any previous widget on this container before re-rendering.
+    if (turnstileWidgetIdRef.current) {
+      // Bare catch: cleanup of a third-party global widget — if remove()
+      // throws (widget already removed), we still want to proceed with render.
+      try { window.turnstile.remove(turnstileWidgetIdRef.current) } catch {}
+      turnstileWidgetIdRef.current = null
+    }
+
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
+    if (!siteKey) {
+      console.warn("[turnstile] NEXT_PUBLIC_TURNSTILE_SITE_KEY missing — widget skipped")
+      return
+    }
 
     let cancelled = false
-    let attempts = 0
-    const tryRender = () => {
-      if (cancelled) return
-      if (typeof window === "undefined" || !window.turnstile) {
-        if (attempts++ < 20) {
-          setTimeout(tryRender, 100)
-        } else {
-          console.warn("[turnstile] script failed to load after 2s")
-        }
-        return
-      }
-      if (turnstileWidgetIdRef.current) {
-        try { window.turnstile.remove(turnstileWidgetIdRef.current) } catch {}
-        turnstileWidgetIdRef.current = null
-      }
-      const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
-      if (!siteKey) {
-        console.warn("[turnstile] NEXT_PUBLIC_TURNSTILE_SITE_KEY missing — widget skipped")
-        return
-      }
-      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current!, {
-        sitekey: siteKey,
-        theme: "light",
-        size: "flexible",
-        action: "register",
-        callback: (token) => {
-          if (!cancelled) setTurnstileToken(token)
-        },
-        "error-callback": () => {
-          if (!cancelled) setTurnstileToken("")
-        },
-        "expired-callback": () => {
-          if (!cancelled) setTurnstileToken("")
-        },
-      })
-    }
-    tryRender()
+    turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+      sitekey: siteKey,
+      theme: "light",
+      size: "flexible",
+      action: "register",
+      callback: (token) => {
+        if (!cancelled) setTurnstileToken(token)
+      },
+      "error-callback": () => {
+        if (!cancelled) setTurnstileToken("")
+      },
+      "expired-callback": () => {
+        if (!cancelled) setTurnstileToken("")
+      },
+    })
 
     return () => {
       cancelled = true
       if (turnstileWidgetIdRef.current && typeof window !== "undefined" && window.turnstile) {
+        // Bare catch: cleanup of a third-party global widget on unmount.
         try { window.turnstile.remove(turnstileWidgetIdRef.current) } catch {}
         turnstileWidgetIdRef.current = null
       }
     }
-  }, [tab, regSuccess])
+  }, [tab, regSuccess, turnstileScriptLoaded])
 
   // P1.A.14: Reset Turnstile token after 4 minutes (token expires at 5).
   useEffect(() => {
@@ -611,6 +613,7 @@ function LoginPageInner() {
       <Script
         src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
         strategy="afterInteractive"
+        onLoad={() => setTurnstileScriptLoaded(true)}
       />
 
       <style>{`

@@ -36,6 +36,23 @@ export interface VerifyResult {
   reason?: string  // populated only when ok=false; null/undefined otherwise
 }
 
+/**
+ * Per-warm-instance dedup flag for the "missing secret" warning.
+ *
+ * Vercel serverless: module state persists for the lifetime of a warm
+ * function instance. On cold start, this resets to `false` and the warning
+ * may fire once on that new instance. Across many concurrent instances,
+ * each instance independently dedups.
+ *
+ * This is intentional: we DO want to know when a deploy is misconfigured.
+ * One warning per warm instance is loud enough to surface in logs without
+ * being spammy.
+ *
+ * The reset below (when secret IS present) handles the case where env vars
+ * were missing, then added (e.g. via Vercel env var update). On the next
+ * call that finds the secret present, the flag resets so a future removal
+ * re-fires the warning.
+ */
 let hasWarnedAboutMissingSecret = false
 
 /**
