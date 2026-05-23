@@ -6,6 +6,7 @@ import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import { readUtmFromCookies, hasAnyUtm } from "@/lib/utm/read"
 import { checkRateLimit } from "@/lib/rate-limit/check"
 import { getRateLimitIp, getLegalRecordIp } from "@/lib/http/headers"
+import { verifyTurnstileToken } from "@/lib/turnstile/verify"
 import { readVisitorIdFromCookies } from "@/lib/experiments/visitor"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
 import { Resend } from "resend"
@@ -16,7 +17,7 @@ const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, password, businessName, acceptedTerms } = await req.json()
+    const { name, email, password, businessName, acceptedTerms, turnstileToken } = await req.json()
 
     // P1.A.13: Rate limit by IP + endpoint + email. Returns 429 if exceeded.
     // Fail-open on infrastructure errors — logged via console.warn.
@@ -42,6 +43,26 @@ export async function POST(req: NextRequest) {
             "X-RateLimit-Reset": String(Math.ceil(rl.reset / 1000)),
           },
         },
+      )
+    }
+
+    // P1.A.14: Verify Turnstile token before any business logic.
+    // Reuses the rate-limit IP helper (clientIp computed above). The
+    // token comes from the cf-turnstile-response widget callback on the
+    // client form. Defensive: typeof guard against malformed input.
+    const tokenToVerify = typeof turnstileToken === "string" ? turnstileToken : null
+    const turnstileResult = await verifyTurnstileToken(tokenToVerify, clientIp)
+    if (!turnstileResult.ok) {
+      // Log the Cloudflare error code server-side for debugging but DON'T
+      // surface it in the response — bot operators can use detailed error
+      // codes ("timeout-or-duplicate", "invalid-input-response") as an
+      // oracle to refine their tooling. The user-facing message is enough.
+      console.warn(
+        `[turnstile] verification failed for ${clientIp ?? "unknown-ip"}: ${turnstileResult.reason ?? "no reason"}`,
+      )
+      return NextResponse.json(
+        { error: "Verification failed. Please try again." },
+        { status: 400 },
       )
     }
 
