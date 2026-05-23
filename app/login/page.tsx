@@ -58,6 +58,7 @@ function LoginPageInner() {
   const [regSuccess, setRegSuccess] = useState(false)
   const [regSuccessEmail, setRegSuccessEmail] = useState("")
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
 
   async function handleSignIn(e: FormEvent) {
     e.preventDefault()
@@ -93,13 +94,17 @@ function LoginPageInner() {
   async function handleSignUp(e: FormEvent) {
     e.preventDefault()
     if (!regName || !regBiz || !regEmail || !regPw || registering) return
+    if (!acceptedTerms) {
+      setRegError("You must accept the Terms of Service and Privacy Policy.")
+      return
+    }
     setRegistering(true)
     setRegError("")
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz }),
+        body: JSON.stringify({ name: regName, email: regEmail, password: regPw, businessName: regBiz, acceptedTerms: true }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -418,17 +423,38 @@ function LoginPageInner() {
                   </div>
                 </div>
               )}
+              {/* P1.A.10: Terms acceptance checkbox */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  id="acceptTerms"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  style={{ marginTop: 3, accentColor: "#606E74" }}
+                />
+                <label htmlFor="acceptTerms" style={{ fontSize: 13, color: "#606E74", lineHeight: 1.5 }}>
+                  I agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: "#606E74", textDecoration: "underline" }}>
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: "#606E74", textDecoration: "underline" }}>
+                    Privacy Policy
+                  </a>
+                </label>
+              </div>
               {regError && (
                 <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)" }}>
                   <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{regError}</p>
                 </div>
               )}
-              <button type="submit" disabled={registering}
+              <button type="submit" disabled={registering || !acceptedTerms}
                 style={{
                   height: 44, width: "100%", borderRadius: 12, border: "none",
                   background: "#606E74", color: "white", fontSize: 14, fontWeight: 600,
-                  cursor: "pointer", transition: "all 150ms", marginTop: 4,
-                  opacity: registering ? 0.6 : 1,
+                  cursor: acceptedTerms && !registering ? "pointer" : "not-allowed",
+                  transition: "all 150ms", marginTop: 4,
+                  opacity: registering || !acceptedTerms ? 0.6 : 1,
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}>
                 {registering && <Loader2 size={16} className="animate-spin" />}

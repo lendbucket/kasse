@@ -51,6 +51,27 @@ export async function middleware(req: NextRequest) {
   };
 
   if (result.ok) {
+    // P1.A.10: Terms acceptance gate. Redirect authenticated users who haven't
+    // accepted the current TermsVersion to /terms/accept. Compares JWT fields
+    // injected by lib/auth.ts — no DB call per request.
+    const isTermsExempt =
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/_next/") ||
+      pathname === "/login" ||
+      pathname === "/logout" ||
+      pathname === "/terms" ||
+      pathname === "/privacy" ||
+      pathname.startsWith("/terms/accept");
+
+    if (session && !isTermsExempt) {
+      const currentVersionId = token?.currentTermsVersionId as string | undefined;
+      const acceptedVersionId = token?.acceptedTermsVersionId as string | null | undefined;
+
+      if (currentVersionId && acceptedVersionId !== currentVersionId) {
+        return withRequestId(NextResponse.redirect(new URL("/terms/accept", req.url)));
+      }
+    }
+
     return withRequestId(
       NextResponse.next({ request: { headers: requestHeaders } }),
     );

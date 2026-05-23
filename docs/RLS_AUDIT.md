@@ -1582,3 +1582,67 @@ uses prismaAdmin; no direct DB calls in the route file).
 
 None. All bootstrap writes go through prismaAdmin (same as /api/auth/register
 and Google OAuth from P1.A.8).
+
+## P1.A.10 — Terms + Privacy acceptance with version tracking (2026-05-23)
+
+### Schema
+
+Two new tables: TermsVersion (master list of policy versions with body
+hashes and content URLs) and TermsAcceptance (per-user, per-version
+acceptance records with IP, userAgent, timestamp).
+
+User model gets a reverse relation `acceptances TermsAcceptance[]`.
+
+### Bootstrap
+
+Initial TermsVersion v1.0.0 is seeded in the migration with placeholder
+content URLs (/terms, /privacy) pointing to "Coming soon" stub pages.
+Real attorney-drafted documents land in a follow-up PR; that PR updates
+the URLs and hashes.
+
+### RLS classification
+
+- POST /api/terms/accept — BYPASS_NEEDED — TENANT-SCOPED via session.user.id;
+  uses prismaAdmin to bypass RLS because TermsAcceptance is a global
+  (cross-tenant) legal record, not a tenant-scoped business record.
+- GET /terms/accept — BYPASS_NEEDED — TENANT-SCOPED via session.user.id;
+  same reason as above.
+- GET /terms, GET /privacy — PUBLIC, no auth required.
+- TermsVersion table: NO RLS. Public read at the SQL level (just policy
+  definitions, no PII).
+- TermsAcceptance table: NO RLS. Server-side access only via prismaAdmin
+  through /api/terms/accept and middleware JWT injection. No client-side
+  Supabase reads of this table.
+
+### Re-acceptance flow
+
+JWT carries two fields: currentTermsVersionId (effective version at JWT
+mint time) and acceptedTermsVersionId (user's most recent acceptance).
+Middleware compares them on every authenticated, non-exempt request.
+If they differ, redirect to /terms/accept.
+
+The JWT is refreshed on sign-in and on explicit useSession().update()
+calls. After a user accepts, the /terms/accept client calls
+session.update() to refresh the JWT with the new acceptance, then
+window.location.href = /dashboard.
+
+### Exempt routes
+
+The middleware terms check excludes: /api/*, /_next/*, /login, /logout,
+/terms, /privacy, /terms/accept. All other authenticated routes require
+current-version acceptance.
+
+### Legal record properties
+
+- IP address captured from x-forwarded-for (Vercel sets this on edge)
+- User-agent captured from request headers
+- Document content hashes (termsBodyHash, privacyBodyHash) prove WHAT
+  was accepted, not just THAT it was accepted
+- TermsAcceptance rows are NEVER deleted (onDelete: Restrict on
+  termsVersion relation prevents cascade); legal record retention
+  outlasts user lifecycle
+- User deletion DOES cascade-delete acceptance rows via onDelete: Cascade
+  on the user relation. If long-term legal retention beyond user lifecycle
+  is required by regulation, the user-deletion flow should soft-delete
+  (set isActive=false) instead of hard-delete, which is the current pattern
+  for OWNER accounts. Documented for the future user-deletion PR.
