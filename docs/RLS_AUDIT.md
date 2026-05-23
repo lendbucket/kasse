@@ -1519,7 +1519,7 @@ Single User row, multiple Account rows (credentials, google, apple as applicable
 
 Inactive User (isActive=false) → signIn callback throws ACCOUNT_DISABLED.
 
-Email verification parity: starting in cycle 4 of this PR, OAuth sign-ins
+Email verification parity: starting in PR #107 (P1.A.9), OAuth sign-ins
 to an EXISTING Kasse account require existingUser.emailVerified to be set.
 This matches the credentials provider's EMAIL_NOT_VERIFIED throw and
 prevents an OAuth flow from silently claiming an unverified credentials
@@ -1555,7 +1555,7 @@ is that:
    email address (Google: profile.email_verified check enforced in
    lib/auth.ts signIn callback; Apple: guaranteed by Apple's JWT spec).
 2. The existing Kasse User row's emailVerified field is non-null. Added in
-   cycle 4 of P1.A.9 to both the existingUser branch and the P2002-race
+   PR #107 (P1.A.9) to both the existingUser branch and the P2002-race
    raceWinner branch — if a credentials-based account never completed
    verification, OAuth sign-in throws EMAIL_NOT_VERIFIED instead of silently
    claiming the account.
