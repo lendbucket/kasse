@@ -1992,3 +1992,67 @@ The `remoteip` parameter passed to /siteverify uses the same
 `getRateLimitIp()` helper from `@/lib/http/headers`. Trust requirements
 are similar to rate limiting (first-hop x-forwarded-for is fine — token
 verification accuracy is helped by IP but not security-critical).
+
+## P1.A.15 — Day 0 welcome email coverage (2026-05-23)
+
+### Coverage
+
+Closes two gaps in the existing P1.A.* email infrastructure:
+
+1. `/api/auth/register` — Resend send is now fault-isolated. A Resend
+   failure no longer causes a 500 response that confuses the user
+   (account is created, email failed, user can't retry without "Email
+   already registered" error).
+
+2. `lib/auth.ts` signIn OAuth bootstrap branch — new welcome email
+   sent to Google/Apple first-time signups. Previously this cohort
+   got zero Day 0 touchpoint. New template at
+   `lib/emails/oauth-welcome.ts` (no verify URL, just welcome +
+   dashboard CTA — these users are already verified by their OAuth
+   provider).
+
+### NOT covered (intentional)
+
+- Sign-in (subsequent logins): no welcome email; this is for FIRST-TIME
+  signups only. The race-winner branch in signIn (when OAuth identity
+  joins an existing email) correctly skips the welcome email since
+  that's a sign-in, not a signup.
+- Resend retry queue: if the email fails, we log and move on. No
+  automatic retry. Same fail-open philosophy as Turnstile (P1.A.14)
+  and rate-limiting (P1.A.13). If failure rates become problematic
+  later, add a FailedEmail table and a cron-driven retry job.
+- `lib/emails/verification.ts` Georgia serif font in kasse. wordmark:
+  pre-existing brand drift, not introduced by this PR. The new
+  `oauth-welcome.ts` uses Inter to match the design system. Follow-up
+  PR will update verification.ts (and merchant-application.ts if it has
+  the same issue) to match. This PR's template inconsistency is
+  one-cycle-only.
+
+### Failure mode
+
+Fail-open with console.warn. Same pattern as Turnstile + rate-limit.
+The credentials-path failure now also returns a slightly different
+user-facing message ("we're sending your verification email now —
+check your inbox in a few minutes") rather than a confusing
+"Registration failed" 500.
+
+### Log line PII
+
+Two log sites for email-send failures, with different PII surfaces:
+
+- `lib/auth.ts` OAuth welcome failure: masks the email local-part
+  (`email.slice(0, 3) + "***"`) since the address might be a real
+  user email (Apple Hide-My-Email relay addresses included).
+- `app/api/auth/register/route.ts` credentials verification failure:
+  logs only the userId (UUID), not the email. UserId is already
+  internal-only; no masking needed.
+
+Both follow the principle of "minimize PII in logs" — the email is
+already in the DB row, no need to duplicate it in logs.
+
+### RLS classification
+
+No new routes, no new DB writes from this PR. Email sends are stateless
+external calls to Resend. Module-scoped Resend client in lib/auth.ts
+is platform-level (not tenant-scoped), appropriate for global email
+infrastructure.

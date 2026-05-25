@@ -17,6 +17,12 @@ import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/rea
 import { checkRateLimit } from "@/lib/rate-limit/check"
 import type { UtmParams } from "@/lib/utm/read"
 import { readVisitorIdFromCookies, readVisitorIdFromRequest } from "@/lib/experiments/visitor"
+import { Resend } from "resend"
+import { getOauthWelcomeEmailHtml } from "@/lib/emails/oauth-welcome"
+
+// P1.A.15: Resend client for OAuth welcome emails. Module-scoped so
+// successive cold starts don't re-construct it.
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 /**
  * Extract client IP from NextAuth's authorize() req.headers.
@@ -456,6 +462,62 @@ export const authOptions: NextAuthOptions = {
           }
         }
         throw err
+      }
+
+      // P1.A.15: Send OAuth welcome email. Fault-isolated — a Resend
+      // failure must not block sign-in success. User record is already
+      // committed by withAdminTx above. Same fail-open philosophy as
+      // /api/auth/register.
+      //
+      // Defensive email guard. The bootstrap branch earlier in this
+      // signIn callback gates on `if (!user.email) return false`, so email
+      // should be a string here. Belt-and-suspenders: skip the send if email
+      // is somehow nullish, and use a safeEmail variable in the catch so a
+      // secondary exception doesn't escape the fault-isolation.
+      if (typeof email !== "string" || !email) {
+        console.warn(
+          `[auth] OAuth welcome email skipped — email is nullish (provider: ${account.provider})`,
+        )
+      } else {
+        // P1.A.15 cycle 3: Apple Hide-My-Email re-auth flows may omit user.name.
+        // Even with the upstream fallback chain (user.name || profile?.name ||
+        // email.split("@")[0]), defensive guards ensure no "Welcome to Kasse,
+        // undefined!" subjects reach users. The email-local-part fallback for
+        // Apple Hide-My-Email relay addresses (e.g. "abc123xyz") is ugly but
+        // functional. The "there" fallback is the floor of last resort.
+        const safeName = typeof name === "string" && name ? name : "there"
+        const safeBusinessName = typeof businessName === "string" && businessName
+          ? businessName
+          : "your business"
+
+        try {
+          const baseUrl = process.env.NEXTAUTH_URL ?? "https://portal.kasseapp.com"
+          const dashboardUrl = `${baseUrl}/dashboard`
+          const providerLabel = account.provider === "google" ? "Google" : "Apple"
+          await resend.emails.send({
+            from: "Kasse <onboarding@kasseapp.com>",
+            to: email,
+            subject: `Welcome to Kasse, ${safeName}!`,
+            headers: {
+              "X-Entity-Ref-ID": crypto.randomUUID(),
+            },
+            html: getOauthWelcomeEmailHtml({
+              name: safeName,
+              businessName: safeBusinessName,
+              provider: providerLabel,
+              dashboardUrl,
+              baseUrl,
+            }),
+          })
+        } catch (err) {
+          // Defensive: safeEmail handles even the impossible case where email
+          // became nullish between the guard above and the catch. A TypeError
+          // in the catch would escape our fault-isolation and break sign-in.
+          const safeEmail = typeof email === "string" ? `${email.slice(0, 3)}***` : "(unknown)"
+          console.warn(
+            `[auth] OAuth welcome email send failed for ${account.provider} signup (${safeEmail}): ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
       }
 
       // PrismaAdapter creates the Account row after signIn returns true — don't create it here.

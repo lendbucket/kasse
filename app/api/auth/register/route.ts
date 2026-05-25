@@ -162,17 +162,36 @@ export async function POST(req: NextRequest) {
     // via the resend flow on /login.
     const verifyUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${verifyToken}`
 
-    await resend.emails.send({
-      from: "Kasse <onboarding@kasseapp.com>",
-      to: email,
-      subject: "Verify your email — Welcome to Kasse",
-      headers: {
-        "X-Entity-Ref-ID": crypto.randomUUID(),
-      },
-      html: getVerificationEmailHtml({ name, businessName, verifyUrl }),
-    })
+    // P1.A.15: Fault-isolate the Resend send. The user record is already
+    // committed by withAdminTx above; if Resend fails (rate limit, downtime,
+    // invalid API key), we must NOT fail the registration response. The user
+    // can re-trigger via the resend flow on /login. The failure is logged
+    // server-side via console.warn for monitoring (same pattern as
+    // Turnstile/rate-limit fail-open philosophy).
+    let emailSent = true
+    try {
+      await resend.emails.send({
+        from: "Kasse <onboarding@kasseapp.com>",
+        to: email,
+        subject: "Verify your email — Welcome to Kasse",
+        headers: {
+          "X-Entity-Ref-ID": crypto.randomUUID(),
+        },
+        html: getVerificationEmailHtml({ name, businessName, verifyUrl }),
+      })
+    } catch (err) {
+      emailSent = false
+      console.warn(
+        `[register] verification email send failed for user ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
 
-    return NextResponse.json({ success: true, message: "Check your email to verify your account" })
+    return NextResponse.json({
+      success: true,
+      message: emailSent
+        ? "Check your email to verify your account"
+        : "Your account was created. We're sending your verification email now — check your inbox in a few minutes.",
+    })
   } catch (error) {
     console.error("Registration error:", error)
     return NextResponse.json({ error: "Registration failed" }, { status: 500 })
