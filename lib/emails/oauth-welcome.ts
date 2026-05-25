@@ -3,11 +3,13 @@ export function getOauthWelcomeEmailHtml({
   businessName,
   provider,
   dashboardUrl,
+  baseUrl,
 }: {
   name: string
   businessName: string
   provider: "Google" | "Apple"
   dashboardUrl: string
+  baseUrl: string
 }): string {
   const steps = [
     "Complete your business setup (takes 3 minutes)",
@@ -113,11 +115,9 @@ export function getOauthWelcomeEmailHtml({
                 5601 S Padre Island Dr Ste E, Corpus Christi, TX 78412
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:#d1d5db">
-                <a href="#" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
+                <a href="${baseUrl}/privacy" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
                 &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
-                &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Unsubscribe</a>
+                <a href="${baseUrl}/terms" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
               </p>
             </td>
           </tr>

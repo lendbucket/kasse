@@ -468,29 +468,45 @@ export const authOptions: NextAuthOptions = {
       // failure must not block sign-in success. User record is already
       // committed by withAdminTx above. Same fail-open philosophy as
       // /api/auth/register.
-      try {
-        const dashboardUrl = `${process.env.NEXTAUTH_URL}/dashboard`
-        const providerLabel = account.provider === "google" ? "Google" : "Apple"
-        await resend.emails.send({
-          from: "Kasse <onboarding@kasseapp.com>",
-          to: email,
-          subject: `Welcome to Kasse, ${name}!`,
-          headers: {
-            "X-Entity-Ref-ID": crypto.randomUUID(),
-          },
-          html: getOauthWelcomeEmailHtml({
-            name,
-            businessName,
-            provider: providerLabel,
-            dashboardUrl,
-          }),
-        })
-      } catch (err) {
-        // OAuth welcome email is non-critical. Log and continue —
-        // sign-in must succeed regardless.
+      //
+      // Defensive email guard. The bootstrap branch earlier in this
+      // signIn callback gates on `if (!user.email) return false`, so email
+      // should be a string here. Belt-and-suspenders: skip the send if email
+      // is somehow nullish, and use a safeEmail variable in the catch so a
+      // secondary exception doesn't escape the fault-isolation.
+      if (typeof email !== "string" || !email) {
         console.warn(
-          `[auth] OAuth welcome email send failed for ${account.provider} signup (${email.slice(0, 3)}***): ${err instanceof Error ? err.message : String(err)}`,
+          `[auth] OAuth welcome email skipped — email is nullish (provider: ${account.provider})`,
         )
+      } else {
+        try {
+          const baseUrl = process.env.NEXTAUTH_URL ?? "https://portal.kasseapp.com"
+          const dashboardUrl = `${baseUrl}/dashboard`
+          const providerLabel = account.provider === "google" ? "Google" : "Apple"
+          await resend.emails.send({
+            from: "Kasse <onboarding@kasseapp.com>",
+            to: email,
+            subject: `Welcome to Kasse, ${name}!`,
+            headers: {
+              "X-Entity-Ref-ID": crypto.randomUUID(),
+            },
+            html: getOauthWelcomeEmailHtml({
+              name,
+              businessName,
+              provider: providerLabel,
+              dashboardUrl,
+              baseUrl,
+            }),
+          })
+        } catch (err) {
+          // Defensive: safeEmail handles even the impossible case where email
+          // became nullish between the guard above and the catch. A TypeError
+          // in the catch would escape our fault-isolation and break sign-in.
+          const safeEmail = typeof email === "string" ? `${email.slice(0, 3)}***` : "(unknown)"
+          console.warn(
+            `[auth] OAuth welcome email send failed for ${account.provider} signup (${safeEmail}): ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
       }
 
       // PrismaAdapter creates the Account row after signIn returns true — don't create it here.

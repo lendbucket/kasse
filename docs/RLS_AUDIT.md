@@ -2032,9 +2032,17 @@ check your inbox in a few minutes") rather than a confusing
 
 ### Log line PII
 
-The OAuth welcome email failure log masks the email local-part
-(`email.slice(0, 3) + "***"`) rather than logging it verbatim. The
-email is already in the DB; no need to add another copy in logs.
+Two log sites for email-send failures, with different PII surfaces:
+
+- `lib/auth.ts` OAuth welcome failure: masks the email local-part
+  (`email.slice(0, 3) + "***"`) since the address might be a real
+  user email (Apple Hide-My-Email relay addresses included).
+- `app/api/auth/register/route.ts` credentials verification failure:
+  logs only the userId (UUID), not the email. UserId is already
+  internal-only; no masking needed.
+
+Both follow the principle of "minimize PII in logs" — the email is
+already in the DB row, no need to duplicate it in logs.
 
 ### RLS classification
 
