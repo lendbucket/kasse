@@ -2233,3 +2233,55 @@ character identical to the previous copies (verified in PR #117 cycle 1).
 Tests that exercise the existing email send paths cover the consolidation
 transitively — there's no separate test surface for the helper itself
 since it's a small pure function.
+
+## Password-reset email hardening (2026-05-25)
+
+### Coverage
+
+Symmetric application of the PR #117 template hardening pattern to
+the remaining transactional email template:
+
+1. **Inter font wordmark** — replaced `font-family:Georgia,serif`
+   in the kasse. wordmark with the Kasse design system Inter stack.
+   All four templates now use Inter consistently
+   (oauth-welcome.ts, verification.ts, merchant-application.ts,
+   password-reset.ts).
+
+2. **Footer links** — replaced three `<a href="#">` placeholder
+   links (Privacy + Terms + Unsubscribe) with real /privacy +
+   /terms links. Unsubscribe removed (transactional, CAN-SPAM
+   exempt). Required adding baseUrl param to the template function
+   and updating the call site in
+   `app/api/auth/forgot-password/route.ts`.
+
+3. **NOT applied: HTML escape** — password-reset.ts intentionally
+   doesn't interpolate any user-supplied data. The template doesn't
+   include the recipient's name or business name (security/abuse
+   defense for password reset flows — exposing user identity in the
+   reset email could aid phishing or social engineering). Only
+   `resetUrl` and `baseUrl` are interpolated, both server-controlled.
+   No escapeHtml import needed.
+
+### Resend send fault-isolation in forgot-password/route.ts
+
+Closed a fault-isolation gap pre-dating this session: the Resend
+send was await-ed inline with no try/catch. A Resend failure would
+propagate to Next.js's default error handler and return 500 to the
+user — even though the User row was already updated with
+passwordResetToken + passwordResetExp. The user would retry,
+invalidating the first token with a new one, OR see a confusing
+error.
+
+Same fault-isolation pattern as register/route.ts post-PR #115
+cycle 1. Key difference: the success response is NOT differentiated
+based on emailSent because the email-enumeration-prevention
+requirement means the "real user with Resend failure" case and the
+"unknown user" case MUST return identical JSON. The emailSent flag
+exists only for log-side observability via console.warn (PII-masked
+to userId, no email).
+
+### No new routes, no new DB writes
+
+Pure template hardening + fault-isolation. No new persistence, no
+new RLS surface, no migration. The existing user.update for the
+reset token happens BEFORE the Resend call (unchanged).
