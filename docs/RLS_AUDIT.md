@@ -2147,3 +2147,59 @@ infrastructure errors:
 This is DIFFERENT from the fail-open pattern used for rate-limiting
 (P1.A.13) and Turnstile (P1.A.14). Cron infrastructure failures are
 operational, not user-facing — they should be loud, not silent.
+
+## Email template hardening — verification + merchant-application (2026-05-25)
+
+### Coverage
+
+Follow-up to P1.A.15 (oauth-welcome.ts template hardening). Applies
+the same three fixes symmetrically to the two existing transactional
+email templates plus the inline admin-notification HTML in
+send-application/route.ts:
+
+1. **Inter font wordmark** — replaced `font-family:Georgia,serif` in
+   the kasse. wordmark with the Kasse design system Inter stack
+   (`'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`)
+   in BOTH verification.ts AND merchant-application.ts. Brand
+   consistency across all three templates (oauth-welcome.ts already
+   uses Inter as of P1.A.15 cycle 3).
+
+2. **HTML-escape user-supplied data** — added escapeHtml helper to
+   each template and applied to all user-supplied interpolations:
+   - verification.ts: name + businessName (2 fields, 3 sites)
+   - merchant-application.ts: ownerFirstName + ownerLastName +
+     businessName + monthlyVolume + avgTicket (5 fields, 7 sites)
+   - send-application/route.ts admin notification: same 5 fields
+     plus ctx.email + ein (7 sites)
+
+3. **Footer links in verification.ts only** — replaced three
+   `<a href="#">` placeholder links (Privacy + Terms + Unsubscribe)
+   with real /privacy + /terms links (Unsubscribe removed — transactional
+   emails are CAN-SPAM exempt). Required adding baseUrl param to the
+   template function and updating the call site in
+   app/api/auth/register/route.ts.
+
+   merchant-application.ts NOT touched for footer links — its footer
+   was already clean (no placeholder links).
+
+### Helper duplication note
+
+The escapeHtml function is duplicated across three sites:
+oauth-welcome.ts (P1.A.15), verification.ts, merchant-application.ts,
+plus send-application/route.ts. Once we have 3+ copies in production,
+a future cleanup PR extracts the helper to lib/emails/escape.ts. Doing
+the extraction in this PR is premature consolidation — wait for the
+pattern to prove stable across multiple template types first.
+
+### No new routes, no new DB writes
+
+Pure template + inline-HTML hardening. No new persistence, no new
+RLS surface, no migration. Existing tests cover the email-send fault
+isolation pattern; the escape changes are visual correctness, not
+functional behavior changes.
+
+### Subject lines NOT escaped
+
+Email subject lines are plain text per RFC 5322, not HTML. Resend
+handles subject sanitization at the SMTP layer. Only HTML body
+interpolations need escapeHtml.

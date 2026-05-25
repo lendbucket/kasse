@@ -8,6 +8,15 @@ import { Resend } from "resend";
 import { getMerchantApplicationEmailHtml } from "@/lib/emails/merchant-application";
 import crypto from "crypto";
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(request: NextRequest) {
@@ -68,12 +77,12 @@ export async function POST(request: NextRequest) {
       html: `
         <div style="font-family:sans-serif;max-width:560px;margin:40px auto">
           <h2>New Merchant Application</h2>
-          <p><strong>Business:</strong> ${businessName}</p>
-          <p><strong>Owner:</strong> ${ownerFirstName} ${ownerLastName}</p>
-          <p><strong>Email:</strong> ${ctx.email}</p>
-          <p><strong>EIN:</strong> ${ein || "Not provided"}</p>
-          <p><strong>Monthly Volume:</strong> ${monthlyVolume}</p>
-          <p><strong>Avg Ticket:</strong> ${avgTicket}</p>
+          <p><strong>Business:</strong> ${escapeHtml(businessName)}</p>
+          <p><strong>Owner:</strong> ${escapeHtml(ownerFirstName)} ${escapeHtml(ownerLastName)}</p>
+          <p><strong>Email:</strong> ${escapeHtml(ctx.email)}</p>
+          <p><strong>EIN:</strong> ${escapeHtml(ein || "Not provided")}</p>
+          <p><strong>Monthly Volume:</strong> ${escapeHtml(monthlyVolume)}</p>
+          <p><strong>Avg Ticket:</strong> ${escapeHtml(avgTicket)}</p>
         </div>
       `,
     });

@@ -160,7 +160,8 @@ export async function POST(req: NextRequest) {
     // Verification email sent AFTER the batch commits — best-effort, fail-soft.
     // If the email fails, the user record still exists and can re-trigger
     // via the resend flow on /login.
-    const verifyUrl = `${process.env.NEXTAUTH_URL}/api/auth/verify-email?token=${verifyToken}`
+    const baseUrl = process.env.NEXTAUTH_URL ?? "https://portal.kasseapp.com"
+    const verifyUrl = `${baseUrl}/api/auth/verify-email?token=${verifyToken}`
 
     // P1.A.15: Fault-isolate the Resend send. The user record is already
     // committed by withAdminTx above; if Resend fails (rate limit, downtime,
@@ -177,7 +178,7 @@ export async function POST(req: NextRequest) {
         headers: {
           "X-Entity-Ref-ID": crypto.randomUUID(),
         },
-        html: getVerificationEmailHtml({ name, businessName, verifyUrl }),
+        html: getVerificationEmailHtml({ name, businessName, verifyUrl, baseUrl }),
       })
     } catch (err) {
       emailSent = false
