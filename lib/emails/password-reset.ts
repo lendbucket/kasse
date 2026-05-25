@@ -1,7 +1,9 @@
 export function getPasswordResetEmailHtml({
   resetUrl,
+  baseUrl,
 }: {
   resetUrl: string
+  baseUrl: string
 }): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -31,7 +33,7 @@ export function getPasswordResetEmailHtml({
           <!-- Header -->
           <tr>
             <td style="background-color:#0a0c0e;border-radius:12px 12px 0 0;padding:32px 40px;text-align:center">
-              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:Georgia,serif">kasse.</div>
+              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">kasse.</div>
               <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;text-transform:uppercase;margin-top:6px">Salon Management Platform</div>
             </td>
           </tr>
@@ -92,11 +94,9 @@ export function getPasswordResetEmailHtml({
                 5601 S Padre Island Dr Ste E, Corpus Christi, TX 78412
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:#d1d5db">
-                <a href="#" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
+                <a href="${baseUrl}/privacy" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
                 &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
-                &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Unsubscribe</a>
+                <a href="${baseUrl}/terms" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
               </p>
             </td>
           </tr>
