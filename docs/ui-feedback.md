@@ -62,3 +62,36 @@ fields. Or, when toggling between forms, clear the reason. Tooltip explaining
 which action each field applies to.
 
 **Status:** Deferred to P12 (UI polish phase).
+
+---
+
+## 2026-05-25 — Onboarding wizard ProgressBar — ARIA + interactive children
+
+**Where:** `components/onboarding/ProgressBar.tsx` (shipped in PR #120,
+P1.B.1 wizard shell)
+
+**What felt wrong:** The progress bar uses `role="progressbar"` on a
+`<div>` whose children are interactive `<button>` elements (for tap-to-
+jump-back on completed steps). The `progressbar` role implies a non-
+interactive status widget, so nesting interactive controls inside it
+is semantically odd — axe and similar a11y tools will likely flag this.
+Reviewer of PR #120 cycle 1 raised the concern with the explicit framing
+"works and is better than no ARIA at all... will need revisiting before
+a11y sign-off."
+
+**Thoughts on direction (for P12 designer + a11y reviewer):**
+- Consider an `<ol>` (or `<nav>` containing an `<ol>`) instead of a
+  `<div role="progressbar">`. The "ordered list of steps, some
+  navigable" model fits better.
+- Each step segment becomes an `<li>` with either a `<button>` (for
+  navigable completed steps) or a plain element with `aria-current="step"`
+  for the active step and `aria-disabled` for future steps.
+- Drop the `aria-valuemin`/`valuemax`/`valuenow` attributes — those are
+  for continuous-value progress bars (e.g., file upload %), not for
+  discrete wizard steps.
+- Add an `aria-label` on the outer container like "Onboarding step 3 of
+  8" or use a visually-hidden `<h2>` for screen readers.
+- Keep the visual design unchanged — this is a semantic markup migration
+  only, not a redesign.
+
+**Status:** Deferred to P12 (UI polish phase).
