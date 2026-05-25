@@ -4,10 +4,22 @@ import { useRouter } from "next/navigation";
 import { TOTAL_WIZARD_STEPS, WIZARD_STEP_LABELS } from "@/lib/onboarding/wizard-step-mapping";
 
 export interface ProgressBarProps {
-  currentStep: number; // 1–8
+  /**
+   * The step the user is currently viewing (1–8). This segment
+   * is highlighted as "you are here."
+   */
+  currentStep: number;
+
+  /**
+   * The user's furthest progress in the wizard (1–8). Segments
+   * 1 through maxCompletedStep-1 are shown as completed (and
+   * tappable for revisit). Should always be >= currentStep —
+   * a user can't be viewing a step they haven't reached.
+   */
+  maxCompletedStep: number;
 }
 
-export function ProgressBar({ currentStep }: ProgressBarProps) {
+export function ProgressBar({ currentStep, maxCompletedStep }: ProgressBarProps) {
   const router = useRouter();
   const totalSteps = TOTAL_WIZARD_STEPS;
 
@@ -27,17 +39,15 @@ export function ProgressBar({ currentStep }: ProgressBarProps) {
     >
       {Array.from({ length: totalSteps }, (_, i) => {
         const stepNumber = i + 1;
-        const isComplete = stepNumber < currentStep;
+        const isComplete = stepNumber < maxCompletedStep && stepNumber !== currentStep;
         const isCurrent = stepNumber === currentStep;
-        // Only completed steps are tappable. Current step is not (you're
-        // already on it). Future steps are not (no skipping forward).
-        const isTappable = isComplete;
+        // Tappable: any step the user has reached that isn't the
+        // one they're already viewing.
+        const isTappable = stepNumber <= maxCompletedStep && stepNumber !== currentStep;
 
-        const segmentColor = isComplete
-          ? "#606E74"     // Kasse accent — completed
-          : isCurrent
-            ? "#606E74"   // Kasse accent — current
-            : "#e5e7eb";  // Gray — future
+        const segmentColor = isComplete || isCurrent || isTappable
+          ? "#606E74"     // Kasse accent — completed/current/reached
+          : "#e5e7eb";    // Gray — future
 
         return (
           <button
@@ -49,7 +59,15 @@ export function ProgressBar({ currentStep }: ProgressBarProps) {
                 : undefined
             }
             disabled={!isTappable}
-            aria-label={`Step ${stepNumber}: ${WIZARD_STEP_LABELS[i]}${isCurrent ? " (current)" : isComplete ? " (completed, tap to revisit)" : ""}`}
+            aria-label={`Step ${stepNumber}: ${WIZARD_STEP_LABELS[i]}${
+              isCurrent
+                ? " (current)"
+                : isComplete
+                  ? " (completed, tap to revisit)"
+                  : isTappable
+                    ? " (tap to revisit)"
+                    : ""
+            }`}
             title={WIZARD_STEP_LABELS[i]}
             style={{
               flex: 1,
@@ -60,7 +78,7 @@ export function ProgressBar({ currentStep }: ProgressBarProps) {
               padding: 0,
               cursor: isTappable ? "pointer" : "default",
               transition: "background-color 0.2s",
-              opacity: isCurrent ? 1 : isComplete ? 0.9 : 0.5,
+              opacity: isCurrent ? 1 : isComplete || isTappable ? 0.9 : 0.5,
             }}
           />
         );

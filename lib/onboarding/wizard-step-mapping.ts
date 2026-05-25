@@ -8,8 +8,11 @@ import type { OnboardingState } from "@/lib/onboarding/types";
  * invite + employment agreement + compensation as a single user-facing
  * step.
  *
- * COMPLETED is not in the input domain — callers should redirect to
- * /dashboard before calling this.
+ * COMPLETED should be filtered out by callers before invoking this —
+ * the wizard pages all query for state != COMPLETED and redirect to
+ * /dashboard if no active session is found. The switch handles
+ * COMPLETED defensively (returns 8) as a safety net in case the guard
+ * is ever bypassed.
  *
  * Pre-account states (STARTED, EMAIL_VERIFIED) shouldn't be hit by
  * authenticated wizard traffic because the wizard layout already gates

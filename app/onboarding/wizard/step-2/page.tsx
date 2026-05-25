@@ -43,7 +43,7 @@ export default async function WizardStep2Page() {
 
   return (
     <>
-      <ProgressBar currentStep={actualStep} />
+      <ProgressBar currentStep={STEP_NUMBER} maxCompletedStep={actualStep} />
       <StepCounter currentStep={STEP_NUMBER} />
       <div style={{ padding: "0 32px 48px" }}>
         <h1
