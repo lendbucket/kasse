@@ -1,3 +1,24 @@
+/**
+ * HTML-escape OAuth-supplied user data before interpolating into email
+ * HTML. Email clients don't execute JavaScript so this is not an XSS
+ * mitigation — it's a correctness mitigation for names like
+ * "O'Reilly & Sons" or "<test> Salon" that would otherwise render with
+ * literal special characters that break HTML rendering.
+ *
+ * Covers the five HTML entity references that matter inside element
+ * content: `&`, `<`, `>`, `"`, and `'`. The order matters: `&` MUST be
+ * first to avoid double-escaping (e.g. `<` → `&lt;` then `&` → `&amp;`
+ * would produce `&amp;lt;`).
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export function getOauthWelcomeEmailHtml({
   name,
   businessName,
@@ -11,6 +32,14 @@ export function getOauthWelcomeEmailHtml({
   dashboardUrl: string
   baseUrl: string
 }): string {
+  // P1.A.15 cycle 4: HTML-escape OAuth-supplied user data before
+  // interpolating into email HTML. See escapeHtml() docstring above.
+  // Provider is a string literal union ("Google" | "Apple") so it's
+  // safe by type. dashboardUrl and baseUrl are server-controlled
+  // (process.env.NEXTAUTH_URL) so they're trusted.
+  const safeName = escapeHtml(name)
+  const safeBusinessName = escapeHtml(businessName)
+
   const steps = [
     "Complete your business setup (takes 3 minutes)",
     "Add your team and services",
@@ -46,7 +75,7 @@ export function getOauthWelcomeEmailHtml({
 <body style="margin:0;padding:0;background-color:#f7f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Plus Jakarta Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
 
   <div style="display:none;font-size:1px;color:#f7f8fa;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden">
-    Welcome to Kasse, ${name}. Your ${businessName} account is ready — your 14-day free trial has started.
+    Welcome to Kasse, ${safeName}. Your ${safeBusinessName} account is ready — your 14-day free trial has started.
   </div>
 
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f8fa;padding:40px 20px">
@@ -66,10 +95,10 @@ export function getOauthWelcomeEmailHtml({
             <td style="background-color:#ffffff;padding:48px 40px 32px">
 
               <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;text-align:center;letter-spacing:-0.3px">
-                Welcome to Kasse, ${name}!
+                Welcome to Kasse, ${safeName}!
               </h1>
               <p style="margin:0 0 32px;font-size:15px;color:#6b7280;text-align:center;line-height:1.6">
-                Your account for <strong style="color:#111827">${businessName}</strong> is live.<br>
+                Your account for <strong style="color:#111827">${safeBusinessName}</strong> is live.<br>
                 You signed in with ${provider} — no password needed.
               </p>
 
