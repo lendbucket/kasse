@@ -2056,3 +2056,84 @@ No new routes, no new DB writes from this PR. Email sends are stateless
 external calls to Resend. Module-scoped Resend client in lib/auth.ts
 is platform-level (not tenant-scoped), appropriate for global email
 infrastructure.
+
+## Cron route classification (2026-05-25)
+
+### Coverage
+
+`/api/cron/*` routes are middleware-public — they bypass the
+authenticated/role/permission guards because Vercel's cron scheduler
+fires them without a user session. The route handlers themselves
+enforce `Authorization: Bearer ${CRON_SECRET}` instead.
+
+### Current cron routes
+
+- `/api/cron/onboarding-janitor` (5-minute schedule, log-only sweep
+  for stuck OnboardingSessions in *_PENDING states)
+
+### Invariant — REQUIRED for every new cron route
+
+**Every route under `/api/cron/` MUST validate
+`Authorization: Bearer ${CRON_SECRET}` before performing any work.**
+
+The middleware does not enforce this. The route map declares
+`/api/cron` as public via longest-prefix match (one entry covers
+all subroutes). If a developer adds a new cron route without the
+bearer check, the route would be wide-open to the public — anyone
+discovering the URL could trigger it without authorization.
+
+Required pattern in every cron route handler:
+
+```ts
+export async function GET(req: Request) {
+  const expected = process.env.CRON_SECRET;
+  const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '');
+
+  // Production: secret MUST be set; fail-closed if misconfigured.
+  if (process.env.NODE_ENV === 'production' && !expected) {
+    console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
+    return NextResponse.json({ error: 'service_misconfigured' }, { status: 500 });
+  }
+
+  // All environments: if secret is set, enforce it. Only skip auth
+  // entirely when secret is absent (dev/test convenience).
+  if (expected && cronSecret !== expected) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  // ... rest of handler
+}
+```
+
+Copy this pattern verbatim into new cron route handlers.
+
+### CRON_SECRET env var
+
+Vercel auto-manages `CRON_SECRET` for projects with a crons entry in
+vercel.json. It's automatically injected into the request as
+`Authorization: Bearer ${CRON_SECRET}` by Vercel's cron scheduler.
+
+If `[CRON_AUTH_MISCONFIG]` appears in production logs, the env var
+is missing — set it manually per
+https://vercel.com/docs/cron-jobs/manage-cron-jobs.
+
+### RLS classification
+
+Cron routes are platform-level (no tenant scoping). They use
+`prismaAdmin` to bypass RLS for sweeping operations across all
+organizations. This is correct — cron is the trusted scheduler, not
+a tenant-scoped user. Each cron route's documentation should
+explicitly note this in its route-handler comment block.
+
+### Failure mode
+
+Cron routes follow the standard fail-loud pattern for
+infrastructure errors:
+- Missing CRON_SECRET → 500 "service_misconfigured"
+- Wrong CRON_SECRET → 401 "unauthorized"
+- Route handler errors → propagate normally (Vercel cron will
+  retry on next scheduled tick)
+
+This is DIFFERENT from the fail-open pattern used for rate-limiting
+(P1.A.13) and Turnstile (P1.A.14). Cron infrastructure failures are
+operational, not user-facing — they should be loud, not silent.
