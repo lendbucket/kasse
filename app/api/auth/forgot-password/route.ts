@@ -24,20 +24,6 @@ export async function POST(req: NextRequest) {
   const baseUrl = process.env.NEXTAUTH_URL ?? "https://portal.kasseapp.com"
   const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
 
-  // PR #119: Fault-isolate the Resend send. The user row was already
-  // updated with passwordResetToken + passwordResetExp above; if Resend
-  // fails (rate limit, downtime, bounce), we must NOT return 500 to the
-  // user — they would retry, invalidating the first token with a new
-  // one, OR just see a confusing error. Same fault-isolation pattern
-  // as register/route.ts post-PR #115.
-  //
-  // Note: even on Resend failure, we still return success to the user
-  // to preserve the email-enumeration-prevention semantic established
-  // by the upstream `if (!user) return success` check. A user who hits
-  // this path with a real account just gets no email (and can retry
-  // later); a user who hits with a fake account also gets no email.
-  // Both look identical from outside, preserving the privacy invariant.
-  let emailSent = true
   try {
     await resend.emails.send({
       from: "Kasse <onboarding@kasseapp.com>",
@@ -49,14 +35,24 @@ export async function POST(req: NextRequest) {
       html: getPasswordResetEmailHtml({ resetUrl, baseUrl }),
     })
   } catch (err) {
-    emailSent = false
+    // Fault-isolated: a Resend failure here must NOT propagate. The
+    // User row was already updated with passwordResetToken +
+    // passwordResetExp above; if we returned 500, the user would
+    // retry (invalidating the first token with a new one) OR see a
+    // confusing error. We log server-side via console.warn and still
+    // return success to the user.
+    //
+    // Note: success response is unconditional even on Resend failure.
+    // This preserves the email-enumeration-prevention semantic
+    // established by the upstream `if (!user) return success` check —
+    // both the "real user with Resend failure" case AND the "unknown
+    // user" case must return identical JSON. PII discipline: log line
+    // uses user.id (UUID), not email.
     console.warn(
       `[forgot-password] password reset email send failed for user ${user.id}: ${err instanceof Error ? err.message : String(err)}`,
     )
   }
 
   // Always return success (preserves email enumeration prevention).
-  // emailSent flag is for log-level observability only — not exposed
-  // to the client.
   return NextResponse.json({ success: true })
 }
