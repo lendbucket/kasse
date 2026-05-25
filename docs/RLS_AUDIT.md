@@ -2100,6 +2100,13 @@ export async function GET(req: Request) {
 
   // All environments: if secret is set, enforce it. Only skip auth
   // entirely when secret is absent (dev/test convenience).
+  //
+  // ⚠️  DEV NOTE: when CRON_SECRET is absent, auth is skipped entirely.
+  // Do NOT deploy to staging without CRON_SECRET set if your cron routes
+  // use prismaAdmin or write data. Vercel auto-injects CRON_SECRET in
+  // production via the cron scheduler integration; staging environments
+  // must set it manually. Without it, anyone who discovers the URL can
+  // trigger the route with full prismaAdmin access.
   if (expected && cronSecret !== expected) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
