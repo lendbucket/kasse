@@ -187,7 +187,7 @@ model User {
   utmCampaign                 String?
   utmTerm                     String?
   utmContent                  String?
-  visitorId                   String?  // P1.A.12: pre-signup visitor identity for A/B attribution
+  visitorId                   String? // P1.A.12: pre-signup visitor identity for A/B attribution
   accounts                    Account[]
   bookedAppointments          Appointment[]               @relation("BookedByUser")
   statusChanges               AppointmentStatusHistory[]  @relation("StatusChangedByUser")
@@ -1725,7 +1725,7 @@ model EmailTemplate {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model EmploymentAgreement {
-  id                 String       @id @default(cuid())
+  id                 String              @id @default(cuid())
   organizationId     String
   staffId            String
   templateType       String?
@@ -1736,15 +1736,15 @@ model EmploymentAgreement {
   signatureDataUrl   String?
   signatureIpAddress String?
   signatureUserAgent String?
-  effectiveStartDate DateTime?    @db.Date
-  effectiveEndDate   DateTime?    @db.Date
-  status             String       @default("DRAFT")
+  effectiveStartDate DateTime?           @db.Date
+  effectiveEndDate   DateTime?           @db.Date
+  status             String              @default("DRAFT")
   sentAt             DateTime?
   viewedAt           DateTime?
   expiresAt          DateTime?
   notes              String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @default(now())
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @default(now())
   organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   staff              Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   agreementSignToken AgreementSignToken?
@@ -1763,23 +1763,23 @@ model EmploymentAgreement {
 /// partial indexes — DO NOT run `prisma db pull` and accept the
 /// regenerated schema without preserving this divergence.
 model AgreementSignToken {
-  id                  String              @id @default(dbgenerated("gen_random_uuid()::text"))
-  organizationId      String
-  agreementId         String              @unique
-  staffId             String
-  tokenHash           String              @unique
-  expiresAt           DateTime
-  sentAt              DateTime            @default(now())
-  consumedAt          DateTime?
-  ipAddressIssued     String?
-  userAgentIssued     String?
-  ipAddressConsumed   String?
-  userAgentConsumed   String?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @default(now())
-  agreement           EmploymentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
-  staff               Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id                String              @id @default(dbgenerated("gen_random_uuid()::text"))
+  organizationId    String
+  agreementId       String              @unique
+  staffId           String
+  tokenHash         String              @unique
+  expiresAt         DateTime
+  sentAt            DateTime            @default(now())
+  consumedAt        DateTime?
+  ipAddressIssued   String?
+  userAgentIssued   String?
+  ipAddressConsumed String?
+  userAgentConsumed String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @default(now())
+  agreement         EmploymentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId], map: "idx_agreement_sign_token_org")
   @@index([expiresAt], map: "idx_agreement_sign_token_expires")
@@ -2246,6 +2246,7 @@ model OnboardingSession {
   referrerFirstSeen        String?
   createdAt                DateTime                      @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
+  abandonedEmailSentAt     DateTime?                     @db.Timestamptz(6)
   magicLinkEmailsSentCount Int                           @default(0)
   magicLinkLastSentAt      DateTime?                     @db.Timestamptz(6)
   passwordHash             String?
@@ -2255,6 +2256,7 @@ model OnboardingSession {
   transitions              OnboardingStateTransition[]
   tokens                   OnboardingVerificationToken[]
 
+  @@index([createdAt], map: "idx_onboarding_session_abandoned_candidates", where: raw("(state <> 'COMPLETED'::text AND \"abandonedEmailSentAt\" IS NULL)"))
   @@index([email], map: "idx_onboarding_session_email")
   @@index([expiresAt], map: "idx_onboarding_session_expires", where: raw("(state <> 'COMPLETED'::text)"))
   @@index([state], map: "idx_onboarding_session_state", where: raw("(state <> 'COMPLETED'::text)"))
@@ -2352,30 +2354,30 @@ enum VerticalId {
 }
 
 model TermsVersion {
-  id                String             @id @default(cuid())
-  version           String             @unique
+  id                String   @id @default(cuid())
+  version           String   @unique
   effectiveAt       DateTime
   termsContentUrl   String
   privacyContentUrl String
   termsBodyHash     String
   privacyBodyHash   String
-  createdAt         DateTime           @default(now())
+  createdAt         DateTime @default(now())
 
-  acceptances       TermsAcceptance[]
+  acceptances TermsAcceptance[]
 
   @@index([effectiveAt])
 }
 
 model TermsAcceptance {
-  id              String       @id @default(cuid())
-  userId          String
-  termsVersionId  String
-  ipAddress       String?
-  userAgent       String?
-  acceptedAt      DateTime     @default(now())
+  id             String   @id @default(cuid())
+  userId         String
+  termsVersionId String
+  ipAddress      String?
+  userAgent      String?
+  acceptedAt     DateTime @default(now())
 
-  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
-  termsVersion    TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  termsVersion TermsVersion @relation(fields: [termsVersionId], references: [id], onDelete: Restrict)
 
   @@unique([userId, termsVersionId])
   @@index([userId])

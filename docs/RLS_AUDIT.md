@@ -2322,3 +2322,45 @@ services, etc.).
 
 Pure UI shell. The OnboardingSession + OnboardingStateTransition
 tables (P1.A.1) are used read-only.
+
+## P1.B.6 + P1.B.7 — Abandoned wizard cron + email (2026-05-26)
+
+### Routes added
+
+`GET /api/cron/onboarding-abandoned` — hourly cron.
+
+**Auth**: Bearer cron secret only (canonical pattern from PR #116).
+No session, no tenant context. Classification: **public via cron** —
+the route accepts ONLY requests with a valid `Authorization: Bearer
+${CRON_SECRET}` header. Vercel cron sends the header automatically;
+no user traffic should reach this route.
+
+**Data access**: prismaAdmin (no tenant context — cron writes
+cross-tenant). Reads `OnboardingSession` rows where `state != COMPLETED`,
+`abandonedEmailSentAt IS NULL`, `createdAt < now() - 24h`,
+`expiresAt > now()`. Writes `abandonedEmailSentAt = now()` after
+successful Resend send.
+
+**Authorization model**: same as `/api/cron/onboarding-janitor`. The
+cron secret validates that Vercel (or an authenticated developer
+testing) is calling. No user or tenant authorization applies.
+
+### Schema change
+
+Added `OnboardingSession.abandonedEmailSentAt: DateTime?` plus a
+partial index for the cron query. RLS policies on OnboardingSession
+unchanged — the new column inherits the table's existing policies.
+
+### Email template
+
+`lib/emails/wizard-abandoned.ts` follows the canonical template
+pattern (Inter font, real footer links via baseUrl, no
+personalization). NO escapeHtml needed because no user-supplied data
+is interpolated. Matches password-reset.ts (PR #119).
+
+### Known gap
+
+The email's resume link goes to `/onboarding/resume/[token]` which
+doesn't exist yet (P1.B.8). Clicked links will 404 until P1.B.8
+ships in the next PR. Pre-launch, the production impact is nil.
+Tracked as PR #123 follow-up.
