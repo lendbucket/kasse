@@ -95,3 +95,59 @@ a11y sign-off."
   only, not a redesign.
 
 **Status:** Deferred to P12 (UI polish phase).
+
+---
+
+## 2026-05-25 — Onboarding wizard ProgressBar — `isComplete` variable dead in color/opacity
+
+**Where:** `components/onboarding/ProgressBar.tsx` (shipped in PR #120,
+P1.B.1 wizard shell; refined in PR #120 cycle 2)
+
+**What felt wrong:** The component computes three boolean state
+variables per segment:
+
+```ts
+const isComplete = stepNumber < maxCompletedStep && stepNumber !== currentStep;
+const isCurrent = stepNumber === currentStep;
+const isTappable = stepNumber <= maxCompletedStep && stepNumber !== currentStep;
+```
+
+`isComplete` is a strict subset of `isTappable` (the only difference
+is `<` vs `<=`). In the segment color and opacity expressions
+(`isComplete || isCurrent || isTappable`, `isComplete || isTappable`),
+the `isComplete` clause always reduces to `isTappable` — it's
+functionally dead in those expressions.
+
+The variable IS used distinctly in the ARIA `aria-label` tri-state
+to produce "(completed, tap to revisit)" vs "(tap to revisit)" — but
+that distinction is semantic only; visually, "completed" and
+"reached-but-not-current" segments render identically (same color,
+same opacity).
+
+Reviewer of PR #120 cycle 3 raised this as a trap for future
+maintainers: "When step content lands in P1.C.* and someone needs to
+style 'completed' differently from 'reached-but-not-completed' (a
+common wizard pattern), they'll see `isComplete` and trust it — only
+to find the color/opacity distinction isn't actually wired up."
+
+**Thoughts on direction (for P12 designer + a11y reviewer):**
+
+Pick one of two paths once the P12 design pass starts:
+
+1. **Remove `isComplete` entirely** — collapse it into `isTappable`
+   throughout. Simpler code, but loses the "(completed, tap to
+   revisit)" vs "(tap to revisit)" ARIA distinction. Acceptable if
+   screen-reader users get the same outcome from either label.
+
+2. **Differentiate `isComplete` visually** — give completed segments
+   a different opacity, a checkmark icon overlay, or a slightly
+   darker accent color than reached-but-not-completed segments. The
+   "common wizard pattern" the reviewer alluded to: bright accent
+   for completed, dim accent for current, gray for future, plus
+   maybe a small checkmark glyph for completed steps. Then the ARIA
+   tri-state is reinforced visually and the variable earns its name.
+
+Defer the decision until the P12 design pass has a chance to look at
+the wizard holistically alongside the rest of the onboarding flow.
+
+**Status:** Deferred to P12 (UI polish phase).
