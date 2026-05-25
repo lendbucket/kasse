@@ -17,6 +17,12 @@ import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/rea
 import { checkRateLimit } from "@/lib/rate-limit/check"
 import type { UtmParams } from "@/lib/utm/read"
 import { readVisitorIdFromCookies, readVisitorIdFromRequest } from "@/lib/experiments/visitor"
+import { Resend } from "resend"
+import { getOauthWelcomeEmailHtml } from "@/lib/emails/oauth-welcome"
+
+// P1.A.15: Resend client for OAuth welcome emails. Module-scoped so
+// successive cold starts don't re-construct it.
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 /**
  * Extract client IP from NextAuth's authorize() req.headers.
@@ -456,6 +462,35 @@ export const authOptions: NextAuthOptions = {
           }
         }
         throw err
+      }
+
+      // P1.A.15: Send OAuth welcome email. Fault-isolated — a Resend
+      // failure must not block sign-in success. User record is already
+      // committed by withAdminTx above. Same fail-open philosophy as
+      // /api/auth/register.
+      try {
+        const dashboardUrl = `${process.env.NEXTAUTH_URL}/dashboard`
+        const providerLabel = account.provider === "google" ? "Google" : "Apple"
+        await resend.emails.send({
+          from: "Kasse <onboarding@kasseapp.com>",
+          to: email,
+          subject: `Welcome to Kasse, ${name}!`,
+          headers: {
+            "X-Entity-Ref-ID": crypto.randomUUID(),
+          },
+          html: getOauthWelcomeEmailHtml({
+            name,
+            businessName,
+            provider: providerLabel,
+            dashboardUrl,
+          }),
+        })
+      } catch (err) {
+        // OAuth welcome email is non-critical. Log and continue —
+        // sign-in must succeed regardless.
+        console.warn(
+          `[auth] OAuth welcome email send failed for ${account.provider} signup (${email.slice(0, 3)}***): ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
 
       // PrismaAdapter creates the Account row after signIn returns true — don't create it here.
