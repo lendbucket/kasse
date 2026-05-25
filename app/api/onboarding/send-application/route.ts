@@ -6,16 +6,8 @@ import {
 } from "@/lib/tenant/context";
 import { Resend } from "resend";
 import { getMerchantApplicationEmailHtml } from "@/lib/emails/merchant-application";
+import { escapeHtml } from "@/lib/emails/escape";
 import crypto from "crypto";
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
