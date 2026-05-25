@@ -479,6 +479,17 @@ export const authOptions: NextAuthOptions = {
           `[auth] OAuth welcome email skipped — email is nullish (provider: ${account.provider})`,
         )
       } else {
+        // P1.A.15 cycle 3: Apple Hide-My-Email re-auth flows may omit user.name.
+        // Even with the upstream fallback chain (user.name || profile?.name ||
+        // email.split("@")[0]), defensive guards ensure no "Welcome to Kasse,
+        // undefined!" subjects reach users. The email-local-part fallback for
+        // Apple Hide-My-Email relay addresses (e.g. "abc123xyz") is ugly but
+        // functional. The "there" fallback is the floor of last resort.
+        const safeName = typeof name === "string" && name ? name : "there"
+        const safeBusinessName = typeof businessName === "string" && businessName
+          ? businessName
+          : "your business"
+
         try {
           const baseUrl = process.env.NEXTAUTH_URL ?? "https://portal.kasseapp.com"
           const dashboardUrl = `${baseUrl}/dashboard`
@@ -486,13 +497,13 @@ export const authOptions: NextAuthOptions = {
           await resend.emails.send({
             from: "Kasse <onboarding@kasseapp.com>",
             to: email,
-            subject: `Welcome to Kasse, ${name}!`,
+            subject: `Welcome to Kasse, ${safeName}!`,
             headers: {
               "X-Entity-Ref-ID": crypto.randomUUID(),
             },
             html: getOauthWelcomeEmailHtml({
-              name,
-              businessName,
+              name: safeName,
+              businessName: safeBusinessName,
               provider: providerLabel,
               dashboardUrl,
               baseUrl,

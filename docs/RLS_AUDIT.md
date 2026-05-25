@@ -2021,6 +2021,12 @@ Closes two gaps in the existing P1.A.* email infrastructure:
   automatic retry. Same fail-open philosophy as Turnstile (P1.A.14)
   and rate-limiting (P1.A.13). If failure rates become problematic
   later, add a FailedEmail table and a cron-driven retry job.
+- `lib/emails/verification.ts` Georgia serif font in kasse. wordmark:
+  pre-existing brand drift, not introduced by this PR. The new
+  `oauth-welcome.ts` uses Inter to match the design system. Follow-up
+  PR will update verification.ts (and merchant-application.ts if it has
+  the same issue) to match. This PR's template inconsistency is
+  one-cycle-only.
 
 ### Failure mode
 

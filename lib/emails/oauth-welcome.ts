@@ -57,7 +57,7 @@ export function getOauthWelcomeEmailHtml({
 
           <tr>
             <td style="background-color:#0a0c0e;border-radius:12px 12px 0 0;padding:32px 40px;text-align:center">
-              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:Georgia,serif">kasse.</div>
+              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">kasse.</div>
               <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;text-transform:uppercase;margin-top:6px">Salon Management Platform</div>
             </td>
           </tr>
