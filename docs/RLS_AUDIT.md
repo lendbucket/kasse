@@ -2364,3 +2364,12 @@ The email's resume link goes to `/onboarding/resume/[token]` which
 doesn't exist yet (P1.B.8). Clicked links will 404 until P1.B.8
 ships in the next PR. Pre-launch, the production impact is nil.
 Tracked as PR #123 follow-up.
+
+### Cycle 2 hardening
+
+Updated `/api/cron/onboarding-abandoned` AND
+`/api/cron/onboarding-janitor` to require CRON_SECRET unconditionally.
+The previous pattern (skip auth when secret absent for dev
+convenience) left preview deployments open. Developers testing locally
+can set CRON_SECRET in .env.local. Production sets it via Vercel env
+vars.

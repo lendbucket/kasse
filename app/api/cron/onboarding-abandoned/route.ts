@@ -38,14 +38,19 @@ export async function GET(req: Request) {
     ? authHeader.slice(7)
     : null;
 
-  if (process.env.NODE_ENV === 'production' && !expected) {
+  // PR #122 cycle 2 hardening: require CRON_SECRET unconditionally.
+  // The previous pattern (skip auth when secret absent for dev
+  // convenience) left preview deployments open — preview URLs are
+  // internet-accessible. Developers testing locally can set CRON_SECRET
+  // in .env.local (one line). Production sets it via Vercel env vars.
+  if (!expected) {
     console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
     return NextResponse.json(
       { error: 'service_misconfigured' },
       { status: 500 }
     );
   }
-  if (expected && cronSecret !== expected) {
+  if (cronSecret !== expected) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -78,7 +83,11 @@ export async function GET(req: Request) {
         email: session.email,
         state: session.state as OnboardingState,
       });
-      const resumeUrl = `${baseUrl}/onboarding/resume/${encodeURIComponent(resumeToken)}`;
+      // JWTs use base64url charset (A-Z a-z 0-9 - _ .) which is fully URL-
+      // safe in path segments. encodeURIComponent would over-encode the `.`
+      // separators (producing %2E) and depend on Next.js framework decoding
+      // in the receiving route. Just inline the token.
+      const resumeUrl = `${baseUrl}/onboarding/resume/${resumeToken}`;
 
       await resend.emails.send({
         from: 'Kasse <onboarding@kasseapp.com>',
