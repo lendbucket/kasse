@@ -2203,3 +2203,33 @@ functional behavior changes.
 Email subject lines are plain text per RFC 5322, not HTML. Resend
 handles subject sanitization at the SMTP layer. Only HTML body
 interpolations need escapeHtml.
+
+## Email helper consolidation — lib/emails/escape.ts (2026-05-25)
+
+### Coverage
+
+Extracted the duplicated `escapeHtml` helper from four sites into a
+single canonical module at `lib/emails/escape.ts`. No behavior change
+— pure refactor. The four call sites are now consumers, not owners:
+
+- `lib/emails/oauth-welcome.ts`
+- `lib/emails/verification.ts`
+- `lib/emails/merchant-application.ts`
+- `app/api/onboarding/send-application/route.ts`
+
+### Rationale
+
+Reviewer of PR #117 (email templates symmetric hardening) flagged the
+4-copy duplication as the next refactor. Consolidation prevents future
+template additions from forking the implementation. The new module
+includes expanded JSDoc covering when to use escapeHtml (user-supplied
+HTML interpolation), when NOT to use it (server-controlled URLs,
+email subjects, URL query params).
+
+### No new routes, no new DB writes
+
+Pure code consolidation. The function implementation is character-for-
+character identical to the previous copies (verified in PR #117 cycle 1).
+Tests that exercise the existing email send paths cover the consolidation
+transitively — there's no separate test surface for the helper itself
+since it's a small pure function.
