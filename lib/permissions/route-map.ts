@@ -30,6 +30,12 @@ export const routeMap: Record<string, RouteGuard> = {
   "/reset-password": { type: "public" },
   "/api/health": { type: "public" },
   "/api/auth": { type: "public" },
+  // Cron routes are middleware-public; the route handler enforces
+  // `Authorization: Bearer ${CRON_SECRET}` itself. This mirrors how
+  // /api/auth (NextAuth handlers do their own validation) and
+  // /api/health (intentionally open) are configured. The longest-prefix
+  // match covers /api/cron/* without per-route entries.
+  "/api/cron": { type: "public" },
 
   // ── Authenticated (any role) ─────────────────────────────────────────
   "/dashboard": { type: "authenticated" },
@@ -91,6 +97,11 @@ export const routeMap: Record<string, RouteGuard> = {
  * Find the most specific matching route guard for a pathname.
  * Exact match wins, then longest-prefix match.
  * Returns null if no route matches (caller should default-deny).
+ *
+ * NOTE: The /api/cron entry (added 2026-05-25) relies on longest-prefix
+ * match to cover /api/cron/onboarding-janitor and any future cron route
+ * via a single entry. If this match logic ever changes, every cron
+ * route must get its own explicit entry.
  */
 export function getRouteGuard(pathname: string): RouteGuard | null {
   // Exact match first
