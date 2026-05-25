@@ -33,7 +33,14 @@ const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
  */
 export async function GET(req: Request) {
   const expected = process.env.CRON_SECRET;
-  const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '');
+  // Defensive Bearer parsing: split on prefix and take the token
+  // instead of string-replace. .replace('Bearer ', '') would silently
+  // mangle tokens containing the literal 'Bearer ' substring elsewhere
+  // (though Vercel-generated CRON_SECRET values never do).
+  const authHeader = req.headers.get('authorization');
+  const cronSecret = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
 
   // Production: secret MUST be set; fail-closed if misconfigured.
   if (process.env.NODE_ENV === 'production' && !expected) {

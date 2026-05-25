@@ -2087,7 +2087,10 @@ Required pattern in every cron route handler:
 ```ts
 export async function GET(req: Request) {
   const expected = process.env.CRON_SECRET;
-  const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '');
+  const authHeader = req.headers.get('authorization');
+  const cronSecret = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : null;
 
   // Production: secret MUST be set; fail-closed if misconfigured.
   if (process.env.NODE_ENV === 'production' && !expected) {
