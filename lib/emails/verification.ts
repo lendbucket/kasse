@@ -1,12 +1,37 @@
+/**
+ * HTML-escape user-supplied data before interpolating into email HTML.
+ * Email clients don't execute JavaScript so this is not an XSS
+ * mitigation — it's a correctness mitigation for names like
+ * "O'Reilly & Sons" or "<test> Salon" that would otherwise render with
+ * literal special characters that break HTML rendering.
+ *
+ * Covers the five HTML entity references that matter inside element
+ * content: `&`, `<`, `>`, `"`, and `'`. The order matters: `&` MUST be
+ * first to avoid double-escaping.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export function getVerificationEmailHtml({
   name,
   businessName,
   verifyUrl,
+  baseUrl,
 }: {
   name: string
   businessName: string
   verifyUrl: string
+  baseUrl: string
 }): string {
+  const safeName = escapeHtml(name)
+  const safeBusinessName = escapeHtml(businessName)
+
   const steps = [
     "Verify your email to activate your account",
     "Complete your business setup (takes 3 minutes)",
@@ -43,7 +68,7 @@ export function getVerificationEmailHtml({
 
   <!-- Preheader text (hidden, helps with spam) -->
   <div style="display:none;font-size:1px;color:#f7f8fa;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden">
-    Verify your email to activate your Kasse account for ${businessName}. This link expires in 24 hours.
+    Verify your email to activate your Kasse account for ${safeBusinessName}. This link expires in 24 hours.
   </div>
 
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f8fa;padding:40px 20px">
@@ -56,7 +81,7 @@ export function getVerificationEmailHtml({
           <!-- Header -->
           <tr>
             <td style="background-color:#0a0c0e;border-radius:12px 12px 0 0;padding:32px 40px;text-align:center">
-              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:Georgia,serif">kasse.</div>
+              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">kasse.</div>
               <div style="font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;text-transform:uppercase;margin-top:6px">Salon Management Platform</div>
             </td>
           </tr>
@@ -66,11 +91,11 @@ export function getVerificationEmailHtml({
             <td style="background-color:#ffffff;padding:48px 40px 32px">
 
               <h1 style="margin:0 0 8px;font-size:24px;font-weight:700;color:#111827;text-align:center;letter-spacing:-0.3px">
-                Welcome to Kasse, ${name}!
+                Welcome to Kasse, ${safeName}!
               </h1>
               <p style="margin:0 0 32px;font-size:15px;color:#6b7280;text-align:center;line-height:1.6">
                 You're one step away from activating your account for<br>
-                <strong style="color:#111827">${businessName}</strong>
+                <strong style="color:#111827">${safeBusinessName}</strong>
               </p>
 
               <!-- Divider -->
@@ -135,11 +160,9 @@ export function getVerificationEmailHtml({
                 5601 S Padre Island Dr Ste E, Corpus Christi, TX 78412
               </p>
               <p style="margin:8px 0 0;font-size:11px;color:#d1d5db">
-                <a href="#" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
+                <a href="${baseUrl}/privacy" style="color:#9ca3af;text-decoration:none">Privacy Policy</a>
                 &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
-                &nbsp;&middot;&nbsp;
-                <a href="#" style="color:#9ca3af;text-decoration:none">Unsubscribe</a>
+                <a href="${baseUrl}/terms" style="color:#9ca3af;text-decoration:none">Terms of Service</a>
               </p>
             </td>
           </tr>

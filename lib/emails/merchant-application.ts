@@ -1,3 +1,23 @@
+/**
+ * HTML-escape user-supplied data before interpolating into email HTML.
+ * Email clients don't execute JavaScript so this is not an XSS
+ * mitigation — it's a correctness mitigation for names like
+ * "O'Reilly & Sons" or "<test> Salon" that would otherwise render with
+ * literal special characters that break HTML rendering.
+ *
+ * Covers the five HTML entity references that matter inside element
+ * content: `&`, `<`, `>`, `"`, and `'`. The order matters: `&` MUST be
+ * first to avoid double-escaping.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 export function getMerchantApplicationEmailHtml({
   ownerFirstName,
   ownerLastName,
@@ -11,6 +31,12 @@ export function getMerchantApplicationEmailHtml({
   monthlyVolume: string
   avgTicket: string
 }): string {
+  const safeOwnerFirstName = escapeHtml(ownerFirstName)
+  const safeOwnerLastName = escapeHtml(ownerLastName)
+  const safeBusinessName = escapeHtml(businessName)
+  const safeMonthlyVolume = escapeHtml(monthlyVolume)
+  const safeAvgTicket = escapeHtml(avgTicket)
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +46,7 @@ export function getMerchantApplicationEmailHtml({
 </head>
 <body style="margin:0;padding:0;background-color:#f7f8fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased">
   <div style="display:none;font-size:1px;color:#f7f8fa;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden">
-    Your SalonTransact merchant application for ${businessName}. Complete the application to start accepting card payments.
+    Your SalonTransact merchant application for ${safeBusinessName}. Complete the application to start accepting card payments.
   </div>
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f7f8fa;padding:40px 20px">
     <tr>
@@ -28,7 +54,7 @@ export function getMerchantApplicationEmailHtml({
         <table width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%">
           <tr>
             <td style="background-color:#0a0c0e;border-radius:12px 12px 0 0;padding:32px 40px;text-align:center">
-              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:Georgia,serif">kasse.</div>
+              <div style="font-size:32px;font-weight:800;color:#ffffff;letter-spacing:0.12em;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">kasse.</div>
               <div style="font-size:11px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;text-transform:uppercase;margin-top:6px">Powered by SalonTransact</div>
             </td>
           </tr>
@@ -38,14 +64,14 @@ export function getMerchantApplicationEmailHtml({
                 Merchant Application Received
               </h1>
               <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6">
-                Hi ${ownerFirstName}, we've received your merchant application for <strong style="color:#111827">${businessName}</strong>. Here's a summary:
+                Hi ${safeOwnerFirstName}, we've received your merchant application for <strong style="color:#111827">${safeBusinessName}</strong>. Here's a summary:
               </p>
               <hr style="border:none;border-top:1px solid #f3f4f6;margin:0 0 24px">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Business Name</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${businessName}</td></tr>
-                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Owner</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${ownerFirstName} ${ownerLastName}</td></tr>
-                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Est. Monthly Volume</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${monthlyVolume}</td></tr>
-                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Avg. Ticket Size</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${avgTicket}</td></tr>
+                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Business Name</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${safeBusinessName}</td></tr>
+                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Owner</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${safeOwnerFirstName} ${safeOwnerLastName}</td></tr>
+                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Est. Monthly Volume</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${safeMonthlyVolume}</td></tr>
+                <tr><td style="padding:8px 0;font-size:14px;color:#6b7280">Avg. Ticket Size</td><td style="padding:8px 0;font-size:14px;font-weight:600;color:#111827;text-align:right">${safeAvgTicket}</td></tr>
               </table>
               <hr style="border:none;border-top:1px solid #f3f4f6;margin:24px 0">
               <p style="margin:0 0 12px;font-size:15px;font-weight:700;color:#374151">What happens next?</p>
