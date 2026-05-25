@@ -2285,3 +2285,40 @@ to userId, no email).
 Pure template hardening + fault-isolation. No new persistence, no
 new RLS surface, no migration. The existing user.update for the
 reset token happens BEFORE the Resend call (unchanged).
+
+## P1.B.1 — Wizard shell (2026-05-25)
+
+### Routes added
+
+None at the route-handler level. P1.B.1 adds server-rendered PAGES
+at `/onboarding/wizard` and `/onboarding/wizard/step-N` (8 step
+placeholders). Pages are NOT API routes; they're not in the RLS
+classification taxonomy.
+
+### Page auth & DB access
+
+All 9 wizard pages (`page.tsx` + step-1 through step-8) use the
+same pattern:
+
+1. `getServerSession(authOptions)` for auth gate
+2. `prismaAdmin.onboardingSession.findFirst` to look up the
+   user's session by userId
+
+The `prismaAdmin` access is SELF_READ — the query is scoped by
+`userId: session.user.id` (server-verified). Same security
+property as the existing `/api/onboarding/refresh-session` route
+classified as SELF_READ. No cross-tenant exposure possible because:
+
+- The query filter uses session.user.id exclusively
+- No client-supplied identifier is read or accepted
+- A user can only read their OWN OnboardingSession row
+
+This pattern is server-page-only — no API route is added by this PR.
+When step pages get POST forms in P1.C.*, each will go through an
+already-classified `/api/onboarding/*` route (org, location,
+services, etc.).
+
+### No new tables, no new RLS surface
+
+Pure UI shell. The OnboardingSession + OnboardingStateTransition
+tables (P1.A.1) are used read-only.
