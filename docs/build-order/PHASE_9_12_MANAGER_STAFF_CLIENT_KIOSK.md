@@ -1,15 +1,30 @@
-# PHASE 9-12 — MANAGER + STAFF + CLIENT + KIOSK
+# PHASE 9-12 — ROLE-BASED VIEWS + CLIENT + KIOSK
 
-**Scope:** Manager portal (P9, 20 PRs), Staff Portal mobile+iPhone native (P10, 80 PRs), Client Portal + public booking + iPhone native (P11, 60 PRs), Kiosk mode (P12, 40 PRs).
-**Total PRs:** 200
-**Depends on:** P6 (Owner Portal) provides the framework. P0 foundation.
+**Scope:** Manager role views (P9, 20 PRs), Staff role views + mobile polish (P10, ~40-60 PRs), Client Portal + public booking + iPhone native (P11, 60 PRs), Kiosk mode (P12, 40 PRs).
+**Total PRs:** ~120-140 (depending on whether P10.F iPhone native staff app is kept or deferred)
+**Depends on:** P6 (Owner Portal) provides the framework + the permission system. P0 foundation.
 **Parallelizable:** All four phases can run in parallel after P6.
 
-**Reference docs:** KASSE_PORTALS.md (4-portal architecture), KASSE_PORTAL_ARCHITECTURE.md (every page spec).
+## ARCHITECTURAL NOTE (2026-05-26)
+
+Kasse uses ONE portal at `/dashboard` with role-based access control, NOT separate portals per role. This is the standard SaaS pattern (Square, Toast, Vagaro, Mindbody all work this way).
+
+- **Owner role** sees everything
+- **Manager role** sees everything except what the owner has restricted via permissions (default: no financial / payroll / billing / role-edit)
+- **Staff role** sees permission-gated views: their own appointments (Today, Schedule), clients they've served (My Clients), their own earnings, clock-in/clock-out, mobile POS. NO routes under `/staff/*`. NO separate dashboard. SAME route tree, role-based gates.
+- **Front desk role** (future) sees calendar + check-in flow, gated permissions on financial detail
+
+P9 and P10 are about role-based VIEW LAYERS within the single portal: which sidebar items show, which API endpoints respond, which page sections render, what data scope is applied. They are NOT separate portals.
+
+P11 (Client) and P12 (Kiosk) ARE genuinely separate surfaces:
+- Client is not an employee role; clients log in via magic-link, see only their own data, never see employee surfaces
+- Kiosk is a PIN-locked tablet with a locked-down UX, different from the employee portal entirely
+
+**Reference docs:** KASSE_PORTALS.md and KASSE_PORTAL_ARCHITECTURE.md describe the legacy 4-portal architecture. Those docs should be updated separately to reflect the role-based-views pattern. This doc is the authoritative build sequence.
 
 ---
 
-# P9 — MANAGER PORTAL (20 PRs)
+# P9 — MANAGER ROLE VIEWS & PERMISSIONS (20 PRs)
 
 Manager shares route tree with OWNER but layout enforces permission filter. Defense-in-depth at API layer.
 
@@ -58,15 +73,33 @@ SUPERADMIN view of manager actions (approvals, discounts applied, etc.).
 
 ---
 
-# P10 — STAFF PORTAL (mobile-first web + iPhone native) (80 PRs)
+# P10 — STAFF ROLE VIEWS + MOBILE POLISH + (OPTIONAL) iPhone NATIVE (~40-60 PRs)
+
+## ARCHITECTURAL CORRECTION
+
+The legacy doc structure described `/staff/*` as a separate route tree. **Strike that.** Staff sees the SAME `/dashboard/*` routes as owner and manager, with role-based permission gates restricting what they see and do.
+
+The components below are real (Today screen, Schedule, My Clients, Earnings, Clock-In, Mobile POS) — what changes is they live as PERMISSION-GATED VIEWS within the existing dashboard, not under a separate `/staff/*` prefix.
+
+Specifically:
+- **DROP P10.A.1** (`/staff/*` route tree) — no separate route prefix
+- **DROP P10.A.2** (mobile-optimized base layout for staff) — mobile responsiveness applies portal-wide
+- **CHANGE P10.A.3** (auth gate) to a role-based permission gate in middleware
+- **KEEP P10.A.4-10** (onboarding tour, PWA install, offline indicator, push notifications, etc.) — these apply portal-wide, not staff-only
+- **KEEP P10.A.11-15** (settings) — these apply to all roles
+- **KEEP P10.B** (Today + Schedule, 15 PRs) — but as views under `/dashboard/today` and `/dashboard/schedule` with permission gates scoping to own-staff for staff role, all-staff for owner/manager
+- **KEEP P10.C** (My Clients, 10 PRs) — same: `/dashboard/clients` with permission scope filter
+- **KEEP P10.D** (My Earnings, 10 PRs) — `/dashboard/earnings` with permission scope filter
+- **KEEP P10.E** (Clock In/Out + Mobile POS, 10 PRs) — `/dashboard/clock`, `/dashboard/checkout` with permission gates
+- **OPTIONAL P10.F** (Staff iPhone native, 20 PRs) — defer post-launch if PWA-first is acceptable
 
 ## P10.A — Staff Portal Web Routes (15 PRs)
 
-### P10.A.1 — `/staff/*` route tree
+### P10.A.1 — `/staff/*` route tree — **REMOVED (see Architectural Correction above)**
 Files: `app/staff/layout.tsx`
 Bottom-nav layout (mobile-first). Tabs: Today, Schedule, Clients, Earnings, More.
 
-### P10.A.2 — Mobile-optimized base layout
+### P10.A.2 — Mobile-optimized base layout — **REMOVED (see Architectural Correction above)**
 Large touch targets. Sticky bottom nav.
 
 ### P10.A.3 — Auth gate
@@ -183,7 +216,7 @@ Submit to manager for approval.
 ### P10.E.6-10 — Mobile POS (5 PRs)
 Take Payment screen. Permission-gated. Card-not-present primary. Cash. Tip. Receipt. Past transactions own only.
 
-## P10.F — Staff iPhone Native App (20 PRs)
+## P10.F — Staff iPhone Native App (20 PRs) — **OPTIONAL** — defer post-launch unless explicitly prioritized
 
 ### P10.F.1 — iPhone target in `lendbucket/kasse-native`
 Same monorepo. Different entry point.
@@ -452,9 +485,9 @@ Itemized.
 
 ## PHASE 9-12 COMPLETION CRITERIA
 
-- All 200 PRs merged
-- Manager portal restrictive per spec
-- Staff portal accessible mobile-first + iPhone native
+- All ~120-140 PRs merged
+- Manager role views restrictive per spec
+- Staff role views accessible within single portal, mobile-responsive + optional iPhone native
 - Public booking page live for Salon Envy
 - Client portal accessible via magic link
 - Kiosk mode functional at Salon Envy front desk

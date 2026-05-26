@@ -94,7 +94,7 @@ Four shared packages designed for cross-product use:
 
 ## TOTAL SCOPE
 
-**~5,175 atomic PRs across 79 phases.**
+**~5,095 atomic PRs across 79 phases.**
 
 This is the complete scope to ship a Fortune-500-grade competitor to Square + Toast + Vagaro + Zenoti + Mindbody combined, with the Reyna Pay + Kasse + SalonBacked + RunMySalon empire fully built.
 
@@ -149,11 +149,21 @@ Each phase below links to a detailed sub-doc in `docs/build-order/`. The sub-doc
 - **[P7 — Master Portal v1 (Mini)](build-order/PHASE_7_8_MASTER_NATIVE.md)** — 60 PRs
 - **[P8 — Native Kasse iPad POS](build-order/PHASE_7_8_MASTER_NATIVE.md)** — 100 PRs
 
-### MANAGER + STAFF + CLIENT + KIOSK (P9–P12) — 200 PRs
-- **[P9 — Manager Portal](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 20 PRs
-- **[P10 — Staff Portal (mobile + iPhone native)](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 80 PRs
-- **[P11 — Client Portal + Public Booking + iPhone native](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 60 PRs
+### ROLE-BASED VIEWS + CLIENT + KIOSK (P9–P12) — ~120-140 PRs
+
+**Architectural correction (2026-05-26):** Kasse uses ONE portal at `/dashboard` with role-based access control, not separate portals per role. This is the standard SaaS pattern (Square, Toast, Vagaro, Mindbody). P9 and P10 are role-based view layers WITHIN the single portal; P11 (client) and P12 (kiosk) are genuinely separate surfaces.
+
+- **[P9 — Manager Role Views & Permissions](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 20 PRs
+  Manager role gates within the single portal. Hide financial / payroll / billing / role-edit sections from sidebar via permission gates. API-layer enforcement on every restricted endpoint. Manager-specific KPIs, reports, location switching, approval workflows.
+
+- **[P10 — Staff Role Views + Mobile Polish + (optional) iPhone Native](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — ~40-60 PRs
+  Staff sees the same `/dashboard` route tree as everyone else, with permission gates restricting view to their own appointments, their own clients, their own earnings, clock-in/clock-out flow, mobile POS. PWA install, push notifications, offline indicator, mobile-responsive treatments apply portal-wide (not staff-only). Optional iPhone native app (P10.F, 20 PRs) — defers post-launch if PWA-first is acceptable.
+
+- **[P11 — Client Portal + Public Booking + iPhone Native](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 60 PRs
+  Genuinely separate surface. Client logs in via magic-link, sees only their own data. Public booking page is unauthenticated. Client iPhone native app is a separate Bundle ID, separate Expo target.
+
 - **[P12 — Kiosk Mode](build-order/PHASE_9_12_MANAGER_STAFF_CLIENT_KIOSK.md)** — 40 PRs
+  Genuinely separate surface. PIN-locked tablet, locked-down UX, self check-in, self-service walk-in, self-checkout. Different use case than employee portal.
 
 ### INTELLIGENCE + COLOR + AI RECEPTIONIST (P13–P15) — 200 PRs
 - **[P13 — Profit Intelligence (Nisha features)](build-order/PHASE_13_15_INTELLIGENCE_COLOR_AI.md)** — 80 PRs
@@ -257,10 +267,10 @@ P0 (Foundation) BLOCKS everything
      │                    │
      │                    ├─→ P7 (Master Mini) [PARALLEL with P6]
      │                    ├─→ P8 (Native iPad) [PARALLEL with P6 after P0.E]
-     │                    ├─→ P9 (Manager) [depends on P6]
-     │                    ├─→ P10 (Staff Portal) [depends on P6]
-     │                    ├─→ P11 (Client Portal) [PARALLEL with P10]
-     │                    └─→ P12 (Kiosk) [PARALLEL with P10/P11]
+     │                    ├─→ P9 (Manager role views) [depends on P6 — same route tree]
+     │                    ├─→ P10 (Staff role views + mobile polish) [depends on P6 — same route tree]
+     │                    ├─→ P11 (Client Portal + Public Booking) [separate surface, PARALLEL with P9/P10]
+     │                    └─→ P12 (Kiosk) [separate surface, PARALLEL with P9/P10/P11]
      │
      └─→ Layer 1 complete → P13-P22 (intelligence, automation, master full, financial, migration)
            │
