@@ -57,6 +57,30 @@ export async function GET(req: Request) {
   const cutoff = new Date(Date.now() - ABANDONED_THRESHOLD_MS);
   const baseUrl = process.env.NEXTAUTH_URL ?? 'https://portal.kasseapp.com';
 
+  // PR #122 cycle 6: validate baseUrl is well-formed https:// before any
+  // DB or Resend work. If NEXTAUTH_URL is misconfigured to staging in
+  // production, every abandoned email would link to the wrong env.
+  if (!baseUrl.startsWith('https://')) {
+    console.error(
+      `[BASE_URL_MISCONFIG] NEXTAUTH_URL must start with https:// — got '${baseUrl}'`,
+    );
+    return NextResponse.json(
+      { error: 'service_misconfigured' },
+      { status: 500 }
+    );
+  }
+  try {
+    new URL(baseUrl);
+  } catch {
+    console.error(
+      `[BASE_URL_MISCONFIG] NEXTAUTH_URL is not a parseable URL — got '${baseUrl}'`,
+    );
+    return NextResponse.json(
+      { error: 'service_misconfigured' },
+      { status: 500 }
+    );
+  }
+
   const candidates = await prismaAdmin.onboardingSession.findMany({
     where: {
       state: { not: 'COMPLETED' },
@@ -79,18 +103,27 @@ export async function GET(req: Request) {
 
   for (const session of candidates) {
     try {
-      // PR #122 cycle 3: atomic claim BEFORE sending. Vercel cron does
-      // not guarantee single-instance execution — two overlapping cron
-      // invocations could both read the same un-emailed session and
-      // both send an email. We stamp first via updateMany with the
-      // conditional `where: { abandonedEmailSentAt: null }`. If
-      // count === 0, another instance already claimed this session
-      // since our findMany; skip.
+      // PR #122 cycle 6: mint BEFORE claim. If signResumeToken throws
+      // (JWT lib issue, key misconfig), the catch fires before any DB
+      // write — session.abandonedEmailSentAt stays NULL and next cron
+      // tick retries. The cycle 3 ordering (claim→mint) had a subtle
+      // silent-loss bug: a mint throw AFTER the claim left the session
+      // stamped but un-emailed permanently.
+      const resumeToken = signResumeToken({
+        sessionId: session.id,
+        email: session.email,
+        state: session.state as OnboardingState,
+      });
+      const resumeUrl = `${baseUrl}/onboarding/resume/${resumeToken}`;
+
+      // Atomically claim the session before sending. The conditional
+      // updateMany prevents double-send if two overlapping cron
+      // invocations both reach this session — only one's claim returns
+      // count > 0; the other skips.
       //
-      // Trade-off: a Resend failure after the stamp means no retry on
-      // the next tick. Acceptable — the session is dormant; the user
-      // can still complete signup later. Double-sending is visibly bad
-      // to recipients and we'd rather miss-once than send-twice.
+      // Trade-off: a Resend failure AFTER the claim leaves the session
+      // stamped but un-emailed, with no retry. Acceptable per "miss-
+      // once is better than send-twice" for recovery emails.
       const claim = await prismaAdmin.onboardingSession.updateMany({
         where: {
           id: session.id,
@@ -105,16 +138,6 @@ export async function GET(req: Request) {
         continue;
       }
 
-      // We own the send. Mint the resume token and dispatch.
-      const resumeToken = signResumeToken({
-        sessionId: session.id,
-        email: session.email,
-        state: session.state as OnboardingState,
-      });
-      // JWTs use base64url charset (A-Z a-z 0-9 - _ .) which is fully
-      // URL-safe in path segments. No encoding needed.
-      const resumeUrl = `${baseUrl}/onboarding/resume/${resumeToken}`;
-
       await resend.emails.send({
         from: 'Kasse <onboarding@kasseapp.com>',
         to: session.email,
@@ -125,8 +148,7 @@ export async function GET(req: Request) {
       emailedCount++;
     } catch (err) {
       failedCount++;
-      // PII discipline: log session.id, NOT session.email. The stamp
-      // is already set — the session won't be retried.
+      // PII discipline: log session.id, NOT session.email.
       console.warn(
         `[onboarding-abandoned] email send failed for session ${session.id}: ${err instanceof Error ? err.message : String(err)}`,
       );

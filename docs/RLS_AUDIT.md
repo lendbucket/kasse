@@ -1157,6 +1157,11 @@ New export from `lib/audit/write.ts`: `auditLogCreateOp(p, input)` returns a def
 |-------|-----------|---------------|--------|
 | `/api/cron/onboarding-janitor` | GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan. Vercel cron sends GET. |
 
+**Note (updated 2026-05-26 in PR #122 cycle 2)**: This route's auth
+was hardened to require CRON_SECRET unconditionally in all
+environments. See the "Cycle 2 hardening" subsection under
+"P1.B.6 + P1.B.7" below for full rationale.
+
 ## P1.A.7-a — Compensation foundation (2026-05-20)
 
 No new tables (uses existing Compensation table from P0.G.4). Migration
