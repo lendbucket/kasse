@@ -7,8 +7,16 @@
  * Mirrors password-reset.ts: no user-supplied personalization. Only
  * resumeUrl and baseUrl are interpolated, both server-controlled.
  *
- * Caller is responsible for setting OnboardingSession.abandonedEmailSentAt
- * AFTER Resend send succeeds.
+ * The cron route uses a claim-then-send pattern: it stamps
+ * OnboardingSession.abandonedEmailSentAt BEFORE calling
+ * resend.emails.send, via a conditional updateMany that atomically
+ * claims the session if and only if abandonedEmailSentAt is still
+ * NULL. This prevents double-send when overlapping cron invocations
+ * read the same un-emailed session. Trade-off: a Resend failure
+ * after the stamp leaves the session un-emailed with no retry —
+ * acceptable for recovery emails where miss-once is better than
+ * send-twice. See PR #122 cycle 3 rationale in
+ * /api/cron/onboarding-abandoned/route.ts comments.
  */
 export function getWizardAbandonedEmailHtml({
   resumeUrl,
