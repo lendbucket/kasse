@@ -133,6 +133,22 @@ export async function GET(req: Request) {
     }
   }
 
+  // Aggregate observability: surface batch-level failure signal so
+  // operators can spot Resend outages without counting individual
+  // per-session warnings. Fires only when failedCount > 0.
+  if (failedCount > 0) {
+    console.warn(
+      `[onboarding-abandoned] batch completed with ${failedCount} failed send(s)`,
+      {
+        candidates: candidates.length,
+        emailedCount,
+        failedCount,
+        skippedCount,
+        cronPath: '/api/cron/onboarding-abandoned',
+      },
+    );
+  }
+
   return NextResponse.json({
     candidates: candidates.length,
     emailedCount,
