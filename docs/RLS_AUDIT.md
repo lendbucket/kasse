@@ -170,6 +170,8 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
 | `/api/cron/audit-retention` | POST | Deletes tenant audit rows older than 730 days; preserves platform rows. Uses prismaAdmin. |
+| `/api/cron/onboarding-abandoned` | GET | Hourly sweep for sessions abandoned >24h; sends one-shot recovery email via Resend. Uses prismaAdmin (cross-tenant); claim-then-send via updateMany prevents double-send. See P1.B.6 + P1.B.7 section below. |
+| `/api/cron/onboarding-janitor` | GET | 5-minute sweep for OnboardingSessions stuck in *_PENDING states. Log-only (no automated recovery yet). Uses prismaAdmin. |
 
 ### PUBLIC_STATIC — No auth, no database
 
@@ -185,11 +187,11 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
   - ORG_BOOTSTRAP: **1** (onboarding org-create — authenticated but no org yet)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
-- CRON: **2** (audit retention + onboarding janitor, CRON_SECRET protected)
+- CRON: **3** (audit retention + onboarding janitor + onboarding abandoned, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 57**
+**Total routes: 58**
 
 ## What happens next
 

@@ -60,9 +60,15 @@ export async function GET(req: Request) {
   // PR #122 cycle 6: validate baseUrl is well-formed https:// before any
   // DB or Resend work. If NEXTAUTH_URL is misconfigured to staging in
   // production, every abandoned email would link to the wrong env.
+  //
+  // PR #122 cycle 7: do NOT interpolate baseUrl into log messages.
+  // NEXTAUTH_URL could be accidentally set to a value with embedded
+  // credentials (e.g., https://user:password@host/) and logging it
+  // would leak those to Vercel's log sink. Mirrors [CRON_AUTH_MISCONFIG]
+  // which only logs "is not set" — never the secret value itself.
   if (!baseUrl.startsWith('https://')) {
     console.error(
-      `[BASE_URL_MISCONFIG] NEXTAUTH_URL must start with https:// — got '${baseUrl}'`,
+      '[BASE_URL_MISCONFIG] NEXTAUTH_URL is not a valid https:// URL — see server env',
     );
     return NextResponse.json(
       { error: 'service_misconfigured' },
@@ -73,7 +79,7 @@ export async function GET(req: Request) {
     new URL(baseUrl);
   } catch {
     console.error(
-      `[BASE_URL_MISCONFIG] NEXTAUTH_URL is not a parseable URL — got '${baseUrl}'`,
+      '[BASE_URL_MISCONFIG] NEXTAUTH_URL is not parseable — see server env',
     );
     return NextResponse.json(
       { error: 'service_misconfigured' },
