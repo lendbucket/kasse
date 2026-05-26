@@ -75,18 +75,44 @@ export async function GET(req: Request) {
 
   let emailedCount = 0;
   let failedCount = 0;
+  let skippedCount = 0; // sessions claimed by another concurrent cron instance
 
   for (const session of candidates) {
     try {
+      // PR #122 cycle 3: atomic claim BEFORE sending. Vercel cron does
+      // not guarantee single-instance execution — two overlapping cron
+      // invocations could both read the same un-emailed session and
+      // both send an email. We stamp first via updateMany with the
+      // conditional `where: { abandonedEmailSentAt: null }`. If
+      // count === 0, another instance already claimed this session
+      // since our findMany; skip.
+      //
+      // Trade-off: a Resend failure after the stamp means no retry on
+      // the next tick. Acceptable — the session is dormant; the user
+      // can still complete signup later. Double-sending is visibly bad
+      // to recipients and we'd rather miss-once than send-twice.
+      const claim = await prismaAdmin.onboardingSession.updateMany({
+        where: {
+          id: session.id,
+          abandonedEmailSentAt: null,
+        },
+        data: { abandonedEmailSentAt: new Date() },
+      });
+
+      if (claim.count === 0) {
+        // Another cron instance got there first; skip this session.
+        skippedCount++;
+        continue;
+      }
+
+      // We own the send. Mint the resume token and dispatch.
       const resumeToken = signResumeToken({
         sessionId: session.id,
         email: session.email,
         state: session.state as OnboardingState,
       });
-      // JWTs use base64url charset (A-Z a-z 0-9 - _ .) which is fully URL-
-      // safe in path segments. encodeURIComponent would over-encode the `.`
-      // separators (producing %2E) and depend on Next.js framework decoding
-      // in the receiving route. Just inline the token.
+      // JWTs use base64url charset (A-Z a-z 0-9 - _ .) which is fully
+      // URL-safe in path segments. No encoding needed.
       const resumeUrl = `${baseUrl}/onboarding/resume/${resumeToken}`;
 
       await resend.emails.send({
@@ -96,14 +122,11 @@ export async function GET(req: Request) {
         html: getWizardAbandonedEmailHtml({ resumeUrl, baseUrl }),
       });
 
-      await prismaAdmin.onboardingSession.update({
-        where: { id: session.id },
-        data: { abandonedEmailSentAt: new Date() },
-      });
-
       emailedCount++;
     } catch (err) {
       failedCount++;
+      // PII discipline: log session.id, NOT session.email. The stamp
+      // is already set — the session won't be retried.
       console.warn(
         `[onboarding-abandoned] email send failed for session ${session.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -114,6 +137,7 @@ export async function GET(req: Request) {
     candidates: candidates.length,
     emailedCount,
     failedCount,
+    skippedCount,
     note: candidates.length === BATCH_LIMIT
       ? `batch limit hit (${BATCH_LIMIT}); next tick will pick up remaining`
       : 'all candidates processed',

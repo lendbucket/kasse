@@ -2373,3 +2373,20 @@ The previous pattern (skip auth when secret absent for dev
 convenience) left preview deployments open. Developers testing locally
 can set CRON_SECRET in .env.local. Production sets it via Vercel env
 vars.
+
+### Cycle 3 hardening
+
+Cron route's email-send loop refactored to claim-then-send pattern:
+atomically stamps `abandonedEmailSentAt` via conditional updateMany
+BEFORE the Resend call. If two overlapping cron invocations both read
+the same un-emailed session, only one's claim succeeds — the other's
+updateMany returns count === 0 and skips. Prevents double-send on
+Vercel's non-single-instance cron execution.
+
+Trade-off: Resend failure after the stamp leaves the stamp set with
+no retry; acceptable per "miss-once is better than send-twice" for
+recovery emails.
+
+Also quoted `state` identifier in schema partial index raw() to align
+with migration SQL — purely to prevent `prisma migrate diff`
+false-positive drift warnings.

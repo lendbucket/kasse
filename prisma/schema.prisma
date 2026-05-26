@@ -2256,7 +2256,7 @@ model OnboardingSession {
   transitions              OnboardingStateTransition[]
   tokens                   OnboardingVerificationToken[]
 
-  @@index([createdAt], map: "idx_onboarding_session_abandoned_candidates", where: raw("(state <> 'COMPLETED'::text AND \"abandonedEmailSentAt\" IS NULL)"))
+  @@index([createdAt], map: "idx_onboarding_session_abandoned_candidates", where: raw("(\"state\" <> 'COMPLETED'::text AND \"abandonedEmailSentAt\" IS NULL)"))
   @@index([email], map: "idx_onboarding_session_email")
   @@index([expiresAt], map: "idx_onboarding_session_expires", where: raw("(state <> 'COMPLETED'::text)"))
   @@index([state], map: "idx_onboarding_session_state", where: raw("(state <> 'COMPLETED'::text)"))
