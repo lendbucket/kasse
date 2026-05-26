@@ -127,6 +127,12 @@ export async function GET(req: Request) {
       // invocations both reach this session — only one's claim returns
       // count > 0; the other skips.
       //
+      // Defense-in-depth (PR #122 cycle 8): re-check expiresAt at claim
+      // time. The findMany above filtered on expiresAt > now(), but in
+      // the milliseconds between findMany and updateMany a session could
+      // theoretically expire. Re-checking here means we never stamp +
+      // email a session that's already expired.
+      //
       // Trade-off: a Resend failure AFTER the claim leaves the session
       // stamped but un-emailed, with no retry. Acceptable per "miss-
       // once is better than send-twice" for recovery emails.
@@ -134,6 +140,7 @@ export async function GET(req: Request) {
         where: {
           id: session.id,
           abandonedEmailSentAt: null,
+          expiresAt: { gt: new Date() },
         },
         data: { abandonedEmailSentAt: new Date() },
       });
