@@ -170,6 +170,8 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
 | Route | Method(s) | Reason |
 |-------|-----------|--------|
 | `/api/cron/audit-retention` | POST | Deletes tenant audit rows older than 730 days; preserves platform rows. Uses prismaAdmin. |
+| `/api/cron/onboarding-abandoned` | GET | Hourly sweep for sessions abandoned >24h; sends one-shot recovery email via Resend. Uses prismaAdmin (cross-tenant); claim-then-send via updateMany prevents double-send. See P1.B.6 + P1.B.7 section below. |
+| `/api/cron/onboarding-janitor` | GET | 5-minute sweep for OnboardingSessions stuck in *_PENDING states. Log-only (no automated recovery yet). Uses prismaAdmin. |
 
 ### PUBLIC_STATIC — No auth, no database
 
@@ -185,11 +187,11 @@ Routes invoked only by Vercel Cron (or equivalent scheduled trigger). Protected 
   - SELF_READ: **1** (refresh-session — authenticated user reads own row)
   - ORG_BOOTSTRAP: **1** (onboarding org-create — authenticated but no org yet)
   - SUPERADMIN: **9** (admin portal operations — 5 original + 3 feature-flag routes + 1 audit-logs route)
-- CRON: **2** (audit retention + onboarding janitor, CRON_SECRET protected)
+- CRON: **3** (audit retention + onboarding janitor + onboarding abandoned, CRON_SECRET protected)
 - PUBLIC_STATIC: **1** (static endpoints with no auth or tenant context)
 - UNDECIDED: **0**
 
-**Total routes: 57**
+**Total routes: 58**
 
 ## What happens next
 
@@ -1156,6 +1158,11 @@ New export from `lib/audit/write.ts`: `auditLogCreateOp(p, input)` returns a def
 | Route | Method(s) | Classification | Reason |
 |-------|-----------|---------------|--------|
 | `/api/cron/onboarding-janitor` | GET | CRON | Protected by CRON_SECRET bearer token; uses prismaAdmin for platform-wide session scan. Vercel cron sends GET. |
+
+**Note (updated 2026-05-26 in PR #122 cycle 2)**: This route's auth
+was hardened to require CRON_SECRET unconditionally in all
+environments. See the "Cycle 2 hardening" subsection under
+"P1.B.6 + P1.B.7" below for full rationale.
 
 ## P1.A.7-a — Compensation foundation (2026-05-20)
 
@@ -2322,3 +2329,71 @@ services, etc.).
 
 Pure UI shell. The OnboardingSession + OnboardingStateTransition
 tables (P1.A.1) are used read-only.
+
+## P1.B.6 + P1.B.7 — Abandoned wizard cron + email (2026-05-26)
+
+### Routes added
+
+`GET /api/cron/onboarding-abandoned` — hourly cron.
+
+**Auth**: Bearer cron secret only (canonical pattern from PR #116).
+No session, no tenant context. Classification: **public via cron** —
+the route accepts ONLY requests with a valid `Authorization: Bearer
+${CRON_SECRET}` header. Vercel cron sends the header automatically;
+no user traffic should reach this route.
+
+**Data access**: prismaAdmin (no tenant context — cron writes
+cross-tenant). Reads `OnboardingSession` rows where `state != COMPLETED`,
+`abandonedEmailSentAt IS NULL`, `createdAt < now() - 24h`,
+`expiresAt > now()`. Writes `abandonedEmailSentAt = now()` after
+successful Resend send.
+
+**Authorization model**: same as `/api/cron/onboarding-janitor`. The
+cron secret validates that Vercel (or an authenticated developer
+testing) is calling. No user or tenant authorization applies.
+
+### Schema change
+
+Added `OnboardingSession.abandonedEmailSentAt: DateTime?` plus a
+partial index for the cron query. RLS policies on OnboardingSession
+unchanged — the new column inherits the table's existing policies.
+
+### Email template
+
+`lib/emails/wizard-abandoned.ts` follows the canonical template
+pattern (Inter font, real footer links via baseUrl, no
+personalization). NO escapeHtml needed because no user-supplied data
+is interpolated. Matches password-reset.ts (PR #119).
+
+### Known gap
+
+The email's resume link goes to `/onboarding/resume/[token]` which
+doesn't exist yet (P1.B.8). Clicked links will 404 until P1.B.8
+ships in the next PR. Pre-launch, the production impact is nil.
+Tracked as PR #123 follow-up.
+
+### Cycle 2 hardening
+
+Updated `/api/cron/onboarding-abandoned` AND
+`/api/cron/onboarding-janitor` to require CRON_SECRET unconditionally.
+The previous pattern (skip auth when secret absent for dev
+convenience) left preview deployments open. Developers testing locally
+can set CRON_SECRET in .env.local. Production sets it via Vercel env
+vars.
+
+### Cycle 3 hardening
+
+Cron route's email-send loop refactored to claim-then-send pattern:
+atomically stamps `abandonedEmailSentAt` via conditional updateMany
+BEFORE the Resend call. If two overlapping cron invocations both read
+the same un-emailed session, only one's claim succeeds — the other's
+updateMany returns count === 0 and skips. Prevents double-send on
+Vercel's non-single-instance cron execution.
+
+Trade-off: Resend failure after the stamp leaves the stamp set with
+no retry; acceptable per "miss-once is better than send-twice" for
+recovery emails.
+
+Also quoted `state` identifier in schema partial index raw() to align
+with migration SQL — purely to prevent `prisma migrate diff`
+false-positive drift warnings.

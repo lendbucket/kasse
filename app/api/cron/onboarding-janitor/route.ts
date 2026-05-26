@@ -42,18 +42,19 @@ export async function GET(req: Request) {
     ? authHeader.slice(7)
     : null;
 
-  // Production: secret MUST be set; fail-closed if misconfigured.
-  if (process.env.NODE_ENV === 'production' && !expected) {
+  // PR #122 cycle 2 hardening: require CRON_SECRET unconditionally.
+  // The previous pattern (skip auth when secret absent for dev
+  // convenience) left preview deployments open — preview URLs are
+  // internet-accessible. Developers testing locally can set CRON_SECRET
+  // in .env.local (one line). Production sets it via Vercel env vars.
+  if (!expected) {
     console.error('[CRON_AUTH_MISCONFIG] CRON_SECRET env var is not set');
     return NextResponse.json(
       { error: 'service_misconfigured' },
       { status: 500 }
     );
   }
-
-  // All environments: if secret is set, enforce it. Only skip auth
-  // entirely when secret is absent (dev/test convenience).
-  if (expected && cronSecret !== expected) {
+  if (cronSecret !== expected) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
