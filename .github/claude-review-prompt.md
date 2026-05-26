@@ -84,6 +84,18 @@ In addition to the Prisma client choice (`prisma` vs `prismaAdmin`), Kasse uses 
 
 **REVIEWER RULE:** A PR that adds a new SQL file under `prisma/migrations/` AND requires `CREATE ROLE`, `ALTER ROLE`, or `GRANT`/`REVOKE` privilege statements MUST be flagged because those statements require running as `postgres` (the superuser role), not as `kasse_app`. Confirm with the author that the deployment plan accounts for this.
 
+### Migration-apply process (added 2026-05-26)
+
+**Context Robert needs the reviewer to enforce:** the Vercel build pipeline runs `npm install && next build` only. It does NOT run `prisma migrate deploy`. Migrations under `prisma/migrations/` are NOT auto-applied on deploy. They must be applied to production manually via the Supabase MCP `apply_migration` tool after merge.
+
+**REVIEWER RULE:** Any PR that adds a new directory under `prisma/migrations/` MUST be flagged with a Concern (not Severe — the PR itself is fine, but the deploy path requires manual action). The Concern should explicitly say:
+
+> Migration `<directory name>` will not be auto-applied on Vercel deploy. After merge, apply it to production via Supabase MCP using `apply_migration` (this both runs the SQL and records the migration in `_prisma_migrations`). If this isn't done before the next deploy goes live, any code path that reads or writes the new column/table will throw `PrismaClientKnownRequestError` (P2022 — column does not exist) in production. PR #122 (abandoned-wizard cron, 2026-05-26) hit this exact failure mode on its first cron tick.
+
+This Concern fires even for migrations that look "obviously safe" — additive column adds, partial index creates, etc. The risk is process failure (forgetting to apply), not SQL risk.
+
+If the PR description already explicitly says "migration applied via MCP" with a timestamp or migration name, the reviewer should still mention this rule once for the deploy-time audit trail but downgrade to a Nit.
+
 ## Priority 4: Design system compliance
 
 Kasse uses a strict light theme:
