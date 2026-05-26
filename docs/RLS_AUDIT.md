@@ -2413,9 +2413,22 @@ succeeds. The token EXPIRES after 7 days regardless.
 
 **Classification:**
 - Route: PUBLIC (no auth required to reach)
-- DB access: `prismaAdmin` for OnboardingSession + User lookup inside
-  the credentials provider's authorize() callback. PRE_SESSION (no
-  user session exists yet when the authorize() runs).
+- DB access (server component, `app/onboarding/resume/[token]/page.tsx`):
+  `verifyResumeToken` → `getSessionById` → `prismaAdmin` for
+  OnboardingSession lookup. PRE_SESSION (no user session exists yet
+  when the page renders).
+- DB access (credentials provider, `lib/auth.ts` authorize callback):
+  `prismaAdmin` for OnboardingSession + User lookup. PRE_SESSION
+  (the authorize() runs before NextAuth issues the JWT).
+
+Note: the happy path performs the OnboardingSession lookup twice —
+once server-side in page.tsx (to enable rich ResumeError rendering
+with granular error codes) and once in authorize() (authoritative
+NextAuth verification before session issuance). This is deliberate;
+the cost is two cheap lookups for substantially better error UX. A
+TOCTOU window of ~500ms exists between the two calls; if the token
+expires in that window, the user sees the generic ResumeAutoSignIn
+fallback message instead of the rich ResumeError page.
 
 **Edge cases:**
 - Expired token → renders ResumeError page
