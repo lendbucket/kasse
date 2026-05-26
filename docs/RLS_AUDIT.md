@@ -2397,3 +2397,36 @@ recovery emails.
 Also quoted `state` identifier in schema partial index raw() to align
 with migration SQL — purely to prevent `prisma migrate diff`
 false-positive drift warnings.
+
+### P1.B.8 — Resume route (PR #125, 2026-05-26)
+
+`/onboarding/resume/[token]` is a public route that validates a JWT
+resume token signed by `signResumeToken` (TTL: 7 days), then triggers
+a NextAuth credentials provider sign-in via the `onboarding-resume`
+provider id. Both the page route and the auth provider live in code,
+no API route is added.
+
+**Auth model:** Token IS the auth. Possession of a valid token proves
+the user owns the session's email (received it at that email). The
+token is NOT consumed on use — a user clicking the link twice both
+succeeds. The token EXPIRES after 7 days regardless.
+
+**Classification:**
+- Route: PUBLIC (no auth required to reach)
+- DB access: `prismaAdmin` for OnboardingSession + User lookup inside
+  the credentials provider's authorize() callback. PRE_SESSION (no
+  user session exists yet when the authorize() runs).
+
+**Edge cases:**
+- Expired token → renders ResumeError page
+- Session not found / expired / completed → ResumeError page
+- Email mismatch (token email ≠ session email) → ResumeError page
+- User inactive (isActive = false) → authorize returns null, NextAuth
+  surfaces error, ResumeAutoSignIn shows fallback error message
+- Network error during signIn → ResumeAutoSignIn shows fallback
+
+**PII discipline:** Logs in the authorize() callback include
+user.id and session.id, NEVER user.email or session.email.
+
+**Closes P1.B:** With this route shipped, P1.B (Wizard Shell) is
+complete. P1.C (the 8 wizard step forms) is the next phase.

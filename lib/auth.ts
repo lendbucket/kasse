@@ -6,6 +6,7 @@ import GoogleProvider from "next-auth/providers/google"
 import AppleProvider from "next-auth/providers/apple"
 import jwt from "jsonwebtoken"
 import { prismaAdmin } from "./prismaAdmin"
+import { verifyResumeToken } from "@/lib/onboarding/resume-token"
 import bcrypt from "bcryptjs"
 import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
@@ -221,6 +222,93 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           organizationId: user.organizationId,
           locationId: user.locationId,
+        }
+      },
+    }),
+    // P1.B.8: Onboarding resume credentials provider. Accepts a JWT resume
+    // token (signed by signResumeToken, TTL: 7 days) as the sole credential.
+    // Used by /onboarding/resume/[token] to sign the user back into their
+    // NextAuth session so they can continue the wizard where they left off.
+    // Token is NOT single-use — clicking the email link twice both succeed.
+    CredentialsProvider({
+      id: "onboarding-resume",
+      name: "Onboarding Resume",
+      credentials: {
+        token: { label: "Token", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.token) return null
+
+        try {
+          const verified = await verifyResumeToken(credentials.token)
+
+          // Look up the OnboardingSession and its linked user
+          const onboardingSession = await prismaAdmin.onboardingSession.findUnique({
+            where: { id: verified.sessionId },
+            select: { userId: true, email: true },
+          })
+
+          if (!onboardingSession?.userId) {
+            console.warn(
+              "[onboarding-resume] session has no userId or not found",
+              { sessionId: verified.sessionId },
+            )
+            return null
+          }
+
+          if (onboardingSession.email !== verified.email) {
+            console.warn("[onboarding-resume] session email mismatch", {
+              sessionId: verified.sessionId,
+            })
+            return null
+          }
+
+          const user = await prismaAdmin.user.findUnique({
+            where: { id: onboardingSession.userId },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              organizationId: true,
+              locationId: true,
+              isActive: true,
+            },
+          })
+
+          if (!user) {
+            console.warn(
+              "[onboarding-resume] user not found for session",
+              { sessionId: verified.sessionId },
+            )
+            return null
+          }
+
+          // Defense-in-depth: reject sign-in for inactive users
+          if (!user.isActive) {
+            console.warn(
+              "[onboarding-resume] inactive user attempted resume",
+              { userId: user.id },
+            )
+            return null
+          }
+
+          // PII discipline: do not log user.email
+          console.info("[onboarding-resume] resume sign-in successful", {
+            userId: user.id,
+            sessionId: verified.sessionId,
+          })
+
+          return user
+        } catch (err) {
+          // Verification failed — token invalid, expired, session deleted,
+          // email mismatch, etc. verifyResumeToken throws OnboardingError
+          // for these. Return null so NextAuth surfaces a clean auth failure.
+          console.warn(
+            "[onboarding-resume] token verification failed",
+            { error: err instanceof Error ? err.message : "unknown" },
+          )
+          return null
         }
       },
     }),
