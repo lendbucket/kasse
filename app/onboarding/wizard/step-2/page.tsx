@@ -3,9 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import { stateToWizardStep, WIZARD_STEP_LABELS } from "@/lib/onboarding/wizard-step-mapping";
+import { ONBOARDING_STATES } from "@/lib/onboarding/types";
 import type { OnboardingState } from "@/lib/onboarding/types";
+import { getVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@prisma/client";
 import { ProgressBar } from "@/components/onboarding/ProgressBar";
 import { StepCounter } from "@/components/onboarding/StepCounter";
+import ServicesForm from "./services-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,14 +34,51 @@ export default async function WizardStep2Page() {
     redirect("/dashboard");
   }
 
+  // Defensive: validate state is a known enum member before casting.
+  // Unknown values (migration drift, backend-ahead-of-frontend) fall
+  // back to ACCOUNT_CREATED so the user is routed through the full
+  // re-validation chain (stateToWizardStep -> wizard step 1) rather
+  // than silently skipping earlier steps. Fail-conservative beats
+  // fail-silent for an onboarding flow with financial implications
+  // downstream.
+  const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
+    onboardingSession.state
+  )
+    ? (onboardingSession.state as OnboardingState)
+    : "ACCOUNT_CREATED";
+
   // Guard: if user's current state maps to a step OTHER than STEP_NUMBER,
   // redirect to the right step. Prevents URL-typing to a step the user
   // hasn't reached yet.
-  const actualStep = stateToWizardStep(onboardingSession.state as OnboardingState);
+  const actualStep = stateToWizardStep(safeState);
   if (actualStep < STEP_NUMBER) {
     redirect(`/onboarding/wizard/step-${actualStep}`);
   }
   // actualStep > STEP_NUMBER is allowed (user is revisiting a completed step)
+
+  // Load the org's vertical config to get default services for preview
+  let defaultServices: Array<{
+    name: string;
+    category: string | null;
+    durationMinutes: number;
+    priceCents: number;
+  }> = [];
+
+  if (onboardingSession.organizationId) {
+    const org = await prismaAdmin.organization.findUnique({
+      where: { id: onboardingSession.organizationId },
+      select: { verticalId: true },
+    });
+    if (org) {
+      const config = getVerticalConfig(org.verticalId as VerticalId);
+      defaultServices = config.defaultServices.map((s) => ({
+        name: s.name,
+        category: s.category ?? null,
+        durationMinutes: s.durationMinutes,
+        priceCents: s.priceCents,
+      }));
+    }
+  }
 
   const stepLabel = WIZARD_STEP_LABELS[STEP_NUMBER - 1];
 
@@ -57,44 +98,11 @@ export default async function WizardStep2Page() {
         >
           {stepLabel}
         </h1>
-        <p
-          style={{
-            margin: "0 0 32px",
-            fontSize: "16px",
-            color: "#6b7280",
-            lineHeight: 1.6,
-          }}
-        >
-          This step is coming soon. (Placeholder for P1.C.{STEP_NUMBER})
-        </p>
-        {process.env.NODE_ENV !== "production" && (
-          <p
-            style={{
-              margin: "0",
-              fontSize: "14px",
-              color: "#9ca3af",
-              lineHeight: 1.6,
-            }}
-          >
-            {/* Dev/preview only: shows the backend state machine value so
-                we can verify routing end-to-end before P1.C step content
-                lands. Real production traffic doesn't see internal
-                implementation labels. Cycle 2 fix from PR #120 review. */}
-            Current onboarding state:{" "}
-            <code
-              style={{
-                fontFamily: "monospace",
-                fontSize: "13px",
-                backgroundColor: "#f3f4f6",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                color: "#374151",
-              }}
-            >
-              {onboardingSession.state}
-            </code>
-          </p>
-        )}
+        <ServicesForm
+          sessionId={onboardingSession.id}
+          initialState={safeState}
+          defaultServices={defaultServices}
+        />
       </div>
     </>
   );
