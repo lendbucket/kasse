@@ -2502,3 +2502,53 @@ Client form follows the canonical pattern locked in PR #126:
 - PII-safe error mapping
 
 No tenant-scope changes. No RLS policy changes.
+
+---
+
+### POST-MORTEM — Wizard step navigation bug (PR #128, 2026-05-28)
+
+**What broke:** From 2026-05-28 (PR #126 deploy) through 2026-05-28
+(PR #128 deploy), the wizard navigation was broken end-to-end. No
+authenticated user could advance past step 1. The `stateToWizardStep`
+mapping returned the step that JUST COMPLETED rather than the step
+the user was ready to enter, and the page-level `if (actualStep <
+STEP_NUMBER) redirect` guard bounced users backwards on every forward
+navigation.
+
+**Detection:** Caught during code review while preparing PR #129
+(P1.C.3 Team form). Tracing the state machine for the step-3 sub-states
+required reading the mapping carefully, which surfaced the off-by-one.
+
+**No production impact:** No real user has completed onboarding yet
+(pre-launch). End-to-end wizard smoke-testing was on the followup
+list and had not been performed. PR #126 and PR #127 each shipped to
+production but only step-1's form was reachable; users would have hit
+the infinite redirect loop on first attempt to advance.
+
+**Why it slipped through:** Reviewer cycles for PR #126 and PR #127
+tested each step's form in isolation:
+- alreadyComplete branch (terminal state -> completion card) correct
+- Submit flow (state advance -> router.push to next step) correct
+
+But neither the reviewer nor the prompt author ever traced the cross-
+page navigation: "after PR #126's form runs router.push('/step-2'),
+does step-2's server page actually let the user in?" The answer was
+no, and no test caught it.
+
+**Process improvement:** For every wizard step PR going forward, the
+reviewer prompt should include an explicit trace requirement:
+
+> For any PR that adds or modifies a wizard step form: verify
+> end-to-end navigation by tracing what happens AFTER the form's
+> success-path router.push. Specifically, simulate the next page's
+> server-side guard with the new terminal state. If the guard would
+> redirect the user backwards or sideways, that is a SEVERE finding,
+> not a Concern.
+
+This rule is added to `.github/claude-review-prompt.md` in a separate
+follow-up PR (kept out of this hotfix to keep the diff minimal).
+
+**Smoke-test now required:** After this PR merges, an end-to-end
+manual test of the wizard (register fresh user -> complete step 1 ->
+land on step 2 -> complete step 2 -> land on step 3 stub) MUST be
+performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
