@@ -34,11 +34,13 @@ export default async function WizardStep2Page() {
     redirect("/dashboard");
   }
 
-  // Defensive: validate the DB state is a known enum member before
-  // passing to the client form. An unknown value (migration gap, manual
-  // correction, backend-ahead-of-frontend) falls back to ACCOUNT_CREATED
-  // so the form runs the full flow rather than silently rendering a
-  // half-broken state.
+  // Defensive: validate state is a known enum member before casting.
+  // Unknown values (migration drift, backend-ahead-of-frontend) fall
+  // back to ACCOUNT_CREATED so the user is routed through the full
+  // re-validation chain (stateToWizardStep -> wizard step 1) rather
+  // than silently skipping earlier steps. Fail-conservative beats
+  // fail-silent for an onboarding flow with financial implications
+  // downstream.
   const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
     onboardingSession.state
   )

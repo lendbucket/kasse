@@ -99,6 +99,16 @@ export default function ServicesForm({
       // setSubmitting and inFlightRef both clear here so adding new
       // early-return paths above doesn't require remembering to clear
       // state — finally runs on every exit (return, throw, fall-through).
+      //
+      // Navigation race note: on the router.push success paths, this
+      // finally fires AFTER router.push schedules navigation but BEFORE
+      // navigation completes — re-enabling the button for ~50-200ms. If
+      // the user double-clicks in that window, the retry POST hits
+      // /api/onboarding/services and gets 409 invalid_transition (state
+      // is already past LOCATION_CREATED), which we handle as
+      // "already done, continue to step-3" via another router.push.
+      // Next.js dedupes the duplicate navigation. Self-recovering, no
+      // data corruption.
       inFlightRef.current = false;
       setSubmitting(false);
     }
@@ -115,31 +125,6 @@ export default function ServicesForm({
           marginTop: "8px",
         }}
       >
-        <div
-          style={{
-            width: "48px",
-            height: "48px",
-            borderRadius: "50%",
-            backgroundColor: "#f0fdf4",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: "16px",
-          }}
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#16a34a"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        </div>
         <p
           style={{
             margin: "0 0 4px",
@@ -258,7 +243,7 @@ export default function ServicesForm({
               >
                 {category}
               </h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+              <div style={{ display: "flex", flexDirection: "column" }}>
                 {services.map((s, sIdx) => (
                   <div
                     key={s.name}
@@ -410,6 +395,12 @@ function mapServicesError(code: string | undefined, status: number): string {
     return "Your session is missing organization details. Please refresh the page and try again.";
   }
   if (code === "invalid_transition") {
+    // Defensive fallback: handleSubmit currently treats
+    // invalid_transition (409) as a success path and router.push's
+    // to step-3 BEFORE calling mapServicesError, so this branch is
+    // unreachable in current code. Kept as belt-and-suspenders for
+    // future code paths that might call mapServicesError with this
+    // code without the success-handling.
     return "Services have already been set up. Continuing to the next step.";
   }
   if (status === 401) {
