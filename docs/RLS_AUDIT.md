@@ -2464,3 +2464,36 @@ with the `<BusinessProfileForm>` client component.
 
 **New RLS surface:** None. No new API routes, no new direct DB access,
 no schema changes, no migrations.
+
+---
+
+### P1.C.2 — Services wizard step (PR #127, 2026-05-28)
+
+Second wizard step form. Client component at
+`app/onboarding/wizard/step-2/services-form.tsx` POSTs to the existing
+`/api/onboarding/services` endpoint with `{ sessionId }`. No new API
+routes, no new DB surface, no migrations.
+
+Server component at `app/onboarding/wizard/step-2/page.tsx`:
+- Same auth + session pattern as P1.B.1 wizard pages (prismaAdmin lookup
+  scoped to session.user.id).
+- Adds the safeState validation pattern established in PR #126 (P1.C.1)
+  — validates onboardingSession.state against ONBOARDING_STATES before
+  casting, falls back to ACCOUNT_CREATED on unknown values.
+- Loads the org's vertical config via prismaAdmin.organization.findUnique
+  + getVerticalConfig to render the default service preview. Read-only,
+  no writes, no tenant scope needed (Organization lookup is identity-scoped
+  by the session pattern).
+
+Client form follows the canonical pattern locked in PR #126:
+- useRef in-flight guard against double-submit
+- safeState fallback for unknown enum values
+- alreadyComplete branch (SERVICES_SEEDED) renders continue card with no
+  API call
+- invalid_transition 409 treated as "already seeded, continue" (same as
+  step 1's resume pattern)
+- org_not_in_session 409 → refresh+update+retry-once (same as step 1)
+- console.error in catch, finally clears inFlightRef on all exits
+- PII-safe error mapping
+
+No tenant-scope changes. No RLS policy changes.
