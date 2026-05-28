@@ -6,6 +6,7 @@ import { stateToWizardStep, WIZARD_STEP_LABELS } from "@/lib/onboarding/wizard-s
 import type { OnboardingState } from "@/lib/onboarding/types";
 import { ProgressBar } from "@/components/onboarding/ProgressBar";
 import { StepCounter } from "@/components/onboarding/StepCounter";
+import BusinessProfileForm from "./business-profile-form";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,18 @@ export default async function WizardStep1Page() {
 
   const stepLabel = WIZARD_STEP_LABELS[STEP_NUMBER - 1];
 
+  const data = (onboardingSession.data as Record<string, unknown>) ?? {};
+  const prefill = {
+    orgName: typeof data.orgName === "string" ? data.orgName : "",
+    planTier: data.planTier === "PREMIUM" ? ("PREMIUM" as const) : ("FREE" as const),
+    locationName: typeof data.locationName === "string" ? data.locationName : "",
+    address: typeof data.address === "string" ? data.address : "",
+    city: typeof data.city === "string" ? data.city : "",
+    state: typeof data.state === "string" ? data.state : "",
+    zip: typeof data.zip === "string" ? data.zip : "",
+    timezone: typeof data.timezone === "string" ? data.timezone : "America/Chicago",
+  };
+
   return (
     <>
       <ProgressBar currentStep={STEP_NUMBER} maxCompletedStep={actualStep} />
@@ -57,44 +70,11 @@ export default async function WizardStep1Page() {
         >
           {stepLabel}
         </h1>
-        <p
-          style={{
-            margin: "0 0 32px",
-            fontSize: "16px",
-            color: "#6b7280",
-            lineHeight: 1.6,
-          }}
-        >
-          This step is coming soon. (Placeholder for P1.C.{STEP_NUMBER})
-        </p>
-        {process.env.NODE_ENV !== "production" && (
-          <p
-            style={{
-              margin: "0",
-              fontSize: "14px",
-              color: "#9ca3af",
-              lineHeight: 1.6,
-            }}
-          >
-            {/* Dev/preview only: shows the backend state machine value so
-                we can verify routing end-to-end before P1.C step content
-                lands. Real production traffic doesn't see internal
-                implementation labels. Cycle 2 fix from PR #120 review. */}
-            Current onboarding state:{" "}
-            <code
-              style={{
-                fontFamily: "monospace",
-                fontSize: "13px",
-                backgroundColor: "#f3f4f6",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                color: "#374151",
-              }}
-            >
-              {onboardingSession.state}
-            </code>
-          </p>
-        )}
+        <BusinessProfileForm
+          sessionId={onboardingSession.id}
+          initialState={onboardingSession.state as OnboardingState}
+          prefill={prefill}
+        />
       </div>
     </>
   );

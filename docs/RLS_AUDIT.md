@@ -2443,3 +2443,24 @@ user.id and session.id, NEVER user.email or session.email.
 
 **Closes P1.B:** With this route shipped, P1.B (Wizard Shell) is
 complete. P1.C (the 8 wizard step forms) is the next phase.
+
+---
+
+### P1.C.1 — Business Profile wizard step form
+
+**PR:** #126
+**File:** `app/onboarding/wizard/step-1/business-profile-form.tsx` (new client component)
+
+**DB access:** None. The client component makes no direct DB calls. It
+submits via three existing API routes:
+1. `POST /api/onboarding/org` (already classified in P1.A entries)
+2. `POST /api/onboarding/refresh-session` (already classified in P1.A entries)
+3. `POST /api/onboarding/location` (already classified in P1.A entries)
+
+**Server page (`page.tsx`):** Unchanged auth gate and session lookup
+pattern using `prismaAdmin` (already classified as the wizard-page
+pattern in the P1.B.1 entry). Only the placeholder body was replaced
+with the `<BusinessProfileForm>` client component.
+
+**New RLS surface:** None. No new API routes, no new direct DB access,
+no schema changes, no migrations.
