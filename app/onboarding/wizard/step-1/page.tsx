@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import { stateToWizardStep, WIZARD_STEP_LABELS } from "@/lib/onboarding/wizard-step-mapping";
+import { ONBOARDING_STATES } from "@/lib/onboarding/types";
 import type { OnboardingState } from "@/lib/onboarding/types";
 import { ProgressBar } from "@/components/onboarding/ProgressBar";
 import { StepCounter } from "@/components/onboarding/StepCounter";
@@ -31,10 +32,21 @@ export default async function WizardStep1Page() {
     redirect("/dashboard");
   }
 
+  // Defensive: validate the DB state is a known enum member before
+  // passing to the client form. An unknown value (migration gap, manual
+  // correction, backend-ahead-of-frontend) falls back to ACCOUNT_CREATED
+  // so the form runs the full org+location flow rather than silently
+  // rendering a half-broken state.
+  const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
+    onboardingSession.state
+  )
+    ? (onboardingSession.state as OnboardingState)
+    : "ACCOUNT_CREATED";
+
   // Guard: if user's current state maps to a step OTHER than STEP_NUMBER,
   // redirect to the right step. Prevents URL-typing to a step the user
   // hasn't reached yet.
-  const actualStep = stateToWizardStep(onboardingSession.state as OnboardingState);
+  const actualStep = stateToWizardStep(safeState);
   if (actualStep < STEP_NUMBER) {
     redirect(`/onboarding/wizard/step-${actualStep}`);
   }
@@ -72,7 +84,7 @@ export default async function WizardStep1Page() {
         </h1>
         <BusinessProfileForm
           sessionId={onboardingSession.id}
-          initialState={onboardingSession.state as OnboardingState}
+          initialState={safeState}
           prefill={prefill}
         />
       </div>

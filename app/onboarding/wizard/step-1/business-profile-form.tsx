@@ -295,10 +295,18 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
         return;
       }
 
-      // Success — advance to step 2
+      // Success — reset submitting before navigation. Normally the
+      // component unmounts on navigation so this is beltless, but if
+      // router.push is interrupted (back button, silent no-op) the
+      // button would otherwise hang in "Saving..." with no recovery.
+      setSubmitting(false);
       router.push("/onboarding/wizard/step-2");
       router.refresh();
-    } catch {
+    } catch (err) {
+      // Log the real error so production debugging isn't masked by the
+      // generic user-facing message. These are network/parse errors,
+      // not user PII.
+      console.error("[business-profile-form] submit failed", err);
       setError("Something went wrong. Please try again.");
       setSubmitting(false);
     }
@@ -550,10 +558,7 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
               value={stateCode}
               onChange={(e) => setStateCode(e.target.value)}
               disabled={submitting}
-              style={{
-                ...inputStyle,
-                appearance: "auto",
-              }}
+              style={inputStyle}
               onFocus={(e) => {
                 e.currentTarget.style.borderColor = "#606E74";
               }}
@@ -604,10 +609,7 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
               disabled={submitting}
-              style={{
-                ...inputStyle,
-                appearance: "auto",
-              }}
+              style={inputStyle}
               onFocus={(e) => {
                 e.currentTarget.style.borderColor = "#606E74";
               }}
