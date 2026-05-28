@@ -2,11 +2,20 @@ import type { OnboardingState } from "@/lib/onboarding/types";
 
 /**
  * Maps a backend OnboardingSession state to the user-facing wizard
- * step number (1–8). Multiple backend states can map to the same UI
- * step — e.g., STAFF_PENDING through COMPENSATION_CONFIGURED all fall
- * within wizard "Step 3: Team" because team setup encompasses staff
- * invite + employment agreement + compensation as a single user-facing
- * step.
+ * step number (1–8). The number returned is the step the user is
+ * READY TO ENTER OR CURRENTLY ON — not the step that just completed.
+ *
+ * - In-progress states (e.g., ACCOUNT_CREATED, ORG_CREATED, LOCATION_PENDING)
+ *   map to the step they're in progress on (step 1 in this case).
+ * - Terminal-of-step states (e.g., LOCATION_CREATED) map to the NEXT
+ *   step the user can enter (step 2 in this case). This is what makes
+ *   the page guard (`if (actualStep < STEP_NUMBER) redirect to actualStep`)
+ *   allow forward navigation without bouncing users backwards.
+ *
+ * Multi-sub-state steps (e.g., step 3 spans STAFF_PENDING through
+ * COMPENSATION_PENDING) keep all in-progress sub-states mapped to the
+ * step itself; only the terminal sub-state (COMPENSATION_CONFIGURED)
+ * advances the mapping to the next step.
  *
  * COMPLETED should be filtered out by callers before invoking this —
  * the wizard pages all query for state != COMPLETED and redirect to
@@ -20,31 +29,40 @@ import type { OnboardingState } from "@/lib/onboarding/types";
  */
 export function stateToWizardStep(state: OnboardingState): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 {
   switch (state) {
+    // Step 1 in-progress states
     case "STARTED":
     case "EMAIL_VERIFIED":
     case "ACCOUNT_CREATED":
     case "ORG_CREATED":
     case "LOCATION_PENDING":
+      return 1; // Step 1: Business Profile (in progress)
+
+    // Step 1 complete → ready for Step 2
     case "LOCATION_CREATED":
-      return 1; // Step 1: Business Profile
+      return 2;
 
+    // Step 2 in-progress
     case "SERVICES_PENDING":
-    case "SERVICES_SEEDED":
-      return 2; // Step 2: Services
+      return 2; // Step 2: Services (in progress)
 
+    // Step 2 complete → ready for Step 3
+    case "SERVICES_SEEDED":
+      return 3;
+
+    // Step 3 in-progress sub-states (multi-state team setup)
     case "STAFF_PENDING":
     case "STAFF_INVITED":
     case "AGREEMENTS_PENDING":
     case "AGREEMENTS_CONFIGURED":
     case "COMPENSATION_PENDING":
-    case "COMPENSATION_CONFIGURED":
-      return 3; // Step 3: Team (multi-sub-state)
+      return 3; // Step 3: Team (in progress)
 
-    // No backend state yet for steps 4–8. Once a step's backend ships
-    // (P1.C.4 = payment processing, etc.), add the new state to the
-    // ALLOWED_TRANSITIONS chain in types.ts and update this mapping.
-    // Until then, this branch is unreachable for current production
-    // sessions.
+    // Step 3 complete → ready for Step 4
+    case "COMPENSATION_CONFIGURED":
+      return 4;
+
+    // No backend states yet for steps 4–8. Once a step's backend ships
+    // (P1.C.4 = payment processing, etc.), add the new state cases here.
     case "COMPLETED":
       // Defensive: callers should redirect to /dashboard before calling
       // this. Treat as step 8 (Go Live) if someone does reach it.
