@@ -227,6 +227,16 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
       await update();
       return;
     }
+    if (!res.ok) {
+      // A non-429 error (401 session expired, 404 user not found, 500)
+      // means the JWT refresh won't carry the new organizationId. Surface
+      // it here rather than letting it fall through to update() and fail
+      // later with a confusing org_not_in_session on the location call.
+      const body = await res.json().catch(() => ({}));
+      throw new Error(
+        `refresh-session failed (${res.status}): ${body.error ?? "unknown"}`,
+      );
+    }
     await update();
   }
 
