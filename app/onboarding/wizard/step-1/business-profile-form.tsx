@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { OnboardingState } from "@/lib/onboarding/types";
@@ -182,6 +182,14 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guard against concurrent submits. The button disables on
+  // submitting=true, but React batches state updates — a fast
+  // double-click can fire handleSubmit twice before the disabled
+  // attribute commits. A ref updates synchronously, so checking it at
+  // the top of handleSubmit closes that race. This is the canonical
+  // pattern for all wizard step submit handlers.
+  const inFlightRef = useRef(false);
+
   function validate(): string | null {
     if (!orgAlreadyCreated) {
       const trimmedOrg = orgName.trim();
@@ -211,6 +219,11 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
   async function refreshAndUpdateSession(): Promise<void> {
     const res = await fetch("/api/onboarding/refresh-session", { method: "POST" });
     if (res.status === 429) {
+      // 429 = refresh-session was already called within its 30s window
+      // (e.g. a prior attempt in this same submit, or a recent resume).
+      // The server-side org assignment is already persisted; update()
+      // alone pulls it into the JWT via the jwt callback's DB re-read.
+      // No need to wait out the rate-limit window.
       await update();
       return;
     }
@@ -237,6 +250,11 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
   }
 
   async function handleSubmit() {
+    // Synchronous in-flight guard (see inFlightRef declaration). Returns
+    // immediately if a submit is already running, closing the
+    // double-click race that the disabled button alone can't.
+    if (inFlightRef.current) return;
+
     setError(null);
 
     const validationError = validate();
@@ -245,6 +263,7 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
       return;
     }
 
+    inFlightRef.current = true;
     setSubmitting(true);
     try {
       // CALL 1 — create org (skip if already created)
@@ -299,9 +318,11 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
       // component unmounts on navigation so this is beltless, but if
       // router.push is interrupted (back button, silent no-op) the
       // button would otherwise hang in "Saving..." with no recovery.
+      // No router.refresh() — step-2 is force-dynamic and re-reads the
+      // session state fresh on navigation; refreshing step-1 here (which
+      // is about to unmount) does nothing.
       setSubmitting(false);
       router.push("/onboarding/wizard/step-2");
-      router.refresh();
     } catch (err) {
       // Log the real error so production debugging isn't masked by the
       // generic user-facing message. These are network/parse errors,
@@ -309,6 +330,10 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
       console.error("[business-profile-form] submit failed", err);
       setError("Something went wrong. Please try again.");
       setSubmitting(false);
+    } finally {
+      // Always clear the in-flight guard, whether we succeeded, hit a
+      // handled error (early return), threw, or navigated away.
+      inFlightRef.current = false;
     }
   }
 
