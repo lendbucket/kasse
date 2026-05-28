@@ -77,7 +77,6 @@ export default function ServicesForm({
       }
 
       if (res.ok) {
-        setSubmitting(false);
         router.push("/onboarding/wizard/step-3");
         return;
       }
@@ -87,19 +86,21 @@ export default function ServicesForm({
       // invalid_transition (409) means state already past LOCATION_CREATED
       // — treat as "already seeded, continue" same as resume case
       if (res.status === 409 && body.error === "invalid_transition") {
-        setSubmitting(false);
         router.push("/onboarding/wizard/step-3");
         return;
       }
 
       setError(mapServicesError(body.error, res.status));
-      setSubmitting(false);
     } catch (err) {
       console.error("[services-form] submit failed", err);
       setError("Something went wrong. Please try again.");
-      setSubmitting(false);
     } finally {
+      // Single source of truth for "submit is no longer in flight."
+      // setSubmitting and inFlightRef both clear here so adding new
+      // early-return paths above doesn't require remembering to clear
+      // state — finally runs on every exit (return, throw, fall-through).
       inFlightRef.current = false;
+      setSubmitting(false);
     }
   }
 

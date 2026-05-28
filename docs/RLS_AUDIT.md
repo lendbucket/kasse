@@ -2482,8 +2482,13 @@ Server component at `app/onboarding/wizard/step-2/page.tsx`:
   casting, falls back to ACCOUNT_CREATED on unknown values.
 - Loads the org's vertical config via prismaAdmin.organization.findUnique
   + getVerticalConfig to render the default service preview. Read-only,
-  no writes, no tenant scope needed (Organization lookup is identity-scoped
-  by the session pattern).
+  no writes. The lookup is safe NOT because "org reads can use prismaAdmin
+  in general" but because the organizationId comes from the
+  server-session-fetched OnboardingSession row (itself scoped to
+  session.user.id), not from any client-supplied parameter. The chain is:
+  session.user.id -> OnboardingSession (filtered by userId) ->
+  organizationId -> Organization. No URL params, no client input flows
+  into this query.
 
 Client form follows the canonical pattern locked in PR #126:
 - useRef in-flight guard against double-submit
