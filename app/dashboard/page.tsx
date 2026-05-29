@@ -34,6 +34,36 @@ export default async function DashboardPage() {
     redirect(getLandingForRole(userRole));
   }
 
+  // Option C routing: owners who haven't completed onboarding AND have an
+  // active onboarding session get sent into the wizard. BOTH conditions
+  // required — legacy orgs (no session) must fall through to the dashboard
+  // to avoid an infinite wizard<->dashboard redirect loop. onboardingCompleted
+  // is the authoritative done-flag (set true by the wizard's final step).
+  if (userRole === Role.OWNER && session.user.organizationId) {
+    let shouldRedirectToWizard = false;
+    try {
+      const org = await prisma.organization.findUnique({
+        where: { id: session.user.organizationId },
+        select: { onboardingCompleted: true },
+      });
+      if (org && org.onboardingCompleted === false) {
+        const activeSession = await getActiveOnboardingSessionForOwner({
+          userId: session.user.id,
+          organizationId: session.user.organizationId,
+        });
+        if (activeSession) shouldRedirectToWizard = true;
+      }
+    } catch (e) {
+      // Fail-soft: never block dashboard access on an onboarding-routing
+      // lookup error. Worst case the user sees the dashboard with the
+      // existing "Finish onboarding" tile instead of being auto-routed.
+      console.error("onboarding routing check failed:", e);
+    }
+    if (shouldRedirectToWizard) {
+      redirect("/onboarding/wizard");
+    }
+  }
+
   let todayRevenue = 0;
   let transactionCount = 0;
   let appointmentCount = 0;
