@@ -2,8 +2,9 @@
 
 import { usePathname } from "next/navigation"
 import Link from "next/link"
+import { signOut } from "next-auth/react"
 import {
-  LayoutDashboard, Building2, Users, CreditCard, Upload, Flag, FileText,
+  LayoutDashboard, Building2, Users, CreditCard, Upload, Flag, FileText, LogOut,
 } from "lucide-react"
 
 // NAV — admin sidebar nav items.
@@ -72,6 +73,7 @@ export default function AdminSidebar() {
       {/* Footer */}
       <div style={{
         padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.06)",
+        display: "flex", flexDirection: "column", gap: 8,
       }}>
         <Link href="/dashboard" style={{
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -82,6 +84,20 @@ export default function AdminSidebar() {
         }}>
           Back to Dashboard
         </Link>
+        <button
+          type="button"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            height: 36, borderRadius: 6, fontSize: 12, fontWeight: 500,
+            color: "#8b949e", background: "transparent", cursor: "pointer",
+            border: "1px solid rgba(255,255,255,0.08)",
+            transition: "all 120ms",
+          }}
+        >
+          <LogOut size={14} strokeWidth={1.5} />
+          Sign out
+        </button>
       </div>
     </aside>
   )
