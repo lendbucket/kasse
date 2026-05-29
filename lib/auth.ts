@@ -12,6 +12,7 @@ import { Prisma, Role } from "@prisma/client"
 import { resolveEffectivePermissions } from "@/lib/permissions/resolve-hierarchy"
 import { roleDefaults } from "@/lib/permissions/defaults"
 import { withAdminTx } from "@/lib/admin/withAdminTx"
+import { auditLogCreateOp, AuditAction } from "@/lib/audit/write"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
 import type { NextRequest } from "next/server"
 import { readUtmFromCookies, readUtmFromRequest, hasAnyUtm } from "@/lib/utm/read"
@@ -447,6 +448,16 @@ export const authOptions: NextAuthOptions = {
       const businessName = `${name}'s Business`
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-") + "-" + Date.now()
       const orgId = crypto.randomUUID()
+      const userId = crypto.randomUUID()
+      const sessionId = crypto.randomUUID()
+      const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+
+      // Pre-check: if an active (non-COMPLETED, non-expired) OnboardingSession
+      // already exists for this email, skip session creation to avoid P2002 on
+      // the email-active unique index (idx_onboarding_session_email_active).
+      const existingSession = await prismaAdmin.onboardingSession.findFirst({
+        where: { email, state: { not: 'COMPLETED' }, expiresAt: { gt: new Date() } },
+      })
 
       // P1.A.11: read UTM cookie for new-user bootstrap attribution
       let utmForBootstrap: UtmParams | null = null
@@ -478,6 +489,7 @@ export const authOptions: NextAuthOptions = {
           }),
           p.user.create({
             data: {
+              id: userId,
               name,
               email,
               password: null,
@@ -501,6 +513,38 @@ export const authOptions: NextAuthOptions = {
           p.businessSettings.create({
             data: { organizationId: orgId },
           }),
+          ...(!existingSession ? [
+            p.onboardingSession.create({
+              data: {
+                id: sessionId,
+                email,
+                state: 'ORG_CREATED',
+                vertical: 'SALON',
+                userId,
+                organizationId: orgId,
+                data: {},
+                skippedSteps: [],
+                expiresAt: sessionExpiresAt,
+              },
+            }),
+            p.onboardingStateTransition.create({
+              data: {
+                sessionId,
+                fromState: 'NEW',
+                toState: 'ORG_CREATED',
+                triggeredByUserId: userId,
+                metadata: { via: 'oauth', provider: account.provider },
+              },
+            }),
+            auditLogCreateOp(p, {
+              userId,
+              organizationId: orgId,
+              action: AuditAction.ONBOARDING_SESSION_CREATED,
+              entity: 'OnboardingSession',
+              entityId: sessionId,
+              metadata: { via: 'oauth', provider: account.provider, state: 'ORG_CREATED' },
+            }),
+          ] : []),
         ])
       } catch (err) {
         // Only retry on User.email collisions (real concurrent sign-in race).
