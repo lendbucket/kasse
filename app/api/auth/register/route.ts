@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { Role } from "@prisma/client"
+import { Role, Prisma } from "@prisma/client"
 import bcrypt from "bcryptjs"
 import { prismaAdmin } from "@/lib/prismaAdmin"
 import { getCurrentTermsVersion } from "@/lib/terms/current-version"
@@ -119,7 +119,10 @@ export async function POST(req: NextRequest) {
     // Mirrors the withAdminTx pattern from P1.A.7-d / P1.A.8 / P1.A.9.
     // Uses client-side ID generation so the batch can reference orgId/userId
     // without intermediate results.
-    await withAdminTx((p) => [
+    //
+    // Core ops are extracted so the retry path (OnboardingSession P2002) can
+    // re-run without session ops and without duplicating all the create data.
+    const coreOps = (p: typeof prismaAdmin) => [
       p.organization.create({
         data: {
           id: orgId,
@@ -155,38 +158,6 @@ export async function POST(req: NextRequest) {
       p.businessSettings.create({
         data: { organizationId: orgId },
       }),
-      ...(!existingSession ? [
-        p.onboardingSession.create({
-          data: {
-            id: sessionId,
-            email: email.toLowerCase(),
-            state: 'ORG_CREATED',
-            vertical: 'SALON',
-            userId,
-            organizationId: orgId,
-            data: {},
-            skippedSteps: [],
-            expiresAt: sessionExpiresAt,
-          },
-        }),
-        p.onboardingStateTransition.create({
-          data: {
-            sessionId,
-            fromState: 'NEW',
-            toState: 'ORG_CREATED',
-            triggeredByUserId: userId,
-            metadata: { via: 'register' },
-          },
-        }),
-        auditLogCreateOp(p, {
-          userId,
-          organizationId: orgId,
-          action: AuditAction.ONBOARDING_SESSION_CREATED,
-          entity: 'OnboardingSession',
-          entityId: sessionId,
-          metadata: { via: 'register', state: 'ORG_CREATED' },
-        }),
-      ] : []),
       ...(currentTermsVersion
         ? [p.termsAcceptance.create({
             data: {
@@ -197,7 +168,69 @@ export async function POST(req: NextRequest) {
             },
           })]
         : []),
-    ])
+    ]
+
+    const sessionOps = (p: typeof prismaAdmin) => [
+      p.onboardingSession.create({
+        data: {
+          id: sessionId,
+          email: email.toLowerCase(),
+          state: 'ORG_CREATED',
+          vertical: 'SALON',
+          userId,
+          organizationId: orgId,
+          data: {},
+          skippedSteps: [],
+          expiresAt: sessionExpiresAt,
+        },
+      }),
+      p.onboardingStateTransition.create({
+        data: {
+          sessionId,
+          fromState: 'NEW',
+          toState: 'ORG_CREATED',
+          triggeredByUserId: userId,
+          metadata: { via: 'register' },
+        },
+      }),
+      auditLogCreateOp(p, {
+        userId,
+        organizationId: orgId,
+        action: AuditAction.ONBOARDING_SESSION_CREATED,
+        entity: 'OnboardingSession',
+        entityId: sessionId,
+        metadata: { via: 'register', state: 'ORG_CREATED' },
+      }),
+    ]
+
+    try {
+      await withAdminTx((p) => [
+        ...coreOps(p),
+        ...(!existingSession ? sessionOps(p) : []),
+      ])
+    } catch (err) {
+      // P2002 on the OnboardingSession email-active unique index means a
+      // concurrent flow (e.g., magic-link) created the session between our
+      // pre-check and the batch. The atomic batch rolled back everything
+      // (including User + Org). Retry with core ops only — the session
+      // already exists and will be linked in a later PR.
+      if (
+        !existingSession &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const target = (err.meta as { target?: string[] } | null)?.target
+        const targetStr = Array.isArray(target) ? target.join(",") : String(target ?? "")
+        if (targetStr.includes("onboarding_session_email") || targetStr.includes("OnboardingSession")) {
+          console.warn("[register] OnboardingSession email-active P2002 race — retrying without session ops")
+          await withAdminTx((p) => coreOps(p))
+        } else {
+          throw err
+        }
+      } else {
+        throw err
+      }
+    }
 
     // Verification email sent AFTER the batch commits — best-effort, fail-soft.
     // If the email fails, the user record still exists and can re-trigger

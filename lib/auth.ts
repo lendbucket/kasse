@@ -547,11 +547,30 @@ export const authOptions: NextAuthOptions = {
           ] : []),
         ])
       } catch (err) {
-        // Only retry on User.email collisions (real concurrent sign-in race).
+        // Only retry on User.email collisions (real concurrent sign-in race)
+        // or OnboardingSession email-active index collisions.
         // Other P2002 targets (e.g., Organization.slug) get re-thrown immediately;
         // the user retries with a fresh Date.now() and gets a different slug.
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
           const target = (err.meta as { target?: string[] } | null)?.target
+          const targetStr = Array.isArray(target) ? target.join(",") : String(target ?? "")
+
+          // Concurrent signup created the OnboardingSession for this email first.
+          // The batch rolled back (including User + Org). Re-find the user: if the
+          // race winner's User committed, proceed as the existing race-winner path
+          // does. The session already exists (that's what collided), so we don't
+          // need to create it. If no User exists yet, fall through to re-throw —
+          // surfacing the error is safer than returning a half-bootstrapped state.
+          if (targetStr.includes("onboarding_session_email") || targetStr.includes("OnboardingSession")) {
+            const raceWinner = await prismaAdmin.user.findUnique({ where: { email } })
+            if (raceWinner) {
+              if (!raceWinner.isActive) throw new Error("ACCOUNT_DISABLED")
+              if (!raceWinner.emailVerified) throw new Error("EMAIL_NOT_VERIFIED")
+              return true
+            }
+            // No user yet — fall through to re-throw
+          }
+
           const isEmailCollision = Array.isArray(target) && target.includes("email")
           if (isEmailCollision) {
             const raceWinner = await prismaAdmin.user.findUnique({
