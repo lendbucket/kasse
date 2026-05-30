@@ -33,5 +33,5 @@ export async function GET(req: NextRequest) {
     },
   })
 
-  return NextResponse.redirect(new URL("/onboarding?verified=true", baseUrl))
+  return NextResponse.redirect(new URL("/onboarding/wizard?verified=true", baseUrl))
 }
