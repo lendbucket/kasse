@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { prismaAdmin } from "@/lib/prismaAdmin";
 import { getLandingForRole } from "@/lib/permissions/role-landing";
 import { getActiveOnboardingSessionForOwner } from "@/lib/onboarding/sessions";
 import { Role } from "@prisma/client";
@@ -42,7 +43,13 @@ export default async function DashboardPage() {
   if (userRole === Role.OWNER && session.user.organizationId) {
     let shouldRedirectToWizard = false;
     try {
-      const org = await prisma.organization.findUnique({
+      // Identity-scoped read of the authenticated owner's own org, made
+      // during a routing decision. Uses prismaAdmin because the plain
+      // (RLS-scoped) client has no app.current_org_id set here — the
+      // Organization SELECT policy would return null and silently skip the
+      // gate. Scope is enforced by the session-derived organizationId in the
+      // where clause. Same justification as getActiveOnboardingSessionForOwner.
+      const org = await prismaAdmin.organization.findUnique({
         where: { id: session.user.organizationId },
         select: { onboardingCompleted: true },
       });
