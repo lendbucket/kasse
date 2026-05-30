@@ -149,6 +149,19 @@ function LoginPageInner() {
     return () => clearTimeout(timeout)
   }, [turnstileToken])
 
+  // P1.A.14: Reset the Turnstile widget and clear the spent token. Turnstile
+  // tokens are single-use — after any submit (success or failure) the token is
+  // consumed server-side, so a retry MUST get a fresh one or Cloudflare returns
+  // "timeout-or-duplicate". Called on every non-success registration outcome.
+  function resetTurnstile() {
+    setTurnstileToken("")
+    if (turnstileWidgetIdRef.current && typeof window !== "undefined" && window.turnstile) {
+      // Bare catch: third-party global; if reset throws (widget already gone),
+      // the next render's useEffect re-renders the widget anyway.
+      try { window.turnstile.reset(turnstileWidgetIdRef.current) } catch {}
+    }
+  }
+
   async function handleSignIn(e: FormEvent) {
     e.preventDefault()
     if (!email || !password || signingIn) return
@@ -217,17 +230,20 @@ function LoginPageInner() {
           message = `Too many registration attempts. Please try again in ${mins} minute${mins === 1 ? "" : "s"}.`
         }
         setRegError(message)
+        resetTurnstile()
         setRegistering(false)
         return
       }
       if (!res.ok) {
         setRegError(data.error || "Registration failed")
+        resetTurnstile()
       } else {
         setRegSuccess(true)
         setRegSuccessEmail(regEmail)
       }
     } catch {
       setRegError("Something went wrong. Please try again.")
+      resetTurnstile()
     } finally {
       setRegistering(false)
     }
