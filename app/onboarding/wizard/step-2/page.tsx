@@ -34,35 +34,26 @@ export default async function WizardStep2Page() {
     redirect("/dashboard");
   }
 
-  // Defensive: validate state is a known enum member before casting.
-  // Unknown values (migration drift, backend-ahead-of-frontend) fall
-  // back to ACCOUNT_CREATED so the user is routed through the full
-  // re-validation chain (stateToWizardStep -> wizard step 1) rather
-  // than silently skipping earlier steps. Fail-conservative beats
-  // fail-silent for an onboarding flow with financial implications
-  // downstream.
   const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
     onboardingSession.state
   )
     ? (onboardingSession.state as OnboardingState)
     : "ACCOUNT_CREATED";
 
-  // Guard: if user's current state maps to a step OTHER than STEP_NUMBER,
-  // redirect to the right step. Prevents URL-typing to a step the user
-  // hasn't reached yet.
   const actualStep = stateToWizardStep(safeState);
   if (actualStep < STEP_NUMBER) {
     redirect(`/onboarding/wizard/step-${actualStep}`);
   }
-  // actualStep > STEP_NUMBER is allowed (user is revisiting a completed step)
 
-  // Load the org's vertical config to get default services for preview
+  // Load the org's vertical config to get default services and terms
   let defaultServices: Array<{
     name: string;
     category: string | null;
     durationMinutes: number;
     priceCents: number;
   }> = [];
+  let verticalTerms = { service: "Service", servicePlural: "Services" };
+  let verticalDisplayName = "your business";
 
   if (onboardingSession.organizationId) {
     const org = await prismaAdmin.organization.findUnique({
@@ -77,6 +68,11 @@ export default async function WizardStep2Page() {
         durationMinutes: s.durationMinutes,
         priceCents: s.priceCents,
       }));
+      verticalTerms = {
+        service: config.terms.service,
+        servicePlural: config.terms.servicePlural,
+      };
+      verticalDisplayName = config.displayName;
     }
   }
 
@@ -87,13 +83,26 @@ export default async function WizardStep2Page() {
       <ProgressBar currentStep={STEP_NUMBER} maxCompletedStep={actualStep} />
       <StepCounter currentStep={STEP_NUMBER} />
       <div style={{ padding: "0 32px 48px" }}>
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.4px",
+            color: "var(--text-muted)",
+            margin: "0 0 6px",
+          }}
+        >
+          Step {STEP_NUMBER}
+        </p>
         <h1
           style={{
-            margin: "0 0 16px",
-            fontSize: "28px",
-            fontWeight: 700,
-            color: "#111827",
-            letterSpacing: "-0.5px",
+            margin: "0 0 24px",
+            fontSize: 28,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            letterSpacing: "-0.31px",
+            lineHeight: 1.2,
           }}
         >
           {stepLabel}
@@ -102,6 +111,8 @@ export default async function WizardStep2Page() {
           sessionId={onboardingSession.id}
           initialState={safeState}
           defaultServices={defaultServices}
+          verticalTerms={verticalTerms}
+          verticalDisplayName={verticalDisplayName}
         />
       </div>
     </>

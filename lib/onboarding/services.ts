@@ -17,7 +17,12 @@ import type { VerticalId } from '@prisma/client';
  */
 export async function createServicesForOnboarding(args: {
   tx: Prisma.TransactionClient;
-  input: { sessionId: string; organizationId: string };
+  input: {
+    sessionId: string;
+    organizationId: string;
+    selectedNames?: string[];
+    skip?: boolean;
+  };
   authenticatedUserId: string;
 }): Promise<{ servicesSeededCount: number; organizationId: string }> {
   // Pre-tx fast-fail checks via prismaAdmin (getSessionById uses prismaAdmin).
@@ -107,27 +112,38 @@ export async function createServicesForOnboarding(args: {
   const config = getVerticalConfig(org.verticalId as VerticalId);
   const defaultServices = config.defaultServices;
 
-  if (defaultServices.length === 0) {
-    // Defensive: defaultServices is empty for generalConfig (the registry
-    // fallback) and could be empty for future verticals. If this fires,
-    // the session is left at SERVICES_PENDING — same recovery story as
-    // org-not-found above (#95 territory).
-    //
-    // Unreachable today: launch is SALON-only (enforced upstream at org
-    // create), and salonConfig.defaultServices has 11 entries. This guard
-    // exists for future verticals and as belt-and-suspenders against
-    // misconfiguration.
-    throw new OnboardingError(
-      'INVALID_TRANSITION',
-      `vertical '${org.verticalId}' has no default services to seed`
-    );
+  // Skip path: seed nothing, return immediately. State still advances via
+  // the route's transitionTo to SERVICES_SEEDED — skipping is a valid
+  // completion of this step.
+  if (args.input.skip) {
+    return {
+      servicesSeededCount: 0,
+      organizationId: args.input.organizationId,
+    };
+  }
+
+  // Resolve the seed list: if selectedNames provided, filter to those;
+  // otherwise seed all. If the resolved list is empty (user deselected
+  // everything, or vertical has no catalog), treat as a skip — seed
+  // nothing. Forward progress is never blocked by empties.
+  let servicesToSeed = defaultServices;
+  if (args.input.selectedNames && args.input.selectedNames.length > 0) {
+    const nameSet = new Set(args.input.selectedNames);
+    servicesToSeed = defaultServices.filter((s) => nameSet.has(s.name));
+  }
+
+  if (servicesToSeed.length === 0) {
+    return {
+      servicesSeededCount: 0,
+      organizationId: args.input.organizationId,
+    };
   }
 
   // Seed services via tenant-scoped tx (RLS enforces org scope).
   // Services are org-wide by default; per-location pricing/availability
   // overrides ride on ServiceLocation (P0.G.1 schema, wired in P1.C.2).
   const result = await args.tx.service.createMany({
-    data: defaultServices.map((s) => ({
+    data: servicesToSeed.map((s) => ({
       organizationId: args.input.organizationId,
       name: s.name,
       category: s.category ?? null,
