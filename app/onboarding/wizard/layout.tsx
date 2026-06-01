@@ -16,22 +16,22 @@ export default async function WizardLayout({ children }: { children: ReactNode }
     <div
       style={{
         minHeight: "100vh",
-        backgroundColor: "#f7f8fa",
+        backgroundColor: "var(--bg-page)",
         padding: "40px 20px",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
-        fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif",
+        fontFamily: "var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
       <div
         style={{
           width: "100%",
-          maxWidth: "640px",
-          backgroundColor: "#ffffff",
-          borderRadius: "12px",
-          border: "1px solid #e5e7eb",
-          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+          maxWidth: "680px",
+          backgroundColor: "var(--bg-card)",
+          borderRadius: "16px",
+          border: "1px solid var(--border)",
+          boxShadow: "var(--shadow-card)",
           overflow: "hidden",
         }}
       >

@@ -1,16 +1,34 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { Scissors, Sparkles, Check, AlertCircle } from "lucide-react";
 import type { OnboardingState } from "@/lib/onboarding/types";
+import AddressAutocomplete from "@/components/onboarding/AddressAutocomplete";
+import type { ParsedAddress } from "@/components/onboarding/AddressAutocomplete";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
+
+type VerticalId = "salon" | "nail_salon";
+
+interface VerticalOption {
+  id: VerticalId;
+  displayName: string;
+  tagline: string;
+  icon: typeof Scissors;
+}
 
 interface Props {
   sessionId: string;
   initialState: OnboardingState;
   prefill: {
-    orgName: string;
-    planTier: "FREE" | "PREMIUM";
+    vertical: VerticalId | "";
+    legalName: string;
+    dbaName: string;
+    displayName: string;
     locationName: string;
     address: string;
     city: string;
@@ -20,122 +38,52 @@ interface Props {
   };
 }
 
-const US_STATES = [
-  { code: "AL", name: "Alabama" },
-  { code: "AK", name: "Alaska" },
-  { code: "AZ", name: "Arizona" },
-  { code: "AR", name: "Arkansas" },
-  { code: "CA", name: "California" },
-  { code: "CO", name: "Colorado" },
-  { code: "CT", name: "Connecticut" },
-  { code: "DE", name: "Delaware" },
-  { code: "DC", name: "District of Columbia" },
-  { code: "FL", name: "Florida" },
-  { code: "GA", name: "Georgia" },
-  { code: "HI", name: "Hawaii" },
-  { code: "ID", name: "Idaho" },
-  { code: "IL", name: "Illinois" },
-  { code: "IN", name: "Indiana" },
-  { code: "IA", name: "Iowa" },
-  { code: "KS", name: "Kansas" },
-  { code: "KY", name: "Kentucky" },
-  { code: "LA", name: "Louisiana" },
-  { code: "ME", name: "Maine" },
-  { code: "MD", name: "Maryland" },
-  { code: "MA", name: "Massachusetts" },
-  { code: "MI", name: "Michigan" },
-  { code: "MN", name: "Minnesota" },
-  { code: "MS", name: "Mississippi" },
-  { code: "MO", name: "Missouri" },
-  { code: "MT", name: "Montana" },
-  { code: "NE", name: "Nebraska" },
-  { code: "NV", name: "Nevada" },
-  { code: "NH", name: "New Hampshire" },
-  { code: "NJ", name: "New Jersey" },
-  { code: "NM", name: "New Mexico" },
-  { code: "NY", name: "New York" },
-  { code: "NC", name: "North Carolina" },
-  { code: "ND", name: "North Dakota" },
-  { code: "OH", name: "Ohio" },
-  { code: "OK", name: "Oklahoma" },
-  { code: "OR", name: "Oregon" },
-  { code: "PA", name: "Pennsylvania" },
-  { code: "RI", name: "Rhode Island" },
-  { code: "SC", name: "South Carolina" },
-  { code: "SD", name: "South Dakota" },
-  { code: "TN", name: "Tennessee" },
-  { code: "TX", name: "Texas" },
-  { code: "UT", name: "Utah" },
-  { code: "VT", name: "Vermont" },
-  { code: "VA", name: "Virginia" },
-  { code: "WA", name: "Washington" },
-  { code: "WV", name: "West Virginia" },
-  { code: "WI", name: "Wisconsin" },
-  { code: "WY", name: "Wyoming" },
-] as const;
+/* ------------------------------------------------------------------ */
+/*  Vertical options                                                    */
+/* ------------------------------------------------------------------ */
 
-const TIMEZONES = [
-  { value: "America/New_York", label: "Eastern" },
-  { value: "America/Chicago", label: "Central" },
-  { value: "America/Denver", label: "Mountain" },
-  { value: "America/Phoenix", label: "Arizona (no DST)" },
-  { value: "America/Los_Angeles", label: "Pacific" },
-  { value: "America/Anchorage", label: "Alaska" },
-  { value: "Pacific/Honolulu", label: "Hawaii" },
-] as const;
-
-const PLAN_TIERS = [
+const VERTICALS: VerticalOption[] = [
   {
-    value: "FREE" as const,
-    label: "Free",
-    description: "Get started with core booking and payments.",
+    id: "salon",
+    displayName: "Salon & Beauty",
+    tagline: "Full-service hair, color, and beauty",
+    icon: Scissors,
   },
   {
-    value: "PREMIUM" as const,
-    label: "Premium",
-    description: "Advanced reporting, multi-location, and priority support.",
+    id: "nail_salon",
+    displayName: "Nail Salon",
+    tagline: "Manicures, pedicures, and nail art",
+    icon: Sparkles,
   },
-] as const;
+];
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 12px",
-  fontSize: "14px",
-  border: "1px solid #e5e7eb",
-  borderRadius: "8px",
-  color: "#111827",
-  backgroundColor: "#ffffff",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  fontSize: "14px",
-  fontWeight: 500,
-  color: "#111827",
-  marginBottom: "6px",
-};
+/* ------------------------------------------------------------------ */
+/*  Error mappers                                                       */
+/* ------------------------------------------------------------------ */
 
 function mapOrgError(code: string | undefined, status: number): string {
   switch (code) {
     case "invalid_org_name":
-      return "Organization name must be between 2 and 100 characters.";
-    case "invalid_plan_tier":
-      return "Please select a valid plan.";
-    case "org_name_required":
-      return "Organization name is required.";
-    case "plan_tier_required":
-      return "Please select a plan tier.";
+      return "Name must be between 2 and 100 characters.";
+    case "invalid_vertical":
+      return "Please select a business type.";
+    case "vertical_required":
+      return "Please select a business type.";
+    case "legal_name_required":
+      return "Legal business name is required.";
+    case "display_name_required":
+      return "Display name is required.";
     case "org_scope_mismatch":
       return "Session error. Please refresh the page and try again.";
     case "session_not_found":
       return "Your onboarding session was not found. Please start over.";
-    case "slug_collision":
-      return "Could not create organization. Please try again.";
+    case "org_not_yet_created":
+      return "Organization setup incomplete. Please refresh and try again.";
+    case "session_completed":
+      return "This onboarding session is already complete.";
     default:
-      if (status === 500) return "Something went wrong creating your organization. Please try again.";
-      return "Could not create organization. Please try again.";
+      if (status === 500) return "Something went wrong. Please try again.";
+      return "Could not save your business profile. Please try again.";
   }
 }
 
@@ -160,86 +108,97 @@ function mapLocationError(code: string | undefined, status: number): string {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  Component                                                           */
+/* ------------------------------------------------------------------ */
+
 export default function BusinessProfileForm({ sessionId, initialState, prefill }: Props) {
   const router = useRouter();
   const { update } = useSession();
 
   const alreadyComplete = initialState === "LOCATION_CREATED";
-  const orgAlreadyCreated =
-    initialState === "ORG_CREATED" ||
-    initialState === "LOCATION_PENDING" ||
-    initialState === "LOCATION_CREATED";
 
-  const [orgName, setOrgName] = useState(prefill.orgName);
-  const [planTier, setPlanTier] = useState<"FREE" | "PREMIUM">(prefill.planTier);
+  /* --- Form state --- */
+  const [vertical, setVertical] = useState<VerticalId | "">(prefill.vertical);
+  const [legalName, setLegalName] = useState(prefill.legalName);
+  const [dbaName, setDbaName] = useState(prefill.dbaName);
+  const [displayName, setDisplayName] = useState(prefill.displayName);
   const [locationName, setLocationName] = useState(prefill.locationName);
-  const [address, setAddress] = useState(prefill.address);
-  const [city, setCity] = useState(prefill.city);
-  const [stateCode, setStateCode] = useState(prefill.state);
-  const [zip, setZip] = useState(prefill.zip);
-  const [timezone, setTimezone] = useState(prefill.timezone || "America/Chicago");
+
+  // Address from Places or fallback
+  const [addressData, setAddressData] = useState<ParsedAddress | null>(
+    prefill.address
+      ? {
+          address: prefill.address,
+          city: prefill.city,
+          state: prefill.state,
+          zip: prefill.zip,
+          timezone: prefill.timezone || "America/Chicago",
+        }
+      : null
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Guard against concurrent submits. The button disables on
-  // submitting=true, but React batches state updates — a fast
-  // double-click can fire handleSubmit twice before the disabled
-  // attribute commits. A ref updates synchronously, so checking it at
-  // the top of handleSubmit closes that race. This is the canonical
-  // pattern for all wizard step submit handlers.
   const inFlightRef = useRef(false);
 
+  /* --- Address callback --- */
+  const handleAddressSelect = useCallback((parsed: ParsedAddress) => {
+    setAddressData(parsed);
+  }, []);
+
+  /* --- Validation --- */
   function validate(): string | null {
-    if (!orgAlreadyCreated) {
-      const trimmedOrg = orgName.trim();
-      if (trimmedOrg.length < 2 || trimmedOrg.length > 100) {
-        return "Organization name must be between 2 and 100 characters.";
-      }
+    if (!vertical) return "Please select a business type.";
+    if (legalName.trim().length < 2 || legalName.trim().length > 100) {
+      return "Legal business name must be between 2 and 100 characters.";
     }
-    const trimmedLoc = locationName.trim();
-    if (trimmedLoc.length < 2 || trimmedLoc.length > 100) {
+    if (displayName.trim().length < 2 || displayName.trim().length > 100) {
+      return "Display name must be between 2 and 100 characters.";
+    }
+    if (dbaName.trim().length > 100) {
+      return "DBA name must be at most 100 characters.";
+    }
+    if (locationName.trim().length < 2 || locationName.trim().length > 100) {
       return "Location name must be between 2 and 100 characters.";
     }
-    if (!address.trim()) {
-      return "Street address is required.";
+    if (!addressData || !addressData.address.trim()) {
+      return "Please select an address from the suggestions, or fill in all address fields.";
     }
-    if (!city.trim()) {
-      return "City is required.";
-    }
-    if (!stateCode) {
-      return "Please select a state.";
-    }
-    if (!/^\d{5}$/.test(zip.trim())) {
-      return "ZIP code must be 5 digits.";
+    if (!addressData.city.trim() || !addressData.state || !/^\d{5}$/.test(addressData.zip.trim())) {
+      return "Address is incomplete. Please select from the suggestions or fill in all fields.";
     }
     return null;
   }
 
+  const isFormValid =
+    vertical !== "" &&
+    legalName.trim().length >= 2 &&
+    displayName.trim().length >= 2 &&
+    locationName.trim().length >= 2 &&
+    addressData !== null &&
+    addressData.address.trim() !== "" &&
+    addressData.city.trim() !== "" &&
+    addressData.state !== "" &&
+    /^\d{5}$/.test(addressData.zip.trim());
+
+  /* --- JWT refresh helper (same pattern as before) --- */
   async function refreshAndUpdateSession(): Promise<void> {
     const res = await fetch("/api/onboarding/refresh-session", { method: "POST" });
     if (res.status === 429) {
-      // 429 = refresh-session was already called within its 30s window
-      // (e.g. a prior attempt in this same submit, or a recent resume).
-      // The server-side org assignment is already persisted; update()
-      // alone pulls it into the JWT via the jwt callback's DB re-read.
-      // No need to wait out the rate-limit window.
       await update();
       return;
     }
     if (!res.ok) {
-      // A non-429 error (401 session expired, 404 user not found, 500)
-      // means the JWT refresh won't carry the new organizationId. Surface
-      // it here rather than letting it fall through to update() and fail
-      // later with a confusing org_not_in_session on the location call.
       const body = await res.json().catch(() => ({}));
       throw new Error(
-        `refresh-session failed (${res.status}): ${body.error ?? "unknown"}`,
+        `refresh-session failed (${res.status}): ${body.error ?? "unknown"}`
       );
     }
     await update();
   }
 
+  /* --- Location creation helper --- */
   async function createLocation(): Promise<{ ok: boolean; reason?: string; message?: string }> {
     const res = await fetch("/api/onboarding/location", {
       method: "POST",
@@ -247,11 +206,11 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
       body: JSON.stringify({
         sessionId,
         locationName: locationName.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        state: stateCode,
-        zip: zip.trim(),
-        timezone,
+        address: addressData!.address.trim(),
+        city: addressData!.city.trim(),
+        state: addressData!.state,
+        zip: addressData!.zip.trim(),
+        timezone: addressData!.timezone,
       }),
     });
     if (res.ok) return { ok: true };
@@ -259,12 +218,9 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
     return { ok: false, reason: body.error, message: mapLocationError(body.error, res.status) };
   }
 
+  /* --- Submit handler --- */
   async function handleSubmit() {
-    // Synchronous in-flight guard (see inFlightRef declaration). Returns
-    // immediately if a submit is already running, closing the
-    // double-click race that the disabled button alone can't.
     if (inFlightRef.current) return;
-
     setError(null);
 
     const validationError = validate();
@@ -276,112 +232,77 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
     inFlightRef.current = true;
     setSubmitting(true);
     try {
-      // CALL 1 — create org (skip if already created)
-      if (!orgAlreadyCreated) {
-        let orgRes = await fetch("/api/onboarding/org", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId, orgName: orgName.trim(), planTier }),
-        });
+      // CALL 1 — update org profile
+      const orgRes = await fetch("/api/onboarding/org", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          vertical,
+          legalName: legalName.trim(),
+          dbaName: dbaName.trim() || undefined,
+          displayName: displayName.trim(),
+        }),
+      });
 
-        // SLUG_COLLISION (503) is transient — auto-retry once after 500ms
-        if (orgRes.status === 503) {
-          await new Promise((r) => setTimeout(r, 500));
-          orgRes = await fetch("/api/onboarding/org", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId, orgName: orgName.trim(), planTier }),
-          });
-        }
-
-        if (!orgRes.ok) {
-          const body = await orgRes.json().catch(() => ({}));
-          // 409 invalid_transition means org already exists — continue to location
-          if (orgRes.status === 409 && body.error === "invalid_transition") {
-            // org already created in a prior attempt; fall through
-          } else {
-            setError(mapOrgError(body.error, orgRes.status));
-            setSubmitting(false);
-            return;
-          }
+      if (!orgRes.ok) {
+        const body = await orgRes.json().catch(() => ({}));
+        // 409 invalid_transition = state already past ORG_CREATED (revisit) — continue
+        if (orgRes.status === 409 && body.error === "invalid_transition") {
+          // already saved, fall through
+        } else {
+          setError(mapOrgError(body.error, orgRes.status));
+          return;
         }
       }
 
-      // CALL 2 — refresh JWT so organizationId lands in the session token
+      // CALL 2 — refresh JWT so organizationId lands in session token
       await refreshAndUpdateSession();
 
       // CALL 3 — create location (with one retry on org_not_in_session)
       let locationResult = await createLocation();
       if (!locationResult.ok && locationResult.reason === "org_not_in_session") {
-        // JWT didn't propagate — refresh + update once more, then retry
         await refreshAndUpdateSession();
         locationResult = await createLocation();
       }
 
       if (!locationResult.ok) {
-        setError(locationResult.message ?? "Couldn't save your location. Please refresh and try again.");
-        setSubmitting(false);
-        return;
+        // 409 invalid_transition on location = already created (revisit step 1)
+        if (locationResult.reason === "invalid_transition") {
+          // fall through to navigation
+        } else {
+          setError(locationResult.message ?? "Could not save your location. Please try again.");
+          return;
+        }
       }
 
-      // Success — reset submitting before navigation. Normally the
-      // component unmounts on navigation so this is beltless, but if
-      // router.push is interrupted (back button, silent no-op) the
-      // button would otherwise hang in "Saving..." with no recovery.
-      // No router.refresh() — step-2 is force-dynamic and re-reads the
-      // session state fresh on navigation; refreshing step-1 here (which
-      // is about to unmount) does nothing.
       setSubmitting(false);
       router.push("/onboarding/wizard/step-2");
     } catch (err) {
-      // Log the real error so production debugging isn't masked by the
-      // generic user-facing message. These are network/parse errors,
-      // not user PII.
       console.error("[business-profile-form] submit failed", err);
       setError("Something went wrong. Please try again.");
-      setSubmitting(false);
     } finally {
-      // Always clear the in-flight guard, whether we succeeded, hit a
-      // handled error (early return), threw, or navigated away.
       inFlightRef.current = false;
+      setSubmitting(false);
     }
   }
 
+  /* --- Already complete state --- */
   if (alreadyComplete) {
     return (
-      <div
-        style={{
-          backgroundColor: "#ffffff",
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "32px",
-          marginTop: "8px",
-        }}
-      >
-        <p
-          style={{
-            margin: "0 0 24px",
-            fontSize: "16px",
-            color: "#111827",
-            fontWeight: 500,
-          }}
-        >
+      <div className="card" style={{ marginTop: 8 }}>
+        <p style={{
+          margin: "0 0 24px",
+          fontSize: 16,
+          color: "var(--text-primary)",
+          fontWeight: 500,
+        }}>
           Business profile complete.
         </p>
         <button
+          className="btn btn-primary"
           onClick={() => router.push("/onboarding/wizard/step-2")}
-          style={{
-            padding: "12px 24px",
-            fontSize: "14px",
-            fontWeight: 600,
-            color: "#ffffff",
-            backgroundColor: "#606E74",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#7a8f96")}
-          onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#606E74")}
+          style={{ height: 44, padding: "0 24px" }}
         >
           Continue to Services
         </button>
@@ -389,321 +310,414 @@ export default function BusinessProfileForm({ sessionId, initialState, prefill }
     );
   }
 
+  /* --- Main form --- */
   return (
-    <div style={{ marginTop: "8px" }}>
-      {/* Organization section */}
-      <div
-        style={{
-          backgroundColor: "#ffffff",
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "24px",
-          marginBottom: "24px",
-        }}
-      >
-        <h2
+    <div style={{ marginTop: 8 }}>
+      {/* SECTION 1 — Vertical Picker */}
+      <div style={{ marginBottom: 32 }}>
+        <p style={{
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.4px",
+          color: "var(--text-muted)",
+          margin: "0 0 8px",
+        }}>
+          Business Type
+        </p>
+        <p style={{
+          fontSize: 13,
+          color: "var(--text-muted)",
+          margin: "0 0 16px",
+          lineHeight: 1.5,
+        }}>
+          This personalizes your entire workspace.
+        </p>
+
+        <div
+          role="radiogroup"
+          aria-label="Business type"
           style={{
-            margin: "0 0 20px",
-            fontSize: "18px",
-            fontWeight: 600,
-            color: "#111827",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 16,
           }}
         >
-          Organization
-        </h2>
+          {VERTICALS.map((v) => {
+            const selected = vertical === v.id;
+            const Icon = v.icon;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                tabIndex={0}
+                onClick={() => setVertical(v.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setVertical(v.id);
+                  }
+                }}
+                disabled={submitting}
+                style={{
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 14,
+                  padding: "20px 18px",
+                  border: selected
+                    ? "2px solid var(--accent)"
+                    : "1px solid var(--border)",
+                  borderRadius: 12,
+                  backgroundColor: selected
+                    ? "var(--accent-soft)"
+                    : "var(--bg-card)",
+                  cursor: submitting ? "not-allowed" : "pointer",
+                  textAlign: "left",
+                  transition: "all 200ms ease",
+                  transform: selected ? "translateY(-2px)" : "none",
+                  outline: "none",
+                  fontFamily: "inherit",
+                }}
+              >
+                {/* Check badge */}
+                {selected && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -6,
+                      right: -6,
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      backgroundColor: "var(--blush)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      animation: "scaleIn 200ms ease-out",
+                    }}
+                  >
+                    <Check size={13} strokeWidth={2.5} color="white" />
+                  </span>
+                )}
 
-        {/* Org name */}
-        <div style={{ marginBottom: "16px" }}>
-          <label style={labelStyle} htmlFor="orgName">
-            Organization name
-          </label>
-          <input
-            id="orgName"
-            type="text"
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-            disabled={orgAlreadyCreated || submitting}
-            placeholder="e.g., Salon Envy"
-            maxLength={100}
-            style={{
-              ...inputStyle,
-              ...(orgAlreadyCreated
-                ? { backgroundColor: "#f9fafb", color: "#6b7280", cursor: "not-allowed" }
-                : {}),
-            }}
-            onFocus={(e) => {
-              if (!orgAlreadyCreated) e.currentTarget.style.borderColor = "#606E74";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "#e5e7eb";
-            }}
-          />
-          {orgAlreadyCreated && (
-            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#9ca3af" }}>
-              Organization already created.
-            </p>
-          )}
-        </div>
-
-        {/* Plan tier */}
-        <div>
-          <label style={{ ...labelStyle, marginBottom: "10px" }}>Plan</label>
-          <div style={{ display: "flex", gap: "12px" }}>
-            {PLAN_TIERS.map((tier) => {
-              const selected = planTier === tier.value;
-              return (
-                <button
-                  key={tier.value}
-                  type="button"
-                  onClick={() => {
-                    if (!orgAlreadyCreated && !submitting) setPlanTier(tier.value);
-                  }}
-                  disabled={orgAlreadyCreated || submitting}
+                {/* Icon circle */}
+                <span
                   style={{
-                    flex: 1,
-                    padding: "16px",
-                    border: selected ? "2px solid #606E74" : "1px solid #e5e7eb",
-                    borderRadius: "12px",
-                    backgroundColor: selected ? "#f0f3f4" : "#ffffff",
-                    cursor: orgAlreadyCreated || submitting ? "not-allowed" : "pointer",
-                    textAlign: "left",
-                    opacity: orgAlreadyCreated ? 0.7 : 1,
+                    width: 40,
+                    height: 40,
+                    borderRadius: "50%",
+                    backgroundColor: "var(--bg-cream)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
                   }}
                 >
-                  <p
-                    style={{
-                      margin: "0 0 4px",
-                      fontSize: "14px",
-                      fontWeight: 600,
-                      color: "#111827",
-                    }}
-                  >
-                    {tier.label}
+                  <Icon size={18} strokeWidth={1.5} style={{ color: "var(--brand)" }} />
+                </span>
+
+                {/* Text */}
+                <div>
+                  <p style={{
+                    margin: 0,
+                    fontSize: 16,
+                    fontWeight: 600,
+                    color: "var(--text-primary)",
+                    letterSpacing: "-0.2px",
+                  }}>
+                    {v.displayName}
                   </p>
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: "13px",
-                      color: "#6b7280",
-                    }}
-                  >
-                    {tier.description}
+                  <p style={{
+                    margin: "3px 0 0",
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                    lineHeight: 1.4,
+                  }}>
+                    {v.tagline}
                   </p>
-                </button>
-              );
-            })}
-          </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Location section */}
-      <div
-        style={{
-          backgroundColor: "#ffffff",
-          border: "1px solid #e5e7eb",
-          borderRadius: "12px",
-          padding: "24px",
-          marginBottom: "24px",
-        }}
-      >
-        <h2
-          style={{
-            margin: "0 0 20px",
-            fontSize: "18px",
-            fontWeight: 600,
-            color: "#111827",
-          }}
-        >
-          Location
-        </h2>
+      {/* SECTION 2 — Business Profile (appears after vertical selection) */}
+      {vertical !== "" && (
+        <div style={{ animation: "fadeInUp 250ms ease-out" }}>
+          {/* Business details */}
+          <div style={{ marginBottom: 28 }}>
+            <p style={{
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.4px",
+              color: "var(--text-muted)",
+              margin: "0 0 8px",
+            }}>
+              About Your Business
+            </p>
 
-        {/* Location name */}
-        <div style={{ marginBottom: "16px" }}>
-          <label style={labelStyle} htmlFor="locationName">
-            Location name
-          </label>
-          <input
-            id="locationName"
-            type="text"
-            value={locationName}
-            onChange={(e) => setLocationName(e.target.value)}
-            disabled={submitting}
-            placeholder="e.g., Main Street"
-            maxLength={100}
-            style={inputStyle}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "#606E74";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "#e5e7eb";
-            }}
-          />
-        </div>
+            {/* Legal name */}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="legalName"
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  marginBottom: 6,
+                }}
+              >
+                Legal business name
+              </label>
+              <input
+                id="legalName"
+                type="text"
+                className="input"
+                value={legalName}
+                onChange={(e) => setLegalName(e.target.value)}
+                disabled={submitting}
+                placeholder="e.g. Reyna Tech LLC"
+                maxLength={100}
+                style={{ height: 40, fontSize: 14 }}
+              />
+              <p style={{
+                margin: "4px 0 0",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}>
+                Your registered legal entity name.
+              </p>
+            </div>
 
-        {/* Street address */}
-        <div style={{ marginBottom: "16px" }}>
-          <label style={labelStyle} htmlFor="address">
-            Street address
-          </label>
-          <input
-            id="address"
-            type="text"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            disabled={submitting}
-            placeholder="123 Main St"
-            style={inputStyle}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "#606E74";
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = "#e5e7eb";
-            }}
-          />
-        </div>
+            {/* DBA name */}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="dbaName"
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  marginBottom: 6,
+                }}
+              >
+                DBA / brand name
+                <span style={{ fontWeight: 400, color: "var(--text-muted)", marginLeft: 4 }}>
+                  (optional)
+                </span>
+              </label>
+              <input
+                id="dbaName"
+                type="text"
+                className="input"
+                value={dbaName}
+                onChange={(e) => setDbaName(e.target.value)}
+                disabled={submitting}
+                placeholder='e.g. "Salon Envy"'
+                maxLength={100}
+                style={{ height: 40, fontSize: 14 }}
+              />
+              <p style={{
+                margin: "4px 0 0",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}>
+                What customers know you as, if different.
+              </p>
+            </div>
 
-        {/* City + State row */}
-        <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
-          <div style={{ flex: 2 }}>
-            <label style={labelStyle} htmlFor="city">
-              City
-            </label>
-            <input
-              id="city"
-              type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              disabled={submitting}
-              placeholder="Corpus Christi"
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#606E74";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e5e7eb";
-              }}
-            />
+            {/* Display name */}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="displayName"
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  marginBottom: 6,
+                }}
+              >
+                Display name
+              </label>
+              <input
+                id="displayName"
+                type="text"
+                className="input"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                disabled={submitting}
+                placeholder="e.g. Salon Envy"
+                maxLength={100}
+                style={{ height: 40, fontSize: 14 }}
+              />
+              <p style={{
+                margin: "4px 0 0",
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}>
+                Shown across your Kasse workspace.
+              </p>
+            </div>
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle} htmlFor="stateCode">
-              State
-            </label>
-            <select
-              id="stateCode"
-              value={stateCode}
-              onChange={(e) => setStateCode(e.target.value)}
-              disabled={submitting}
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#606E74";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e5e7eb";
+
+          {/* Divider */}
+          <div style={{
+            height: 1,
+            backgroundColor: "var(--border)",
+            margin: "0 0 28px",
+          }} />
+
+          {/* First location */}
+          <div style={{ marginBottom: 28 }}>
+            <p style={{
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.4px",
+              color: "var(--text-muted)",
+              margin: "0 0 8px",
+            }}>
+              Your First Location
+            </p>
+
+            {/* Location name */}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                htmlFor="locationName"
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  marginBottom: 6,
+                }}
+              >
+                Location name
+              </label>
+              <input
+                id="locationName"
+                type="text"
+                className="input"
+                value={locationName}
+                onChange={(e) => setLocationName(e.target.value)}
+                disabled={submitting}
+                placeholder='e.g. "Downtown" or "Main Street"'
+                maxLength={100}
+                style={{ height: 40, fontSize: 14 }}
+              />
+            </div>
+
+            {/* Address */}
+            <div style={{ marginBottom: 16 }}>
+              <label
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: "var(--text-primary)",
+                  marginBottom: 6,
+                }}
+              >
+                Address
+              </label>
+              <AddressAutocomplete
+                onSelect={handleAddressSelect}
+                defaultValue={prefill.address}
+                disabled={submitting}
+              />
+            </div>
+
+            {/* Show parsed address confirmation chips */}
+            {addressData && addressData.city && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  padding: "10px 12px",
+                  backgroundColor: "var(--accent-soft)",
+                  borderRadius: 8,
+                  marginBottom: 8,
+                  animation: "fadeInUp 200ms ease-out",
+                }}
+              >
+                {[
+                  addressData.address,
+                  addressData.city,
+                  addressData.state,
+                  addressData.zip,
+                ].filter(Boolean).map((part, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "var(--accent)",
+                      backgroundColor: "var(--bg-card)",
+                      padding: "3px 10px",
+                      borderRadius: 6,
+                      border: "1px solid var(--accent-soft)",
+                    }}
+                  >
+                    {part}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Error banner */}
+          {error && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: "12px 16px",
+                marginBottom: 20,
+                backgroundColor: "var(--error-soft)",
+                border: "1px solid var(--error)",
+                borderRadius: 8,
+                fontSize: 14,
+                color: "var(--error)",
               }}
             >
-              <option value="">Select state</option>
-              {US_STATES.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.code} - {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+              <AlertCircle
+                size={16}
+                strokeWidth={1.5}
+                style={{ flexShrink: 0, marginTop: 2 }}
+              />
+              {error}
+            </div>
+          )}
 
-        {/* ZIP + Timezone row */}
-        <div style={{ display: "flex", gap: "12px" }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle} htmlFor="zip">
-              ZIP code
-            </label>
-            <input
-              id="zip"
-              type="text"
-              value={zip}
-              onChange={(e) => setZip(e.target.value)}
-              disabled={submitting}
-              placeholder="78401"
-              maxLength={5}
-              inputMode="numeric"
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#606E74";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e5e7eb";
-              }}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle} htmlFor="timezone">
-              Timezone
-            </label>
-            <select
-              id="timezone"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              disabled={submitting}
-              style={inputStyle}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = "#606E74";
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = "#e5e7eb";
-              }}
-            >
-              {TIMEZONES.map((tz) => (
-                <option key={tz.value} value={tz.value}>
-                  {tz.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Error banner */}
-      {error && (
-        <div
-          style={{
-            padding: "12px 16px",
-            marginBottom: "24px",
-            backgroundColor: "#fef2f2",
-            border: "1px solid #fecaca",
-            borderRadius: "8px",
-            fontSize: "14px",
-            color: "#dc2626",
-          }}
-        >
-          {error}
+          {/* Submit CTA */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleSubmit}
+            disabled={submitting || !isFormValid}
+            style={{
+              width: "100%",
+              height: 52,
+              fontSize: 16,
+              fontWeight: 600,
+              borderRadius: 8,
+              opacity: submitting || !isFormValid ? 0.55 : 1,
+              cursor: submitting || !isFormValid ? "not-allowed" : "pointer",
+            }}
+          >
+            {submitting ? "Saving..." : "Continue"}
+          </button>
         </div>
       )}
-
-      {/* Submit */}
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={submitting}
-        style={{
-          width: "100%",
-          padding: "14px 24px",
-          fontSize: "16px",
-          fontWeight: 600,
-          color: "#ffffff",
-          backgroundColor: submitting ? "#9ca3af" : "#606E74",
-          border: "none",
-          borderRadius: "8px",
-          cursor: submitting ? "not-allowed" : "pointer",
-        }}
-        onMouseOver={(e) => {
-          if (!submitting) e.currentTarget.style.backgroundColor = "#7a8f96";
-        }}
-        onMouseOut={(e) => {
-          if (!submitting) e.currentTarget.style.backgroundColor = "#606E74";
-        }}
-      >
-        {submitting ? "Saving..." : "Continue"}
-      </button>
     </div>
   );
 }

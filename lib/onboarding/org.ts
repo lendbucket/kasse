@@ -5,6 +5,9 @@ import { getSessionById } from './sessions';
 import { OnboardingError, V1_LAUNCH_PLAN_TIERS } from './types';
 import type { OnboardingOrgCreateInput, OnboardingPlanTier } from './types';
 import { writeAuditLog, AuditAction } from '@/lib/audit/write';
+import type { VerticalId } from '@/lib/verticals/types';
+
+const VALID_VERTICALS = new Set<string>(['salon', 'nail_salon']);
 
 const MIN_ORG_NAME_LENGTH = 2;
 const MAX_ORG_NAME_LENGTH = 100;
@@ -226,4 +229,128 @@ export async function createOrgForOnboarding(args: {
   });
 
   return { organizationId: org.id };
+}
+
+/**
+ * Update an existing organization's profile during onboarding Step 1.
+ * Under Option C, signup already creates the org + an ORG_CREATED session,
+ * so this function UPDATES the org (not creates). It sets vertical, legal
+ * name, DBA, and display name without advancing state — the location route
+ * handles state advancement (ORG_CREATED → LOCATION_CREATED).
+ *
+ * Idempotent: can be called on revisits (states past ORG_CREATED) to
+ * re-edit the profile. Only blocks COMPLETED sessions.
+ *
+ * Uses prismaAdmin because the org was just created by signup and the
+ * session doesn't have tenant context yet. Same ORG_BOOTSTRAP justification
+ * as createOrgForOnboarding.
+ */
+export async function updateOrgForOnboarding(args: {
+  input: {
+    sessionId: string;
+    vertical: string;
+    legalName: string;
+    dbaName?: string;
+    displayName: string;
+  };
+  authenticatedUserId: string;
+}): Promise<{ organizationId: string }> {
+  const { sessionId, vertical, legalName, dbaName, displayName } = args.input;
+
+  // --- Validate vertical ---
+  if (!VALID_VERTICALS.has(vertical)) {
+    throw new OnboardingError(
+      'INVALID_VERTICAL',
+      `vertical must be one of: ${[...VALID_VERTICALS].join(', ')}`
+    );
+  }
+  // After validation, vertical is guaranteed to be a valid VerticalId
+  const validatedVertical = vertical as VerticalId;
+
+  // --- Validate names ---
+  const legalNameError = validateOrgName(legalName);
+  if (legalNameError) {
+    throw new OnboardingError('INVALID_ORG_NAME', `legal name: ${legalNameError}`);
+  }
+  const displayNameError = validateOrgName(displayName);
+  if (displayNameError) {
+    throw new OnboardingError('INVALID_ORG_NAME', `display name: ${displayNameError}`);
+  }
+  if (dbaName !== undefined && dbaName !== null && dbaName.trim().length > MAX_ORG_NAME_LENGTH) {
+    throw new OnboardingError(
+      'INVALID_ORG_NAME',
+      `DBA name must be at most ${MAX_ORG_NAME_LENGTH} characters`
+    );
+  }
+
+  // --- Load and verify session ---
+  const session = await getSessionById(sessionId);
+  if (!session) {
+    throw new OnboardingError('SESSION_NOT_FOUND', `session ${sessionId} not found`);
+  }
+  if (session.userId !== args.authenticatedUserId) {
+    throw new OnboardingError(
+      'ORG_SCOPE_MISMATCH',
+      'authenticated user does not own this onboarding session'
+    );
+  }
+  if (!session.organizationId) {
+    throw new OnboardingError(
+      'ORG_NOT_YET_CREATED',
+      'organization has not been created yet — signup may not have completed'
+    );
+  }
+  if (session.state === 'COMPLETED') {
+    throw new OnboardingError(
+      'SESSION_COMPLETED',
+      'cannot update org on a completed session'
+    );
+  }
+
+  const organizationId = session.organizationId;
+
+  // --- Atomic update: org + session ---
+  await prismaAdmin.$transaction(async (tx) => {
+    await tx.organization.update({
+      where: { id: organizationId },
+      data: {
+        name: displayName.trim(),
+        legalName: legalName.trim(),
+        dbaName: dbaName?.trim() || null,
+        verticalId: validatedVertical,
+      },
+    });
+
+    const existingData = (session.data ?? {}) as Record<string, unknown>;
+    await tx.onboardingSession.update({
+      where: { id: sessionId },
+      data: {
+        vertical: validatedVertical,
+        data: {
+          ...existingData,
+          vertical: validatedVertical,
+          legalName: legalName.trim(),
+          dbaName: dbaName?.trim() || null,
+          displayName: displayName.trim(),
+        },
+      },
+    });
+  });
+
+  // Audit outside transaction (fail-soft)
+  await writeAuditLog({
+    userId: args.authenticatedUserId,
+    organizationId,
+    action: AuditAction.ORG_BOOTSTRAPPED,
+    entity: 'Organization',
+    entityId: organizationId,
+    metadata: {
+      via: 'onboarding-step1-update',
+      vertical: validatedVertical,
+      legalName: legalName.trim(),
+      displayName: displayName.trim(),
+    },
+  });
+
+  return { organizationId };
 }

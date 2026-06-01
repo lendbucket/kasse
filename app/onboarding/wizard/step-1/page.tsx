@@ -32,32 +32,32 @@ export default async function WizardStep1Page() {
     redirect("/dashboard");
   }
 
-  // Defensive: validate the DB state is a known enum member before
-  // passing to the client form. An unknown value (migration gap, manual
-  // correction, backend-ahead-of-frontend) falls back to ACCOUNT_CREATED
-  // so the form runs the full org+location flow rather than silently
-  // rendering a half-broken state.
   const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
     onboardingSession.state
   )
     ? (onboardingSession.state as OnboardingState)
     : "ACCOUNT_CREATED";
 
-  // Guard: if user's current state maps to a step OTHER than STEP_NUMBER,
-  // redirect to the right step. Prevents URL-typing to a step the user
-  // hasn't reached yet.
   const actualStep = stateToWizardStep(safeState);
   if (actualStep < STEP_NUMBER) {
     redirect(`/onboarding/wizard/step-${actualStep}`);
   }
-  // actualStep > STEP_NUMBER is allowed (user is revisiting a completed step)
 
   const stepLabel = WIZARD_STEP_LABELS[STEP_NUMBER - 1];
 
   const data = (onboardingSession.data as Record<string, unknown>) ?? {};
   const prefill = {
-    orgName: typeof data.orgName === "string" ? data.orgName : "",
-    planTier: data.planTier === "PREMIUM" ? ("PREMIUM" as const) : ("FREE" as const),
+    vertical:
+      typeof data.vertical === "string" &&
+      (data.vertical === "salon" || data.vertical === "nail_salon")
+        ? (data.vertical as "salon" | "nail_salon")
+        : typeof onboardingSession.vertical === "string" &&
+          (onboardingSession.vertical === "salon" || onboardingSession.vertical === "nail_salon")
+        ? (onboardingSession.vertical as "salon" | "nail_salon")
+        : ("" as const),
+    legalName: typeof data.legalName === "string" ? data.legalName : "",
+    dbaName: typeof data.dbaName === "string" ? data.dbaName : "",
+    displayName: typeof data.displayName === "string" ? data.displayName : "",
     locationName: typeof data.locationName === "string" ? data.locationName : "",
     address: typeof data.address === "string" ? data.address : "",
     city: typeof data.city === "string" ? data.city : "",
@@ -71,13 +71,26 @@ export default async function WizardStep1Page() {
       <ProgressBar currentStep={STEP_NUMBER} maxCompletedStep={actualStep} />
       <StepCounter currentStep={STEP_NUMBER} />
       <div style={{ padding: "0 32px 48px" }}>
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.4px",
+            color: "var(--text-muted)",
+            margin: "0 0 6px",
+          }}
+        >
+          Step {STEP_NUMBER}
+        </p>
         <h1
           style={{
-            margin: "0 0 16px",
-            fontSize: "28px",
-            fontWeight: 700,
-            color: "#111827",
-            letterSpacing: "-0.5px",
+            margin: "0 0 24px",
+            fontSize: 28,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            letterSpacing: "-0.31px",
+            lineHeight: 1.2,
           }}
         >
           {stepLabel}
