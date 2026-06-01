@@ -42,10 +42,20 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { sessionId } = body;
+    const { sessionId, selectedNames, skip } = body;
 
     if (typeof sessionId !== 'string' || !sessionId) {
       return NextResponse.json({ error: 'session_id_required' }, { status: 400 });
+    }
+
+    if (selectedNames !== undefined) {
+      if (!Array.isArray(selectedNames) || !selectedNames.every((n: unknown) => typeof n === 'string')) {
+        return NextResponse.json({ error: 'invalid_selected_names' }, { status: 400 });
+      }
+    }
+
+    if (skip !== undefined && typeof skip !== 'boolean') {
+      return NextResponse.json({ error: 'invalid_skip_value' }, { status: 400 });
     }
 
     const ctx = tenantCtxFromSession({
@@ -63,6 +73,8 @@ export async function POST(req: Request) {
         input: {
           sessionId,
           organizationId: session.user.organizationId!,
+          selectedNames,
+          skip: skip ?? false,
         },
         authenticatedUserId: session.user.id,
       });
@@ -93,7 +105,7 @@ export async function POST(req: Request) {
       sessionId,
       toState: 'SERVICES_SEEDED',
       triggeredByUserId: session.user.id,
-      metadata: { servicesSeededCount: result.servicesSeededCount },
+      metadata: { servicesSeededCount: result.servicesSeededCount, skipped: !!skip },
     });
 
     await writeAuditLog({
@@ -106,12 +118,14 @@ export async function POST(req: Request) {
         via: 'onboarding',
         sessionId,
         count: result.servicesSeededCount,
+        skipped: !!skip,
       },
     });
 
     return NextResponse.json(
       {
         servicesSeededCount: result.servicesSeededCount,
+        skipped: !!skip,
         state: 'SERVICES_SEEDED',
       },
       { status: 201, headers: { 'Cache-Control': 'no-store' } }

@@ -50,7 +50,26 @@ export const nailSalonConfig: VerticalConfig = {
 
   navigation: [],
   dashboardWidgets: [],
-  defaultServices: [],
+  defaultServices: [
+    // Manicures
+    { name: 'Classic Manicure', durationMinutes: 30, priceCents: 2500, category: 'Manicures' },
+    { name: 'Gel Manicure', durationMinutes: 45, priceCents: 3500, category: 'Manicures' },
+    { name: 'Polish Change — Hands', durationMinutes: 15, priceCents: 1500, category: 'Manicures' },
+    // Pedicures
+    { name: 'Classic Pedicure', durationMinutes: 45, priceCents: 4000, category: 'Pedicures' },
+    { name: 'Gel Pedicure', durationMinutes: 60, priceCents: 5500, category: 'Pedicures' },
+    { name: 'Spa Pedicure', durationMinutes: 60, priceCents: 6000, category: 'Pedicures' },
+    { name: 'Polish Change — Feet', durationMinutes: 15, priceCents: 1500, category: 'Pedicures' },
+    // Enhancements
+    { name: 'Acrylic Full Set', durationMinutes: 75, priceCents: 6500, category: 'Enhancements' },
+    { name: 'Acrylic Fill', durationMinutes: 60, priceCents: 4500, category: 'Enhancements' },
+    { name: 'Dip Powder Set', durationMinutes: 60, priceCents: 5000, category: 'Enhancements' },
+    { name: 'Gel-X / Extensions', durationMinutes: 90, priceCents: 7500, category: 'Enhancements' },
+    // Add-Ons
+    { name: 'Nail Art (per nail)', durationMinutes: 15, priceCents: 1000, category: 'Add-Ons' },
+    { name: 'Paraffin Treatment', durationMinutes: 15, priceCents: 1500, category: 'Add-Ons' },
+    { name: 'Gel Removal', durationMinutes: 15, priceCents: 1500, category: 'Add-Ons' },
+  ],
   onboardingChecklist: [],
 
   compliance: {
