@@ -3,9 +3,13 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import { stateToWizardStep, WIZARD_STEP_LABELS } from "@/lib/onboarding/wizard-step-mapping";
+import { ONBOARDING_STATES } from "@/lib/onboarding/types";
 import type { OnboardingState } from "@/lib/onboarding/types";
+import { getVerticalConfig } from "@/lib/verticals/registry";
+import type { VerticalId } from "@prisma/client";
 import { ProgressBar } from "@/components/onboarding/ProgressBar";
 import { StepCounter } from "@/components/onboarding/StepCounter";
+import TeamForm from "./team-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,14 +34,35 @@ export default async function WizardStep3Page() {
     redirect("/dashboard");
   }
 
-  // Guard: if user's current state maps to a step OTHER than STEP_NUMBER,
-  // redirect to the right step. Prevents URL-typing to a step the user
-  // hasn't reached yet.
-  const actualStep = stateToWizardStep(onboardingSession.state as OnboardingState);
+  // Defensive: validate state is a known enum member before casting.
+  // Unknown values fall back to ACCOUNT_CREATED so the user is routed
+  // through the full re-validation chain rather than silently skipping.
+  const safeState: OnboardingState = (ONBOARDING_STATES as readonly string[]).includes(
+    onboardingSession.state
+  )
+    ? (onboardingSession.state as OnboardingState)
+    : "ACCOUNT_CREATED";
+
+  const actualStep = stateToWizardStep(safeState);
   if (actualStep < STEP_NUMBER) {
     redirect(`/onboarding/wizard/step-${actualStep}`);
   }
-  // actualStep > STEP_NUMBER is allowed (user is revisiting a completed step)
+
+  // Load vertical terms for personalized copy
+  let staffTerm = "team member";
+  let staffTermPlural = "team members";
+
+  if (onboardingSession.organizationId) {
+    const org = await prismaAdmin.organization.findUnique({
+      where: { id: onboardingSession.organizationId },
+      select: { verticalId: true },
+    });
+    if (org) {
+      const config = getVerticalConfig(org.verticalId as VerticalId);
+      staffTerm = config.terms.staff;
+      staffTermPlural = config.terms.staffPlural;
+    }
+  }
 
   const stepLabel = WIZARD_STEP_LABELS[STEP_NUMBER - 1];
 
@@ -46,49 +71,54 @@ export default async function WizardStep3Page() {
       <ProgressBar currentStep={STEP_NUMBER} maxCompletedStep={actualStep} />
       <StepCounter currentStep={STEP_NUMBER} />
       <div style={{ padding: "0 32px 48px" }}>
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.4px",
+            color: "var(--text-muted)",
+            margin: "0 0 6px",
+          }}
+        >
+          Step {STEP_NUMBER}
+        </p>
         <h1
           style={{
-            margin: "0 0 16px",
-            fontSize: "28px",
-            fontWeight: 700,
-            color: "#111827",
-            letterSpacing: "-0.5px",
+            margin: "0 0 24px",
+            fontSize: 28,
+            fontWeight: 600,
+            color: "var(--text-primary)",
+            letterSpacing: "-0.31px",
+            lineHeight: 1.2,
           }}
         >
           {stepLabel}
         </h1>
-        <p
-          style={{
-            margin: "0 0 32px",
-            fontSize: "16px",
-            color: "#6b7280",
-            lineHeight: 1.6,
-          }}
-        >
-          This step is coming soon. (Placeholder for P1.C.{STEP_NUMBER})
-        </p>
+        <TeamForm
+          sessionId={onboardingSession.id}
+          initialState={safeState}
+          staffTerm={staffTerm}
+          staffTermPlural={staffTermPlural}
+        />
         {process.env.NODE_ENV !== "production" && (
           <p
             style={{
-              margin: "0",
-              fontSize: "14px",
-              color: "#9ca3af",
+              margin: "24px 0 0",
+              fontSize: 14,
+              color: "var(--text-muted)",
               lineHeight: 1.6,
             }}
           >
-            {/* Dev/preview only: shows the backend state machine value so
-                we can verify routing end-to-end before P1.C step content
-                lands. Real production traffic doesn't see internal
-                implementation labels. Cycle 2 fix from PR #120 review. */}
             Current onboarding state:{" "}
             <code
               style={{
                 fontFamily: "monospace",
-                fontSize: "13px",
-                backgroundColor: "#f3f4f6",
+                fontSize: 13,
+                backgroundColor: "var(--bg-cream)",
                 padding: "2px 6px",
-                borderRadius: "4px",
-                color: "#374151",
+                borderRadius: 4,
+                color: "var(--text-secondary)",
               }}
             >
               {onboardingSession.state}
