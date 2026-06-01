@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createOrgForOnboarding } from '@/lib/onboarding/org';
+import { updateOrgForOnboarding } from '@/lib/onboarding/org';
 import { OnboardingError } from '@/lib/onboarding/types';
 
 export const dynamic = 'force-dynamic';
@@ -15,24 +15,28 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { sessionId, orgName, planTier } = body;
+    const { sessionId, vertical, legalName, dbaName, displayName } = body;
 
     if (typeof sessionId !== 'string' || !sessionId) {
       return NextResponse.json({ error: 'session_id_required' }, { status: 400 });
     }
-    if (typeof orgName !== 'string' || !orgName) {
-      return NextResponse.json({ error: 'org_name_required' }, { status: 400 });
+    if (typeof vertical !== 'string' || !vertical) {
+      return NextResponse.json({ error: 'vertical_required' }, { status: 400 });
     }
-    if (typeof planTier !== 'string' || !planTier) {
-      return NextResponse.json({ error: 'plan_tier_required' }, { status: 400 });
+    if (typeof legalName !== 'string' || !legalName) {
+      return NextResponse.json({ error: 'legal_name_required' }, { status: 400 });
+    }
+    if (typeof displayName !== 'string' || !displayName) {
+      return NextResponse.json({ error: 'display_name_required' }, { status: 400 });
     }
 
-    const result = await createOrgForOnboarding({
+    const result = await updateOrgForOnboarding({
       input: {
         sessionId,
-        orgName,
-        planTier,
-        vertical: 'SALON',
+        vertical,
+        legalName,
+        dbaName: typeof dbaName === 'string' ? dbaName : undefined,
+        displayName,
       },
       authenticatedUserId: session.user.id,
     });
@@ -42,18 +46,15 @@ export async function POST(req: Request) {
         organizationId: result.organizationId,
         state: 'ORG_CREATED',
       },
-      { status: 201, headers: { 'Cache-Control': 'no-store' } }
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
     );
   } catch (err) {
     if (err instanceof OnboardingError) {
-      const status = err.code === 'INVALID_PLAN_TIER' ? 400
-        : err.code === 'INVALID_VERTICAL' ? 400
+      const status = err.code === 'INVALID_VERTICAL' ? 400
         : err.code === 'INVALID_ORG_NAME' ? 400
-        // SLUG_COLLISION is transient — the slug suffix is random and a fresh
-        // retry succeeds. 503 is semantically correct: service-temporarily-
-        // can't-fulfill, not a user-input conflict. UI should auto-retry.
-        : err.code === 'SLUG_COLLISION' ? 503
         : err.code === 'ORG_SCOPE_MISMATCH' ? 403
+        : err.code === 'ORG_NOT_YET_CREATED' ? 409
+        : err.code === 'SESSION_COMPLETED' ? 409
         : err.code === 'INVALID_TRANSITION' ? 409
         : err.code === 'SESSION_NOT_FOUND' ? 404
         : 400;
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
         { status }
       );
     }
-    console.error('onboarding org create failed', err);
+    console.error('onboarding org update failed', err);
     return NextResponse.json({ error: 'internal_error' }, { status: 500 });
   }
 }
