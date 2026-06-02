@@ -369,6 +369,12 @@ export async function completeIfAllSigned(args: {
         unsignedCount: counts.total - counts.signed,
       },
     });
+    // Set the authoritative done-flag so the dashboard gate stops
+    // routing the owner back into the wizard.
+    await prismaAdmin.organization.update({
+      where: { id: args.input.organizationId },
+      data: { onboardingCompleted: true },
+    });
     return { advanced: true, reason: 'forced', signedCount: counts.signed, total: counts.total };
   }
 
@@ -384,6 +390,10 @@ export async function completeIfAllSigned(args: {
         signedCount: counts.signed,
         totalCount: counts.total,
       },
+    });
+    await prismaAdmin.organization.update({
+      where: { id: args.input.organizationId },
+      data: { onboardingCompleted: true },
     });
     return { advanced: true, reason: 'completed', signedCount: counts.signed, total: counts.total };
   }

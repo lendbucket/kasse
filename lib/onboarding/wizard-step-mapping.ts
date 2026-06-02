@@ -49,20 +49,31 @@ export function stateToWizardStep(state: OnboardingState): 1 | 2 | 3 | 4 | 5 | 6
     case "SERVICES_SEEDED":
       return 3;
 
-    // Step 3 in-progress sub-states (multi-state team setup)
+    // Step 3 in-progress sub-states
     case "STAFF_PENDING":
-    case "STAFF_INVITED":
-    case "AGREEMENTS_PENDING":
-    case "AGREEMENTS_CONFIGURED":
-    case "COMPENSATION_PENDING":
       return 3; // Step 3: Team (in progress)
 
     // Step 3 complete → ready for Step 4
-    case "COMPENSATION_CONFIGURED":
+    case "STAFF_INVITED":
       return 4;
 
-    // No backend states yet for steps 4–8. Once a step's backend ships
-    // (P1.C.4 = payment processing, etc.), add the new state cases here.
+    // Step 4 in-progress sub-states (agreements)
+    case "AGREEMENTS_PENDING":
+      return 4; // Step 4: Agreements (in progress)
+
+    // Step 4 complete → ready for Step 5
+    case "AGREEMENTS_CONFIGURED":
+      return 5;
+
+    // Step 5 in-progress sub-states (compensation)
+    case "COMPENSATION_PENDING":
+      return 5; // Step 5: Compensation (in progress)
+
+    // Step 5 complete — still renders step 5 (alreadyComplete variant
+    // triggers completion call + redirect to dashboard)
+    case "COMPENSATION_CONFIGURED":
+      return 5;
+
     case "COMPLETED":
       // Defensive: callers should redirect to /dashboard before calling
       // this. Treat as step 8 (Go Live) if someone does reach it.
@@ -90,8 +101,8 @@ export const WIZARD_STEP_LABELS = [
   "Business Profile",  // Step 1
   "Services",           // Step 2
   "Team",               // Step 3
-  "Payment Processing", // Step 4
-  "Booking Page",       // Step 5
+  "Agreements",         // Step 4
+  "Compensation",       // Step 5
   "Branding",           // Step 6
   "Import",             // Step 7
   "Go Live",            // Step 8
