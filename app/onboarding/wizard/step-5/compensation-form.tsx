@@ -235,7 +235,7 @@ export default function CompensationForm({
   }
 
   /* --- Complete onboarding session --- */
-  async function callCompletion() {
+  async function callCompletion(): Promise<boolean> {
     let res = await fetch("/api/onboarding/session-complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -258,12 +258,13 @@ export default function CompensationForm({
     }
 
     // Any success or already_completed is fine
-    if (res.ok) return;
+    if (res.ok) return true;
 
     const body = await res.json().catch(() => ({}));
-    if (res.status === 409 && body.error === "invalid_transition") return;
+    if (res.status === 409 && body.error === "invalid_transition") return true;
 
     console.error("[compensation-form] completion failed", body);
+    return false;
   }
 
   /* --- Submit handler --- */
@@ -300,13 +301,21 @@ export default function CompensationForm({
 
       // 201 or 202 = success
       if (res.status === 201 || res.status === 202) {
-        await callCompletion();
+        const completed = await callCompletion();
+        if (!completed) {
+          setError("We saved your information but couldn't finish setup. Please try again.");
+          return;
+        }
         router.push("/dashboard");
         return;
       }
 
       if (res.ok) {
-        await callCompletion();
+        const completed = await callCompletion();
+        if (!completed) {
+          setError("We saved your information but couldn't finish setup. Please try again.");
+          return;
+        }
         router.push("/dashboard");
         return;
       }
@@ -315,7 +324,11 @@ export default function CompensationForm({
 
       // invalid_transition = already past this step
       if (res.status === 409 && resBody.error === "invalid_transition") {
-        await callCompletion();
+        const completed = await callCompletion();
+        if (!completed) {
+          setError("We saved your information but couldn't finish setup. Please try again.");
+          return;
+        }
         router.push("/dashboard");
         return;
       }
@@ -337,7 +350,11 @@ export default function CompensationForm({
     setSubmitting(true);
     setError(null);
     try {
-      await callCompletion();
+      const completed = await callCompletion();
+      if (!completed) {
+        setError("We saved your information but couldn't finish setup. Please try again.");
+        return;
+      }
       router.push("/dashboard");
     } catch (err) {
       console.error("[compensation-form] finish failed", err);
