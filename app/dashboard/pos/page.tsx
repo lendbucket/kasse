@@ -9,7 +9,7 @@ type Staff = { id: string; name: string; locationId: string };
 type CartItem = { key: string; serviceId: string; name: string; price: number };
 type PaymentMethod = "cash" | "card" | "other";
 
-const TAX_RATE = 0.0825;
+const FALLBACK_TAX_RATE = 0.0825; // used only if /api/tax has no active row or fails
 const ALL_CAT = "All";
 function fmt(n: number) { return `$${n.toFixed(2)}`; }
 
@@ -27,6 +27,7 @@ export default function POSPage() {
   const [payment, setPayment] = useState<PaymentMethod>("card");
   const [charging, setCharging] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [taxRate, setTaxRate] = useState<number>(FALLBACK_TAX_RATE);
 
   useEffect(() => {
     let c = false;
@@ -43,10 +44,27 @@ export default function POSPage() {
     return () => { c = true; };
   }, []);
 
+  useEffect(() => {
+    const locId = services[0]?.locationId;
+    if (!locId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/tax?locationId=${encodeURIComponent(locId)}`);
+        if (!r.ok) return;
+        const d = (await r.json()) as { ratePercent: number | null };
+        if (!cancelled && typeof d.ratePercent === "number" && d.ratePercent >= 0) {
+          setTaxRate(d.ratePercent / 100);
+        }
+      } catch { /* network error -> keep fallback */ }
+    })();
+    return () => { cancelled = true; };
+  }, [services]);
+
   const categories = useMemo(() => { const s = new Set<string>(); services.forEach((sv) => { if (sv.category) s.add(sv.category); }); return [ALL_CAT, ...Array.from(s).sort()]; }, [services]);
   const filtered = useMemo(() => { const q = search.trim().toLowerCase(); return services.filter((s) => (category === ALL_CAT || s.category === category) && (!q || s.name.toLowerCase().includes(q))); }, [services, search, category]);
   const subtotal = useMemo(() => cart.reduce((s, i) => s + i.price, 0), [cart]);
-  const tax = useMemo(() => +(subtotal * TAX_RATE).toFixed(2), [subtotal]);
+  const tax = useMemo(() => +(subtotal * taxRate).toFixed(2), [subtotal, taxRate]);
   const tip = useMemo(() => { const n = parseFloat(tipInput); return Number.isFinite(n) && n > 0 ? +n.toFixed(2) : 0; }, [tipInput]);
   const total = useMemo(() => +(subtotal + tax + tip).toFixed(2), [subtotal, tax, tip]);
 
@@ -153,7 +171,7 @@ export default function POSPage() {
           {/* Totals */}
           <div style={{ padding: 16, borderTop: "1px solid #e5e7eb", display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Subtotal</span><span style={{ fontFamily: "var(--font-fira), monospace" }}>{fmt(subtotal)}</span></div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Tax ({(TAX_RATE * 100).toFixed(2)}%)</span><span style={{ fontFamily: "var(--font-fira), monospace" }}>{fmt(tax)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#6b7280" }}>Tax ({(taxRate * 100).toFixed(2)}%)</span><span style={{ fontFamily: "var(--font-fira), monospace" }}>{fmt(tax)}</span></div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#6b7280" }}>Tip</span><input type="number" inputMode="decimal" min="0" step="0.01" value={tipInput} onChange={(e) => setTipInput(e.target.value)} placeholder="0.00" style={{ width: 80, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", textAlign: "right", fontSize: 14, fontFamily: "var(--font-fira), monospace", padding: "0 8px", outline: "none", color: "#111827" }} /></div>
             <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: 600, color: "#111827" }}>Total</span><span style={{ fontSize: 18, fontWeight: 700, fontFamily: "var(--font-fira), monospace", color: "#111827" }}>{fmt(total)}</span></div>
           </div>
