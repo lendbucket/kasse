@@ -209,7 +209,29 @@ function NewAppointmentModal({ date, services, staff, locationId, onClose, onCre
     try {
       const iso = new Date(`${startDate}T${startTime}`).toISOString();
       const r = await fetch("/api/appointments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId, staffId, serviceId: serviceId || undefined, clientName: clientName || undefined, startTime: iso, notes: notes || undefined }) });
-      if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Create failed"); }
+      if (!r.ok) {
+        const d = (await r.json().catch(() => ({}))) as { error?: string; conflicts?: Array<{ type: string; conflictStart?: string; conflictEnd?: string }> };
+        if (d.error === "booking_conflict" && d.conflicts?.length) {
+          const msgs = d.conflicts.map((c) => {
+            switch (c.type) {
+              case "STYLIST_DOUBLE_BOOKED": {
+                const fmt = (iso: string) => TIME_FMT.format(new Date(iso));
+                return `This stylist is already booked from ${fmt(c.conflictStart!)}–${fmt(c.conflictEnd!)}.`;
+              }
+              case "STYLIST_NOT_WORKING":
+                return "This stylist isn\u2019t scheduled to work then.";
+              case "SERVICE_NOT_OFFERED_BY_STYLIST":
+                return "This stylist doesn\u2019t offer the selected service.";
+              case "INVALID_TIME_RANGE":
+                return "Please choose a valid time.";
+              default:
+                return "Booking conflict.";
+            }
+          });
+          throw new Error(msgs.join(" "));
+        }
+        throw new Error(d.error ?? "Create failed");
+      }
       onCreated();
     } catch (e) { setErr(e instanceof Error ? e.message : "Create failed"); }
     finally { setSubmitting(false); }
