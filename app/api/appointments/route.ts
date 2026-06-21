@@ -9,6 +9,7 @@ import {
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { chicagoDayBounds } from "@/lib/chicago-time";
+import { checkStylistAvailability } from "@/lib/booking/availability";
 
 export async function GET(request: NextRequest) {
   let ctx: TenantContext;
@@ -104,28 +105,45 @@ export async function POST(request: NextRequest) {
     throw e;
   }
 
-  // Service lookup is tenant-scoped: only resolve serviceId if it belongs to us.
-  let duration = body.durationMinutes ?? 30;
-  let serviceName: string | null = null;
-  let price: number | null = null;
+  // Service lookup, availability check, and create all run in ONE transaction
+  // to reduce the double-booking race window. At READ COMMITTED this does not
+  // fully eliminate concurrent races — see lib/booking/availability.ts race note
+  // and the tracked tstzrange exclusion constraint follow-up.
+  const result = await withTenantScope(prisma, ctx, async (tx) => {
+    // Resolve service (tenant-scoped)
+    let duration = body.durationMinutes ?? 30;
+    let serviceName: string | null = null;
+    let price: number | null = null;
 
-  if (body.serviceId) {
-    const service = await withTenantScope(prisma, ctx, async (tx) => {
-      return tx.service.findFirst({
+    if (body.serviceId) {
+      const service = await tx.service.findFirst({
         where: { id: body.serviceId, organizationId: ctx.organizationId },
       });
-    });
-    if (service) {
-      duration = service.duration;
-      serviceName = service.name;
-      price = service.price;
+      if (service) {
+        duration = service.duration;
+        serviceName = service.name;
+        price = service.price;
+      }
     }
-  }
 
-  const end = new Date(start.getTime() + duration * 60_000);
+    const end = new Date(start.getTime() + duration * 60_000);
 
-  const appointment = await withTenantScope(prisma, ctx, async (tx) => {
-    return tx.appointment.create({
+    // Availability check — collects ALL conflicts (double-booking, working
+    // hours, service eligibility) before rejecting.
+    const availability = await checkStylistAvailability(tx, {
+      staffId: body.staffId,
+      locationId: body.locationId,
+      organizationId: ctx.organizationId,
+      startTime: start,
+      endTime: end,
+      serviceId: body.serviceId,
+    });
+
+    if (!availability.ok) {
+      return { conflict: true as const, conflicts: availability.conflicts };
+    }
+
+    const appointment = await tx.appointment.create({
       data: {
         locationId: body.locationId,
         organizationId: location.organizationId,
@@ -140,7 +158,16 @@ export async function POST(request: NextRequest) {
         status: "scheduled",
       },
     });
+
+    return { conflict: false as const, appointment };
   });
 
-  return NextResponse.json({ appointment }, { status: 201 });
+  if (result.conflict) {
+    return NextResponse.json(
+      { error: "booking_conflict", conflicts: result.conflicts },
+      { status: 409 },
+    );
+  }
+
+  return NextResponse.json({ appointment: result.appointment }, { status: 201 });
 }
