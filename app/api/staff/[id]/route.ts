@@ -8,6 +8,35 @@ import {
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  let ctx: TenantContext;
+  try {
+    ctx = await requireTenantContext(request);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
+
+  const { id } = await params;
+
+  const staff = await withTenantScope(prisma, ctx, async (tx) => {
+    return tx.staff.findFirst({
+      where: { id, organizationId: ctx.organizationId },
+      include: { location: { select: { id: true, name: true } } },
+    });
+  });
+
+  if (!staff) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ staff });
+}
+
 type UpdateBody = {
   name?: string;
   email?: string | null;
