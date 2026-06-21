@@ -101,44 +101,38 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
         setPerServiceInputs(inputs);
       }
 
-      // Set snapshot after a tick
-      setTimeout(() => {
-        setSavedSnapshot(JSON.stringify({
-          modelType: comp?.modelType === "tiered" ? "tiered" : "flat",
-          basePct: comp?.baseCommissionPct != null ? String(comp.baseCommissionPct) : "",
-          tieredMode: (() => {
-            if (comp?.tieredCommissionConfig && typeof comp.tieredCommissionConfig === "object") {
-              const tc = comp.tieredCommissionConfig as { mode?: string };
-              if (tc.mode === "marginal" || tc.mode === "whole") return tc.mode;
-            }
-            return "whole";
-          })(),
-          bands: (() => {
-            if (comp?.tieredCommissionConfig && typeof comp.tieredCommissionConfig === "object") {
-              const tc = comp.tieredCommissionConfig as { bands?: Array<{ thresholdCents: number; ratePct: number }> };
-              if (Array.isArray(tc.bands) && tc.bands.length > 0) {
-                return tc.bands.map((b) => ({ thresholdDollars: (b.thresholdCents / 100).toFixed(2), ratePct: String(b.ratePct) }));
-              }
-            }
-            return [{ thresholdDollars: "0", ratePct: "35" }];
-          })(),
-          perServiceInputs: (() => {
-            const inputs: Record<string, PerServiceInput> = {};
-            if (comp?.perServiceCommissionOverrides && typeof comp.perServiceCommissionOverrides === "object") {
-              const ovr = comp.perServiceCommissionOverrides as Record<string, { type: string; value?: number; valueCents?: number }>;
-              for (const svc of data.eligibleServices) {
-                const o = ovr[svc.serviceId];
-                if (o?.type === "percent" && o.value != null) inputs[svc.serviceId] = { type: "percent", value: String(o.value) };
-                else if (o?.type === "flat" && o.valueCents != null) inputs[svc.serviceId] = { type: "flat", value: (o.valueCents / 100).toFixed(2) };
-                else inputs[svc.serviceId] = { type: "none", value: "" };
-              }
-            } else {
-              for (const svc of data.eligibleServices) inputs[svc.serviceId] = { type: "none", value: "" };
-            }
-            return inputs;
-          })(),
-        }));
-      }, 0);
+      // Compute snapshot synchronously from loaded data (not React state) to avoid
+      // setTimeout races with StrictMode double-invoke or rapid remounts.
+      const snapshotModelType: ModelType = comp?.modelType === "tiered" ? "tiered" : "flat";
+      const snapshotBasePct = comp?.baseCommissionPct != null ? String(comp.baseCommissionPct) : "";
+      let snapshotTieredMode: "marginal" | "whole" = "whole";
+      let snapshotBands: BandInput[] = [{ thresholdDollars: "0", ratePct: "35" }];
+      if (comp?.tieredCommissionConfig && typeof comp.tieredCommissionConfig === "object" && !Array.isArray(comp.tieredCommissionConfig)) {
+        const tc = comp.tieredCommissionConfig as { mode?: string; bands?: Array<{ thresholdCents: number; ratePct: number }> };
+        if (tc.mode === "marginal" || tc.mode === "whole") snapshotTieredMode = tc.mode;
+        if (Array.isArray(tc.bands) && tc.bands.length > 0) {
+          snapshotBands = tc.bands.map((b) => ({ thresholdDollars: (b.thresholdCents / 100).toFixed(2), ratePct: String(b.ratePct) }));
+        }
+      }
+      const snapshotPerService: Record<string, PerServiceInput> = {};
+      if (comp?.perServiceCommissionOverrides && typeof comp.perServiceCommissionOverrides === "object") {
+        const ovr = comp.perServiceCommissionOverrides as Record<string, { type: string; value?: number; valueCents?: number }>;
+        for (const svc of data.eligibleServices) {
+          const o = ovr[svc.serviceId];
+          if (o?.type === "percent" && o.value != null) snapshotPerService[svc.serviceId] = { type: "percent", value: String(o.value) };
+          else if (o?.type === "flat" && o.valueCents != null) snapshotPerService[svc.serviceId] = { type: "flat", value: (o.valueCents / 100).toFixed(2) };
+          else snapshotPerService[svc.serviceId] = { type: "none", value: "" };
+        }
+      } else {
+        for (const svc of data.eligibleServices) snapshotPerService[svc.serviceId] = { type: "none", value: "" };
+      }
+      setSavedSnapshot(JSON.stringify({
+        modelType: snapshotModelType,
+        basePct: snapshotBasePct,
+        tieredMode: snapshotTieredMode,
+        bands: snapshotBands,
+        perServiceInputs: snapshotPerService,
+      }));
     } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); }
     finally { setLoading(false); }
   }, [staffId]);
