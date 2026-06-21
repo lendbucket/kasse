@@ -7,7 +7,7 @@ import type { StaffMember } from "./types";
 type EligibleService = { serviceId: string; name: string; category: string | null; basePriceCents: number };
 type ModelType = "flat" | "tiered";
 type OverrideType = "none" | "percent" | "flat";
-type BandInput = { thresholdDollars: string; ratePct: string };
+type BandInput = { uid: string; thresholdDollars: string; ratePct: string };
 type PerServiceInput = { type: OverrideType; value: string };
 
 type CompensationRow = {
@@ -31,13 +31,13 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
   const [modelType, setModelType] = useState<ModelType>("flat");
   const [basePct, setBasePct] = useState("");
   const [tieredMode, setTieredMode] = useState<"marginal" | "whole">("whole");
-  const [bands, setBands] = useState<BandInput[]>([{ thresholdDollars: "0", ratePct: "35" }]);
+  const [bands, setBands] = useState<BandInput[]>([{ uid: crypto.randomUUID(), thresholdDollars: "0", ratePct: "35" }]);
   const [perServiceInputs, setPerServiceInputs] = useState<Record<string, PerServiceInput>>({});
 
   // Snapshot for dirty tracking
   const [savedSnapshot, setSavedSnapshot] = useState("");
 
-  const currentSnapshot = useMemo(() => JSON.stringify({ modelType, basePct, tieredMode, bands, perServiceInputs }), [modelType, basePct, tieredMode, bands, perServiceInputs]);
+  const currentSnapshot = useMemo(() => JSON.stringify({ modelType, basePct, tieredMode, bands: bands.map(({ thresholdDollars, ratePct }) => ({ thresholdDollars, ratePct })), perServiceInputs }), [modelType, basePct, tieredMode, bands, perServiceInputs]);
   const isDirty = currentSnapshot !== savedSnapshot;
 
   const load = useCallback(async () => {
@@ -67,6 +67,7 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
           if (tc.mode === "marginal" || tc.mode === "whole") setTieredMode(tc.mode);
           if (Array.isArray(tc.bands) && tc.bands.length > 0) {
             setBands(tc.bands.map((b) => ({
+              uid: crypto.randomUUID(),
               thresholdDollars: (b.thresholdCents / 100).toFixed(2),
               ratePct: String(b.ratePct),
             })));
@@ -106,7 +107,7 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
       const snapshotModelType: ModelType = comp?.modelType === "tiered" ? "tiered" : "flat";
       const snapshotBasePct = comp?.baseCommissionPct != null ? String(comp.baseCommissionPct) : "";
       let snapshotTieredMode: "marginal" | "whole" = "whole";
-      let snapshotBands: BandInput[] = [{ thresholdDollars: "0", ratePct: "35" }];
+      let snapshotBands: Array<{ thresholdDollars: string; ratePct: string }> = [{ thresholdDollars: "0", ratePct: "35" }];
       if (comp?.tieredCommissionConfig && typeof comp.tieredCommissionConfig === "object" && !Array.isArray(comp.tieredCommissionConfig)) {
         const tc = comp.tieredCommissionConfig as { mode?: string; bands?: Array<{ thresholdCents: number; ratePct: number }> };
         if (tc.mode === "marginal" || tc.mode === "whole") snapshotTieredMode = tc.mode;
@@ -180,6 +181,9 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
     if (hasErrors) return;
     setSaving(true); setSaveMsg(null);
 
+    // Capture the snapshot BEFORE the await so edits during the in-flight save stay dirty
+    const snapshotAtSave = currentSnapshot;
+
     // Build body
     const tieredConfig = modelType === "tiered" ? {
       mode: tieredMode,
@@ -214,7 +218,7 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
         throw new Error(d.error || "Save failed");
       }
       setSaveMsg("Saved");
-      setSavedSnapshot(currentSnapshot);
+      setSavedSnapshot(snapshotAtSave);
     } catch (e) { setSaveMsg(e instanceof Error ? e.message : "Save failed"); }
     finally { setSaving(false); }
   }
@@ -223,7 +227,7 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
   function addBand() {
     setSaveMsg(null);
     const lastThreshold = bands.length > 0 ? parseFloat(bands[bands.length - 1].thresholdDollars) || 0 : 0;
-    setBands([...bands, { thresholdDollars: String(lastThreshold + 1000), ratePct: "40" }]);
+    setBands([...bands, { uid: crypto.randomUUID(), thresholdDollars: String(lastThreshold + 1000), ratePct: "40" }]);
   }
   function removeBand(i: number) { setSaveMsg(null); setBands(bands.filter((_, idx) => idx !== i)); }
   function updateBand(i: number, field: "thresholdDollars" | "ratePct", value: string) {
@@ -386,7 +390,7 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
               <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", display: "block", marginBottom: 8 }}>Tier bands</span>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {bands.map((b, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div key={b.uid} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 12, color: "var(--text-muted)", width: 40, flexShrink: 0 }}>From</span>
                     <span style={{ fontSize: 13, color: "var(--text-muted)" }}>$</span>
                     <input
