@@ -39,6 +39,7 @@ export type AvailabilityCheck =
 export interface AvailabilityInput {
   staffId: string;
   locationId: string;
+  organizationId: string;
   startTime: Date;
   endTime: Date;
   serviceId?: string;
@@ -132,6 +133,7 @@ async function checkDoubleBooking(
   // Back-to-back (one ends exactly when next starts) is allowed.
   const overlapping = await tx.appointment.findMany({
     where: {
+      organizationId: input.organizationId,
       staffId: input.staffId,
       softDeletedAt: null,
       status: { notIn: ['cancelled', 'no_show'] },
@@ -156,9 +158,16 @@ async function checkWorkingHours(
   tx: PrismaTx,
   input: AvailabilityInput,
 ): Promise<BookingConflict[]> {
+  // Uses the start day's schedule. Appointments that span midnight (rare for
+  // a salon; effectively impossible here) are validated only against the
+  // start day. Revisit if 24h/overnight verticals are added.
   const startParts = chicagoLocalParts(input.startTime);
   const endParts = chicagoLocalParts(input.endTime);
   const dateStr = localDateString(startParts);
+  // Prisma stores Postgres `date` columns anchored at UTC midnight, so we
+  // compare against UTC-midnight of the Chicago-local calendar date. This
+  // is intentional and matches Prisma's date storage — do not "fix" to
+  // local midnight or the schedule/exception lookups will mismatch.
   const apptDate = new Date(dateStr + 'T00:00:00Z');
 
   // Check for date-specific exception first
@@ -320,14 +329,12 @@ export async function checkStylistAvailability(
   // Time range is synchronous
   conflicts.push(...checkTimeRange(input));
 
-  // Run remaining checks in parallel — they're independent reads
-  const [doubleBooking, workingHours, eligibility] = await Promise.all([
-    checkDoubleBooking(tx, input),
-    checkWorkingHours(tx, input),
-    checkServiceEligibility(tx, input),
-  ]);
-
-  conflicts.push(...doubleBooking, ...workingHours, ...eligibility);
+  // Sequential, not Promise.all: Prisma interactive transactions use one
+  // connection; concurrent queries over the same tx are unsupported. The
+  // TOCTOU protection comes from the transaction bracket, not parallelism.
+  conflicts.push(...(await checkDoubleBooking(tx, input)));
+  conflicts.push(...(await checkWorkingHours(tx, input)));
+  conflicts.push(...(await checkServiceEligibility(tx, input)));
 
   return conflicts.length === 0
     ? { ok: true }

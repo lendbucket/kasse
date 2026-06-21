@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
     const availability = await checkStylistAvailability(tx, {
       staffId: body.staffId,
       locationId: body.locationId,
+      organizationId: ctx.organizationId,
       startTime: start,
       endTime: end,
       serviceId: body.serviceId,
