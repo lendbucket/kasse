@@ -2552,3 +2552,14 @@ follow-up PR (kept out of this hotfix to keep the diff minimal).
 manual test of the wizard (register fresh user -> complete step 1 ->
 land on step 2 -> complete step 2 -> land on step 3 stub) MUST be
 performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
+
+---
+
+## Per-stylist configuration routes (added PR #144–#147)
+
+| Route | Methods | Classification | Notes |
+|-------|---------|---------------|-------|
+| `/api/staff/[id]` | GET | TENANT_SCOPED | `findFirst` with `organizationId` filter; 404 on miss |
+| `/api/staff/[id]/services` | GET, PUT | TENANT_SCOPED | Verifies staff in-org, then operates on StylistService |
+| `/api/staff/[id]/pricing` | GET, PUT | TENANT_SCOPED | Verifies staff in-org + serviceIds in eligibility set |
+| `/api/staff/[id]/compensation` | GET, PUT | TENANT_SCOPED | Upserts Compensation by staffId, org-verified |

@@ -40,10 +40,10 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
   const currentSnapshot = useMemo(() => JSON.stringify({ modelType, basePct, tieredMode, bands: bands.map(({ thresholdDollars, ratePct }) => ({ thresholdDollars, ratePct })), perServiceInputs }), [modelType, basePct, tieredMode, bands, perServiceInputs]);
   const isDirty = currentSnapshot !== savedSnapshot;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/staff/${staffId}/compensation`);
+      const res = await fetch(`/api/staff/${staffId}/compensation`, { signal });
       if (!res.ok) throw new Error("Failed to load");
       const data = (await res.json()) as {
         compensation: CompensationRow | null;
@@ -134,11 +134,13 @@ export default function CommissionSection({ staffId, staff }: { staffId: string;
         bands: snapshotBands,
         perServiceInputs: snapshotPerService,
       }));
-    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Load failed");
+    } finally { setLoading(false); }
   }, [staffId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const ac = new AbortController(); load(ac.signal); return () => ac.abort(); }, [load]);
 
   // Validation
   const validationErrors = useMemo(() => {

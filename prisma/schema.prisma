@@ -158,6 +158,7 @@ model Organization {
 
   @@index([verticalId])
   @@index([planTier])
+  @@index([parentOrgId], map: "Organization_parentOrgId_idx")
 }
 
 model User {
@@ -216,6 +217,7 @@ model User {
   organization                Organization?               @relation(fields: [organizationId], references: [id])
 
   @@index([customRoleId])
+  @@index([organizationId], map: "User_organizationId_idx")
 }
 
 model Account {
@@ -234,6 +236,7 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId], map: "Account_userId_idx")
 }
 
 model Session {
@@ -242,6 +245,7 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId], map: "Session_userId_idx")
 }
 
 model VerificationToken {
@@ -249,7 +253,7 @@ model VerificationToken {
   token      String   @unique
   expires    DateTime
 
-  @@unique([identifier, token])
+  @@id([identifier, token])
 }
 
 model Location {
@@ -301,6 +305,7 @@ model Location {
   waitlistEntries             WaitlistEntry[]
 
   @@index([groupId])
+  @@index([organizationId], map: "Location_organizationId_idx")
 }
 
 model Staff {
@@ -359,6 +364,7 @@ model Staff {
   agreementSignTokens   AgreementSignToken[]
 
   @@index([organizationId, isActive], map: "idx_staff_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([locationId], map: "Staff_locationId_idx")
 }
 
 /// Staff invitation lifecycle. Created when owner invites a stylist;
@@ -400,6 +406,10 @@ model StaffInvitation {
   @@index([organizationId, locationId, acceptedAt], map: "idx_staffinv_org_loc_pending", where: raw("(\"acceptedAt\" IS NULL AND \"revokedAt\" IS NULL)"))
   @@index([email], map: "idx_staffinv_email")
   @@index([expiresAt], map: "idx_staffinv_expires", where: raw("(\"acceptedAt\" IS NULL AND \"revokedAt\" IS NULL)"))
+  @@index([acceptedUserId], map: "StaffInvitation_acceptedUserId_idx")
+  @@index([inviterUserId], map: "StaffInvitation_inviterUserId_idx")
+  @@index([locationId], map: "StaffInvitation_locationId_idx")
+  @@index([staffId], map: "StaffInvitation_staffId_idx")
 }
 
 model ClockEvent {
@@ -412,6 +422,7 @@ model ClockEvent {
   withinGeofence Boolean  @default(false)
   ipAddress      String?
   staff          Staff    @relation(fields: [staffId], references: [id])
+  @@index([staffId], map: "ClockEvent_staffId_idx")
 }
 
 model PerformanceStat {
@@ -428,6 +439,7 @@ model PerformanceStat {
   retailSales  Float    @default(0)
   createdAt    DateTime @default(now())
   staff        Staff    @relation(fields: [staffId], references: [id])
+  @@index([staffId], map: "PerformanceStat_staffId_idx")
 }
 
 model Client {
@@ -493,6 +505,7 @@ model Client {
   @@index([organizationId, isActive], map: "idx_client_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
   @@index([organizationId, email], map: "idx_client_org_email", where: raw("(\"softDeletedAt\" IS NULL)"))
   @@index([organizationId, phone], map: "idx_client_org_phone", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([locationId], map: "Client_locationId_idx")
 }
 
 model FamilyMember {
@@ -504,6 +517,7 @@ model FamilyMember {
   notes           String?
   createdAt       DateTime  @default(now())
   primaryClient   Client    @relation(fields: [primaryClientId], references: [id])
+  @@index([primaryClientId], map: "FamilyMember_primaryClientId_idx")
 }
 
 model Service {
@@ -553,6 +567,7 @@ model Service {
 
   @@index([organizationId, isAddon, isActive], map: "idx_service_org_addon")
   @@index([organizationId, locationId, isActive], map: "idx_service_org_loc_active", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([locationId], map: "Service_locationId_idx")
 }
 
 model ServiceLocation {
@@ -627,6 +642,7 @@ model ColorFormula {
   @@index([appointmentId], map: "idx_colorformula_appointment", where: raw("(\"appointmentId\" IS NOT NULL)"))
   @@index([clientId, createdAt(sort: Desc)], map: "idx_colorformula_client_created")
   @@index([organizationId], map: "idx_colorformula_org")
+  @@index([staffId], map: "ColorFormula_staffId_idx")
 }
 
 /// Immutable audit record — signatures don't change after creation. No updatedAt field intentional.
@@ -648,6 +664,7 @@ model ConsentSignature {
 
   @@index([clientId, signedAt(sort: Desc)], map: "idx_consent_client")
   @@index([organizationId], map: "idx_consent_org")
+  @@index([serviceId], map: "ConsentSignature_serviceId_idx")
 }
 
 model StylistSchedule {
@@ -755,6 +772,11 @@ model Appointment {
   @@index([organizationId, staffId, startTime], map: "idx_appointment_org_staff_start")
   @@index([seriesId], map: "idx_appointment_series", where: raw("(\"seriesId\" IS NOT NULL)"))
   @@index([organizationId, locationId, startTime], map: "idx_appointment_softdel", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([bookedByStaffId], map: "Appointment_bookedByStaffId_idx")
+  @@index([bookedByUserId], map: "Appointment_bookedByUserId_idx")
+  @@index([locationId], map: "Appointment_locationId_idx")
+  @@index([serviceId], map: "Appointment_serviceId_idx")
+  @@index([staffId], map: "Appointment_staffId_idx")
 }
 
 model AppointmentItem {
@@ -803,6 +825,8 @@ model AppointmentStatusHistory {
   changedByUser    User?       @relation("StatusChangedByUser", fields: [changedByUserId], references: [id], onUpdate: NoAction)
 
   @@index([appointmentId, createdAt(sort: Desc)], map: "idx_apptsh_appointment_created")
+  @@index([changedByStaffId], map: "AppointmentStatusHistory_changedByStaffId_idx")
+  @@index([changedByUserId], map: "AppointmentStatusHistory_changedByUserId_idx")
 }
 
 model AppointmentAddon {
@@ -814,6 +838,7 @@ model AppointmentAddon {
   addedBy       String?
   createdAt     DateTime    @default(now())
   appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  @@index([appointmentId], map: "AppointmentAddon_appointmentId_idx")
 }
 
 model RecurringSeries {
@@ -849,6 +874,8 @@ model RecurringSeries {
   @@index([lastGeneratedThrough], map: "idx_recseries_generate", where: raw("(status = 'ACTIVE'::text)"))
   @@index([organizationId, status], map: "idx_recseries_org")
   @@index([staffId, status], map: "idx_recseries_staff", where: raw("(status = 'ACTIVE'::text)"))
+  @@index([locationId], map: "RecurringSeries_locationId_idx")
+  @@index([primaryServiceId], map: "RecurringSeries_primaryServiceId_idx")
 }
 
 model CancellationPolicy {
@@ -923,6 +950,9 @@ model Transaction {
   location        Location          @relation(fields: [locationId], references: [id])
   organization    Organization      @relation(fields: [organizationId], references: [id])
   items           TransactionItem[]
+  @@index([clientId], map: "Transaction_clientId_idx")
+  @@index([locationId], map: "Transaction_locationId_idx")
+  @@index([organizationId], map: "Transaction_organizationId_idx")
 }
 
 model TransactionItem {
@@ -936,6 +966,7 @@ model TransactionItem {
   commissionRate Float?
   createdAt      DateTime    @default(now())
   transaction    Transaction @relation(fields: [transactionId], references: [id])
+  @@index([transactionId], map: "TransactionItem_transactionId_idx")
 }
 
 model GiftCard {
@@ -951,6 +982,8 @@ model GiftCard {
   client         Client?              @relation(fields: [clientId], references: [id])
   organization   Organization         @relation(fields: [organizationId], references: [id])
   redemptions    GiftCardRedemption[]
+  @@index([clientId], map: "GiftCard_clientId_idx")
+  @@index([organizationId], map: "GiftCard_organizationId_idx")
 }
 
 model GiftCardRedemption {
@@ -960,6 +993,7 @@ model GiftCardRedemption {
   transactionId String?
   redeemedAt    DateTime @default(now())
   giftCard      GiftCard @relation(fields: [giftCardId], references: [id])
+  @@index([giftCardId], map: "GiftCardRedemption_giftCardId_idx")
 }
 
 model LoyaltyProgram {
@@ -983,6 +1017,7 @@ model LoyaltyEvent {
   note      String?
   createdAt DateTime @default(now())
   client    Client   @relation(fields: [clientId], references: [id])
+  @@index([clientId], map: "LoyaltyEvent_clientId_idx")
 }
 
 model Membership {
@@ -999,6 +1034,7 @@ model Membership {
   createdAt        DateTime           @default(now())
   clients          ClientMembership[]
   organization     Organization       @relation(fields: [organizationId], references: [id])
+  @@index([organizationId], map: "Membership_organizationId_idx")
 }
 
 model ClientMembership {
@@ -1012,6 +1048,8 @@ model ClientMembership {
   createdAt       DateTime   @default(now())
   client          Client     @relation(fields: [clientId], references: [id])
   membership      Membership @relation(fields: [membershipId], references: [id])
+  @@index([clientId], map: "ClientMembership_clientId_idx")
+  @@index([membershipId], map: "ClientMembership_membershipId_idx")
 }
 
 model WaitlistEntry {
@@ -1035,6 +1073,9 @@ model WaitlistEntry {
   client           Client?      @relation(fields: [clientId], references: [id])
   location         Location     @relation(fields: [locationId], references: [id])
   organization     Organization @relation(fields: [organizationId], references: [id])
+  @@index([clientId], map: "WaitlistEntry_clientId_idx")
+  @@index([locationId], map: "WaitlistEntry_locationId_idx")
+  @@index([organizationId], map: "WaitlistEntry_organizationId_idx")
 }
 
 model Campaign {
@@ -1058,6 +1099,7 @@ model Campaign {
   updatedAt      DateTime            @updatedAt
   organization   Organization        @relation(fields: [organizationId], references: [id])
   recipients     CampaignRecipient[]
+  @@index([organizationId], map: "Campaign_organizationId_idx")
 }
 
 model CampaignRecipient {
@@ -1070,6 +1112,8 @@ model CampaignRecipient {
   clickedAt  DateTime?
   campaign   Campaign  @relation(fields: [campaignId], references: [id])
   client     Client    @relation(fields: [clientId], references: [id])
+  @@index([campaignId], map: "CampaignRecipient_campaignId_idx")
+  @@index([clientId], map: "CampaignRecipient_clientId_idx")
 }
 
 model ReviewRequest {
@@ -1114,6 +1158,9 @@ model FormSubmission {
   appointment    Appointment? @relation(fields: [appointmentId], references: [id])
   client         Client?      @relation(fields: [clientId], references: [id])
   formTemplate   FormTemplate @relation(fields: [formTemplateId], references: [id])
+  @@index([appointmentId], map: "FormSubmission_appointmentId_idx")
+  @@index([clientId], map: "FormSubmission_clientId_idx")
+  @@index([formTemplateId], map: "FormSubmission_formTemplateId_idx")
 }
 
 model PermissionSet {
@@ -1183,6 +1230,7 @@ model ImportJob {
   createdAt      DateTime     @default(now())
   completedAt    DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId], map: "ImportJob_organizationId_idx")
 }
 
 model Device {
@@ -1219,6 +1267,7 @@ model Device {
   @@index([lastHeartbeat], map: "idx_device_heartbeat", where: raw("(\"isActive\" = true)"))
   @@index([locationId, role], map: "idx_device_location_role", where: raw("(\"isActive\" = true)"))
   @@index([organizationId, role], map: "idx_device_org_role", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([pairedChairId], map: "Device_pairedChairId_idx")
 }
 
 model Chair {
@@ -1299,6 +1348,9 @@ model Cart {
   @@index([chairId, status], map: "idx_cart_chair_active", where: raw("(status = ANY (ARRAY['OPEN'::text, 'PENDING_PAYMENT'::text]))"))
   @@index([expiresAt], map: "idx_cart_expires", where: raw("(status = 'OPEN'::text)"))
   @@index([organizationId, status], map: "idx_cart_org_status")
+  @@index([activeStylistDeviceId], map: "Cart_activeStylistDeviceId_idx")
+  @@index([clientId], map: "Cart_clientId_idx")
+  @@index([locationId], map: "Cart_locationId_idx")
 }
 
 model CartItem {
@@ -1327,6 +1379,7 @@ model CartItem {
   @@index([cartId], map: "idx_cartitem_cart")
   @@index([serviceId], map: "idx_cartitem_service", where: raw("(\"serviceId\" IS NOT NULL)"))
   @@index([staffId], map: "idx_cartitem_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+  @@index([appointmentItemId], map: "CartItem_appointmentItemId_idx")
 }
 
 model Order {
@@ -1399,6 +1452,7 @@ model OrderItem {
   @@index([orderId], map: "idx_orderitem_order")
   @@index([serviceId], map: "idx_orderitem_service", where: raw("(\"serviceId\" IS NOT NULL)"))
   @@index([staffId], map: "idx_orderitem_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+  @@index([appointmentItemId], map: "OrderItem_appointmentItemId_idx")
 }
 
 model Payment {
@@ -1439,6 +1493,7 @@ model Payment {
   @@index([organizationId, createdAt(sort: Desc)], map: "idx_payment_org_created")
   @@index([organizationId, status], map: "idx_payment_org_status")
   @@index([salonTransactPaymentId], map: "idx_payment_salontx", where: raw("(\"salonTransactPaymentId\" IS NOT NULL)"))
+  @@index([deviceId], map: "Payment_deviceId_idx")
 }
 
 model Refund {
@@ -1470,6 +1525,8 @@ model Refund {
   @@index([orderId], map: "idx_refund_order")
   @@index([organizationId, status], map: "idx_refund_org_status")
   @@index([paymentId], map: "idx_refund_payment")
+  @@index([initiatedByStaffId], map: "Refund_initiatedByStaffId_idx")
+  @@index([initiatedByUserId], map: "Refund_initiatedByUserId_idx")
 }
 
 model OfflineQueue {
@@ -1490,6 +1547,8 @@ model OfflineQueue {
 
   @@index([deviceId, syncStatus], map: "idx_offlinequeue_device_status")
   @@index([queuedAt], map: "idx_offlinequeue_pending", where: raw("(\"syncStatus\" = 'PENDING'::text)"))
+  @@index([cartId], map: "OfflineQueue_cartId_idx")
+  @@index([organizationId], map: "OfflineQueue_organizationId_idx")
 }
 
 model GeolocationLog {
@@ -1526,6 +1585,11 @@ model GeolocationLog {
   @@index([organizationId, createdAt(sort: Desc)], map: "idx_geolog_org_created")
   @@index([organizationId, createdAt], map: "idx_geolog_outside", where: raw("(\"withinGeofence\" = false)"))
   @@index([paymentId], map: "idx_geolog_payment", where: raw("(\"paymentId\" IS NOT NULL)"))
+  @@index([deviceId], map: "GeolocationLog_deviceId_idx")
+  @@index([locationId], map: "GeolocationLog_locationId_idx")
+  @@index([managerOverrideUserId], map: "GeolocationLog_managerOverrideUserId_idx")
+  @@index([staffId], map: "GeolocationLog_staffId_idx")
+  @@index([userId], map: "GeolocationLog_userId_idx")
 }
 
 model Notification {
@@ -1538,6 +1602,7 @@ model Notification {
   link      String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+  @@index([userId], map: "Notification_userId_idx")
 }
 
 model AuditLog {
@@ -1576,6 +1641,7 @@ model ApiKey {
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId], map: "ApiKey_organizationId_idx")
 }
 
 model Webhook {
@@ -1588,6 +1654,7 @@ model Webhook {
   lastTriggeredAt DateTime?
   createdAt       DateTime     @default(now())
   organization    Organization @relation(fields: [organizationId], references: [id])
+  @@index([organizationId], map: "Webhook_organizationId_idx")
 }
 
 model AiReceptionistConfig {
@@ -1636,6 +1703,9 @@ model Message {
   client         Client       @relation(fields: [clientId], references: [id])
   organization   Organization @relation(fields: [organizationId], references: [id])
   staff          Staff?       @relation(fields: [staffId], references: [id])
+  @@index([clientId], map: "Message_clientId_idx")
+  @@index([organizationId], map: "Message_organizationId_idx")
+  @@index([staffId], map: "Message_staffId_idx")
 }
 
 model SavedResponse {
@@ -1668,6 +1738,7 @@ model BackgroundCheck {
 
   @@index([organizationId, staffId], map: "idx_bgcheck_org_staff")
   @@index([organizationId, status], map: "idx_bgcheck_status")
+  @@index([staffId], map: "BackgroundCheck_staffId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1751,6 +1822,7 @@ model EmploymentAgreement {
 
   @@index([organizationId, staffId], map: "idx_emp_org_staff")
   @@index([organizationId, status], map: "idx_emp_status")
+  @@index([staffId], map: "EmploymentAgreement_staffId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1783,6 +1855,7 @@ model AgreementSignToken {
 
   @@index([organizationId], map: "idx_agreement_sign_token_org")
   @@index([expiresAt], map: "idx_agreement_sign_token_expires")
+  @@index([staffId], map: "AgreementSignToken_staffId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1812,6 +1885,9 @@ model InventoryDeduction {
   @@index([colorFormulaId], map: "idx_invded_formula", where: raw("(\"colorFormulaId\" IS NOT NULL)"))
   @@index([locationId, productVariantId, createdAt(sort: Desc)], map: "idx_invded_loc_variant_created")
   @@index([staffId], map: "idx_invded_staff", where: raw("(\"staffId\" IS NOT NULL)"))
+  @@index([organizationId], map: "InventoryDeduction_organizationId_idx")
+  @@index([productVariantId], map: "InventoryDeduction_productVariantId_idx")
+  @@index([transferToLocationId], map: "InventoryDeduction_transferToLocationId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1835,6 +1911,7 @@ model InventoryLevel {
   @@unique([locationId, productVariantId])
   @@index([locationId, quantityOnHand], map: "idx_invlev_loc_threshold", where: raw("(\"reorderThreshold\" IS NOT NULL)"))
   @@index([organizationId], map: "idx_invlev_org")
+  @@index([productVariantId], map: "InventoryLevel_productVariantId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1862,6 +1939,7 @@ model InventoryReorderDraft {
 
   @@index([locationId, createdAt(sort: Desc)], map: "idx_invreord_loc_created")
   @@index([organizationId, status], map: "idx_invreord_org_status")
+  @@index([approvedByUserId], map: "InventoryReorderDraft_approvedByUserId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1911,6 +1989,7 @@ model MarketingAutomation {
 
   @@index([organizationId, isActive], map: "idx_marketauto_org_active")
   @@index([trigger, isActive], map: "idx_marketauto_trigger", where: raw("(\"isActive\" = true)"))
+  @@index([emailTemplateId], map: "MarketingAutomation_emailTemplateId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1939,6 +2018,8 @@ model MarketingExecution {
   @@index([marketingAutomationId, status], map: "idx_marketexec_automation_status")
   @@index([clientId, queuedAt(sort: Desc)], map: "idx_marketexec_client")
   @@index([status, queuedAt], map: "idx_marketexec_queued", where: raw("(status = 'QUEUED'::text)"))
+  @@index([convertedAppointmentId], map: "MarketingExecution_convertedAppointmentId_idx")
+  @@index([organizationId], map: "MarketingExecution_organizationId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -1966,6 +2047,7 @@ model Product {
   @@index([organizationId, isActive], map: "idx_product_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
   @@index([organizationId, isBackBar], map: "idx_product_org_backbar", where: raw("(\"isBackBar\" = true)"))
   @@index([organizationId, isRetail], map: "idx_product_org_retail", where: raw("(\"isRetail\" = true)"))
+  @@index([categoryId], map: "Product_categoryId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2031,6 +2113,7 @@ model PtoRequest {
 
   @@index([organizationId, status], map: "idx_pto_org_status")
   @@index([staffId, startDate], map: "idx_pto_staff")
+  @@index([approvedByUserId], map: "PtoRequest_approvedByUserId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2055,6 +2138,7 @@ model TaxRate {
 
   @@index([locationId, effectiveStartDate, effectiveEndDate], map: "idx_taxrate_effective")
   @@index([locationId, isActive], map: "idx_taxrate_loc_active")
+  @@index([organizationId], map: "TaxRate_organizationId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2078,6 +2162,8 @@ model TipDistribution {
   @@index([appointmentId], map: "idx_tipdist_appointment")
   @@index([organizationId, staffId, createdAt(sort: Desc)], map: "idx_tipdist_org_staff")
   @@index([paymentId], map: "idx_tipdist_payment", where: raw("(\"paymentId\" IS NOT NULL)"))
+  @@index([orderId], map: "TipDistribution_orderId_idx")
+  @@index([staffId], map: "TipDistribution_staffId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2113,6 +2199,8 @@ model FeatureFlag {
 
   @@index([isActive], map: "idx_featureflag_active")
   @@index([key], map: "idx_featureflag_key", where: raw("(\"isActive\" = true)"))
+  @@index([createdByUserId], map: "FeatureFlag_createdByUserId_idx")
+  @@index([updatedByUserId], map: "FeatureFlag_updatedByUserId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2159,6 +2247,7 @@ model CustomFieldDefinition {
   @@unique([organizationId, targetEntity, key])
   @@index([isActive], map: "idx_cfd_active", where: raw("(\"softDeletedAt\" IS NULL)"))
   @@index([organizationId, targetEntity], map: "idx_cfd_org_entity", where: raw("((\"isActive\" = true) AND (\"softDeletedAt\" IS NULL))"))
+  @@index([createdByUserId], map: "CustomFieldDefinition_createdByUserId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2180,6 +2269,7 @@ model CustomFieldValue {
   @@index([entityId], map: "idx_cfv_entity")
   @@index([organizationId, entityId], map: "idx_cfv_org_entity")
   @@index([value], map: "idx_cfv_value_gin", type: Gin)
+  @@index([updatedByUserId], map: "CustomFieldValue_updatedByUserId_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -2200,6 +2290,7 @@ model EntityTag {
   @@index([entityType, entityId], map: "idx_entitytag_entity")
   @@index([organizationId, entityType, entityId], map: "idx_entitytag_org_entity")
   @@index([tagId], map: "idx_entitytag_tag")
+  @@index([createdByUserId], map: "EntityTag_createdByUserId_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -2224,6 +2315,7 @@ model Tag {
   @@unique([organizationId, slug])
   @@index([organizationId], map: "idx_tag_org", where: raw("((\"isActive\" = true) AND (\"softDeletedAt\" IS NULL))"))
   @@index([organizationId, slug], map: "idx_tag_org_slug", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@index([createdByUserId], map: "Tag_createdByUserId_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -2260,6 +2352,9 @@ model OnboardingSession {
   @@index([email], map: "idx_onboarding_session_email")
   @@index([expiresAt], map: "idx_onboarding_session_expires", where: raw("(state <> 'COMPLETED'::text)"))
   @@index([state], map: "idx_onboarding_session_state", where: raw("(state <> 'COMPLETED'::text)"))
+  @@index([locationId], map: "OnboardingSession_locationId_idx")
+  @@index([organizationId], map: "OnboardingSession_organizationId_idx")
+  @@index([userId], map: "OnboardingSession_userId_idx")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -2275,6 +2370,7 @@ model OnboardingStateTransition {
   triggeredBy       User?             @relation("OnboardingTransitionUser", fields: [triggeredByUserId], references: [id], onUpdate: NoAction)
 
   @@index([sessionId, createdAt], map: "idx_onboarding_transition_session")
+  @@index([triggeredByUserId], map: "OnboardingStateTransition_triggeredByUserId_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

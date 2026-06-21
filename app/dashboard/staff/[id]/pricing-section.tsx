@@ -21,10 +21,10 @@ export default function PricingSection({ staffId, staff }: { staffId: string; st
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/staff/${staffId}/pricing`);
+      const res = await fetch(`/api/staff/${staffId}/pricing`, { signal });
       if (!res.ok) throw new Error("Failed to load pricing");
       const data = (await res.json()) as { services: PricingService[] };
       setServices(data.services);
@@ -38,11 +38,13 @@ export default function PricingSection({ staffId, staff }: { staffId: string; st
       }
       setWorking(map);
       setSaved(JSON.parse(JSON.stringify(map)));
-    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Load failed");
+    } finally { setLoading(false); }
   }, [staffId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const ac = new AbortController(); load(ac.signal); return () => ac.abort(); }, [load]);
 
   const isDirty = useMemo(() => JSON.stringify(working) !== JSON.stringify(saved), [working, saved]);
 
