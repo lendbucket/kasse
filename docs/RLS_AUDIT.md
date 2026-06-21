@@ -2563,3 +2563,4 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | `/api/staff/[id]/services` | GET, PUT | TENANT_SCOPED | Verifies staff in-org, then operates on StylistService |
 | `/api/staff/[id]/pricing` | GET, PUT | TENANT_SCOPED | Verifies staff in-org + serviceIds in eligibility set |
 | `/api/staff/[id]/compensation` | GET, PUT | TENANT_SCOPED | Upserts Compensation by staffId, org-verified |
+| `/api/tax` | GET | TENANT_SCOPED | Reads active TaxRate for a location; uses `requireTenantContext` + `assertLocationInTenant` + `withTenantScope` |
