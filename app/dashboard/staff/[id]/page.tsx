@@ -8,12 +8,7 @@ import OverviewSection from "./overview-section";
 import ServicesSection from "./services-section";
 import PricingSection from "./pricing-section";
 import CommissionSection from "./commission-section";
-
-type StaffMember = {
-  id: string; name: string; email: string | null; phone: string | null;
-  role: string; locationId: string; isActive: boolean;
-  location: { id: string; name: string } | null;
-};
+import type { StaffMember } from "./types";
 
 type Tab = "overview" | "services" | "pricing" | "commission";
 
