@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users } from "lucide-react";
+import Link from "next/link";
+import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users, Settings } from "lucide-react";
 
 type Location = { id: string; name: string };
 type Role = "manager" | "stylist";
@@ -78,6 +79,7 @@ export default function StaffPage() {
                     </span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                        <Link href={`/dashboard/staff/${s.id}`} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}><Settings size={12} /> Configure</Link>
                         <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
                         <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 12, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                       </div>
@@ -99,6 +101,7 @@ export default function StaffPage() {
                   </div>
                   {s.location?.name && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#6b7280", marginBottom: 4 }}><MapPin size={12} />{s.location.name}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <Link href={`/dashboard/staff/${s.id}`} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: "#6b7280", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Configure</Link>
                     <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: "#6b7280", cursor: "pointer" }}>Edit</button>
                     <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid #e5e7eb", background: "white", fontSize: 13, fontWeight: 500, color: s.isActive ? "#dc2626" : "#16a34a", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
                   </div>
