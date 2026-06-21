@@ -8,11 +8,14 @@
  *
  * Stylist-only collision (no chair dimension — Salon Envy books by stylist).
  *
- * Race note: the overlap check + appointment create MUST run in one
- * transaction to close the check-then-insert TOCTOU gap. For full
- * bulletproofing, a Postgres exclusion constraint on
- * tstzrange(startTime, endTime) would serialize at the DB level — tracked
- * as a follow-up (no schema change this PR).
+ * Race note: running the overlap check + appointment create in ONE transaction
+ * removes the gap WITHIN a single request, but at READ COMMITTED it does NOT
+ * eliminate the race between two concurrent requests — both can pass the check
+ * and both insert, producing a double-booking. The bulletproof fix is a Postgres
+ * exclusion constraint on (staffId, tstzrange(startTime, endTime)) WHERE status
+ * NOT IN (cancelled, no_show) — tracked as a follow-up (schema change, not this
+ * PR). Until then, the double-booking guarantee is "very unlikely," not
+ * "impossible."
  */
 
 import type { Prisma } from '@prisma/client';
@@ -38,6 +41,8 @@ export type AvailabilityCheck =
 
 export interface AvailabilityInput {
   staffId: string;
+  /** Reserved: not currently used in checks (schedules/eligibility are staff-scoped).
+   *  Kept for public-booking/POS callers and future per-location schedule support. */
   locationId: string;
   organizationId: string;
   startTime: Date;
@@ -113,7 +118,7 @@ function localDateString(parts: { year: number; month: number; day: number }): s
 
 type PrismaTx = Prisma.TransactionClient;
 
-/** 1. Validate time range is positive and non-zero. */
+/** 1. Validate time range is positive, non-zero, and same calendar day. */
 function checkTimeRange(input: AvailabilityInput): BookingConflict[] {
   if (input.endTime <= input.startTime) {
     return [{
@@ -121,6 +126,24 @@ function checkTimeRange(input: AvailabilityInput): BookingConflict[] {
       reason: 'End time must be after start time.',
     }];
   }
+
+  // Same-day guard: working-hours math converts to minutes-since-local-midnight.
+  // An appointment crossing local midnight would wrap apptEndMin below apptStartMin
+  // and corrupt the bounds check. Salons never operate across midnight, so reject
+  // rather than handle multi-day. Revisit only if a 24h/overnight vertical is added.
+  const startParts = chicagoLocalParts(input.startTime);
+  const endParts = chicagoLocalParts(input.endTime);
+  if (
+    startParts.year !== endParts.year ||
+    startParts.month !== endParts.month ||
+    startParts.day !== endParts.day
+  ) {
+    return [{
+      type: 'INVALID_TIME_RANGE',
+      reason: 'Appointment must start and end on the same day.',
+    }];
+  }
+
   return [];
 }
 
@@ -317,8 +340,8 @@ async function checkServiceEligibility(
  * (does not short-circuit) so the UI can show everything wrong at once.
  *
  * Must be called inside a withTenantScope transaction. The caller should
- * also perform the appointment.create inside the same transaction to close
- * the TOCTOU race.
+ * also perform the appointment.create inside the same transaction to reduce
+ * (not eliminate) the double-booking race window. See module-level race note.
  */
 export async function checkStylistAvailability(
   tx: PrismaTx,
@@ -330,8 +353,7 @@ export async function checkStylistAvailability(
   conflicts.push(...checkTimeRange(input));
 
   // Sequential, not Promise.all: Prisma interactive transactions use one
-  // connection; concurrent queries over the same tx are unsupported. The
-  // TOCTOU protection comes from the transaction bracket, not parallelism.
+  // connection; concurrent queries over the same tx are unsupported.
   conflicts.push(...(await checkDoubleBooking(tx, input)));
   conflicts.push(...(await checkWorkingHours(tx, input)));
   conflicts.push(...(await checkServiceEligibility(tx, input)));

@@ -106,7 +106,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Service lookup, availability check, and create all run in ONE transaction
-  // so the overlap re-check serializes concurrent bookings (no TOCTOU gap).
+  // to reduce the double-booking race window. At READ COMMITTED this does not
+  // fully eliminate concurrent races — see lib/booking/availability.ts race note
+  // and the tracked tstzrange exclusion constraint follow-up.
   const result = await withTenantScope(prisma, ctx, async (tx) => {
     // Resolve service (tenant-scoped)
     let duration = body.durationMinutes ?? 30;
