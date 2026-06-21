@@ -69,14 +69,14 @@ export default function WeekGrid({
   const [appointmentsByDay, setAppointmentsByDay] = useState<Record<string, Appointment[]>>({});
   const [loading, setLoading] = useState(true);
 
-  const fetchWeek = useCallback(async () => {
+  const fetchWeek = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     try {
       const results = await Promise.all(
         weekDates.map(async (d) => {
           const p = new URLSearchParams({ date: d });
           if (locationId) p.set("locationId", locationId);
-          const res = await fetch(`/api/appointments?${p}`);
+          const res = await fetch(`/api/appointments?${p}`, { signal });
           if (!res.ok) return { date: d, appointments: [] as Appointment[] };
           const data = (await res.json()) as { appointments: Appointment[] };
           return { date: d, appointments: data.appointments };
@@ -85,14 +85,14 @@ export default function WeekGrid({
       const map: Record<string, Appointment[]> = {};
       for (const r of results) map[r.date] = r.appointments;
       setAppointmentsByDay(map);
-    } catch {
-      // keep empty
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
     } finally {
       setLoading(false);
     }
   }, [weekDates, locationId]);
 
-  useEffect(() => { fetchWeek(); }, [fetchWeek]);
+  useEffect(() => { const ac = new AbortController(); fetchWeek(ac.signal); return () => ac.abort(); }, [fetchWeek]);
 
   if (loading) {
     return (

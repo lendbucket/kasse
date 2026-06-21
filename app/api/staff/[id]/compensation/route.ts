@@ -116,6 +116,14 @@ export async function PUT(
     );
   }
 
+  // perServiceOverrides must be an object map, not an array
+  if (body.perServiceOverrides != null && Array.isArray(body.perServiceOverrides)) {
+    return NextResponse.json(
+      { error: "perServiceOverrides must be an object map (serviceId → override), not an array" },
+      { status: 400 },
+    );
+  }
+
   // Validate baseCommissionPct
   if (body.baseCommissionPct != null) {
     if (typeof body.baseCommissionPct !== "number" || !Number.isFinite(body.baseCommissionPct) || body.baseCommissionPct < 0 || body.baseCommissionPct > 100) {
@@ -171,8 +179,9 @@ export async function PUT(
     }
 
     // 3. Upsert Compensation
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use UTC midnight so the DATE column lands on the correct calendar day regardless of server TZ
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const today = new Date(`${todayStr}T00:00:00Z`);
 
     const data = {
       modelType: body.modelType,

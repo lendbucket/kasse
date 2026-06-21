@@ -27,19 +27,21 @@ export default function StaffDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/staff/${staffId}`);
+      const res = await fetch(`/api/staff/${staffId}`, { signal });
       if (res.status === 404) { setError("Staff member not found"); return; }
       if (!res.ok) throw new Error("Failed to load");
       const data = (await res.json()) as { staff: StaffMember };
       setStaff(data.staff);
-    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Load failed");
+    } finally { setLoading(false); }
   }, [staffId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const ac = new AbortController(); load(ac.signal); return () => ac.abort(); }, [load]);
 
   if (loading) {
     return (

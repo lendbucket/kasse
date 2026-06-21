@@ -294,7 +294,7 @@ function NewAppointmentModal({ date, services, staff, locationId, initialStaffId
           const msgs = d.conflicts.map((c) => {
             switch (c.type) {
               case "STYLIST_DOUBLE_BOOKED": {
-                const fmt = (iso: string) => TIME_FMT.format(new Date(iso));
+                const fmt = (dayIso: string) => TIME_FMT.format(new Date(dayIso));
                 return `This stylist is already booked from ${fmt(c.conflictStart!)}–${fmt(c.conflictEnd!)}.`;
               }
               case "STYLIST_NOT_WORKING":

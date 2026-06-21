@@ -22,12 +22,12 @@ export default function ServicesSection({ staffId, staff }: { staffId: string; s
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError(null);
     try {
       const [svcRes, eligRes] = await Promise.all([
-        fetch("/api/services?active=true"),
-        fetch(`/api/staff/${staffId}/services`),
+        fetch("/api/services?active=true", { signal }),
+        fetch(`/api/staff/${staffId}/services`, { signal }),
       ]);
       if (!svcRes.ok) throw new Error("Failed to load services");
       if (!eligRes.ok) throw new Error("Failed to load eligibility");
@@ -47,11 +47,13 @@ export default function ServicesSection({ staffId, staff }: { staffId: string; s
       }
       setWorking(map);
       setSaved(JSON.parse(JSON.stringify(map)));
-    } catch (e) { setError(e instanceof Error ? e.message : "Load failed"); }
-    finally { setLoading(false); }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "Load failed");
+    } finally { setLoading(false); }
   }, [staffId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { const ac = new AbortController(); load(ac.signal); return () => ac.abort(); }, [load]);
 
   const isDirty = useMemo(() => JSON.stringify(working) !== JSON.stringify(saved), [working, saved]);
 
