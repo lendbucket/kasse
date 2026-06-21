@@ -10,6 +10,7 @@ import {
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { chicagoDayBounds } from "@/lib/chicago-time";
 import { checkStylistAvailability } from "@/lib/booking/availability";
+import { resolvePriceForBooking } from "@/lib/compensation/resolve";
 
 export async function GET(request: NextRequest) {
   let ctx: TenantContext;
@@ -110,19 +111,29 @@ export async function POST(request: NextRequest) {
   // fully eliminate concurrent races — see lib/booking/availability.ts race note
   // and the tracked tstzrange exclusion constraint follow-up.
   const result = await withTenantScope(prisma, ctx, async (tx) => {
-    // Resolve service (tenant-scoped)
+    // Resolve service (tenant-scoped) + lock price via compensation engine
     let duration = body.durationMinutes ?? 30;
     let serviceName: string | null = null;
     let price: number | null = null;
+    let estimatedTotalCents: number | null = null;
+    let estimatedTotalMinutes: number | null = null;
 
     if (body.serviceId) {
       const service = await tx.service.findFirst({
         where: { id: body.serviceId, organizationId: ctx.organizationId },
       });
       if (service) {
-        duration = service.duration;
         serviceName = service.name;
-        price = service.price;
+        // Use the compensation engine to resolve price (respects ServiceStaffOverride)
+        const resolved = await resolvePriceForBooking(tx, {
+          staffId: body.staffId,
+          serviceId: body.serviceId,
+          organizationId: ctx.organizationId,
+        });
+        duration = resolved.durationMinutes;
+        price = resolved.priceCents / 100; // legacy Float field (dollars)
+        estimatedTotalCents = resolved.priceCents;
+        estimatedTotalMinutes = resolved.durationMinutes;
       }
     }
 
@@ -151,6 +162,8 @@ export async function POST(request: NextRequest) {
         serviceId: body.serviceId ?? null,
         serviceName,
         price,
+        estimatedTotalCents,
+        estimatedTotalMinutes,
         clientName: body.clientName?.trim() || null,
         startTime: start,
         endTime: end,
