@@ -1,12 +1,7 @@
 "use client";
 
 import { Percent } from "lucide-react";
-
-type StaffMember = {
-  id: string; name: string; email: string | null; phone: string | null;
-  role: string; locationId: string; isActive: boolean;
-  location: { id: string; name: string } | null;
-};
+import type { StaffMember } from "./types";
 
 export default function CommissionSection({ staffId, staff }: { staffId: string; staff: StaffMember }) {
   return (

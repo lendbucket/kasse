@@ -1,12 +1,7 @@
 "use client";
 
 import { Mail, MapPin, Phone, User } from "lucide-react";
-
-type StaffMember = {
-  id: string; name: string; email: string | null; phone: string | null;
-  role: string; locationId: string; isActive: boolean;
-  location: { id: string; name: string } | null;
-};
+import type { StaffMember } from "./types";
 
 export default function OverviewSection({ staffId, staff }: { staffId: string; staff: StaffMember }) {
   const rows: { icon: React.ReactNode; label: string; value: string }[] = [
