@@ -116,11 +116,26 @@ export function resolveServicePrice(args: {
       `resolveServicePrice: serviceBasePriceCents must be a finite non-negative integer, got ${serviceBasePriceCents}`,
     );
   }
+  if (!isFiniteNonNegativeInt(serviceBaseDurationMinutes)) {
+    throw new Error(
+      `resolveServicePrice: serviceBaseDurationMinutes must be a finite non-negative integer, got ${serviceBaseDurationMinutes}`,
+    );
+  }
 
-  const priceCents = override?.priceCents ?? serviceBasePriceCents;
-  const durationMinutes = override?.durationMinutes ?? serviceBaseDurationMinutes;
+  // Coerce override values to safe integers; treat invalid overrides as absent
+  const overridePriceSafe =
+    override?.priceCents != null && Number.isFinite(override.priceCents) && override.priceCents >= 0
+      ? Math.round(override.priceCents)
+      : null;
+  const overrideDurationSafe =
+    override?.durationMinutes != null && Number.isFinite(override.durationMinutes) && override.durationMinutes >= 0
+      ? Math.round(override.durationMinutes)
+      : null;
+
+  const priceCents = overridePriceSafe ?? serviceBasePriceCents;
+  const durationMinutes = overrideDurationSafe ?? serviceBaseDurationMinutes;
   const source: PriceResolution["source"] =
-    override?.priceCents != null ? "stylist_override" : "service_base";
+    overridePriceSafe != null ? "stylist_override" : "service_base";
 
   return { priceCents, durationMinutes, source };
 }
@@ -164,13 +179,21 @@ export function resolveCommission(args: {
   periodRevenueCents: number;
   staffDefaultRatePct: number;
 }): CommissionResolution {
-  const { saleAmountCents, serviceId, comp, periodRevenueCents, staffDefaultRatePct } = args;
+  const { saleAmountCents, serviceId, comp, staffDefaultRatePct } = args;
 
   if (typeof saleAmountCents !== "number" || !Number.isFinite(saleAmountCents) || saleAmountCents < 0) {
     throw new Error(
       `resolveCommission: saleAmountCents must be a finite non-negative number, got ${saleAmountCents}`,
     );
   }
+
+  // Degrade invalid/absent periodRevenueCents to 0 (start-of-period) rather than
+  // throwing — callers may not always have period data, and the "0 if unknown"
+  // contract is documented in the function signature.
+  const periodRevenueCents =
+    Number.isFinite(args.periodRevenueCents) && args.periodRevenueCents >= 0
+      ? args.periodRevenueCents
+      : 0;
 
   // 1. Per-service override
   if (comp) {
@@ -187,7 +210,7 @@ export function resolveCommission(args: {
         };
       } else {
         // flat
-        const commissionCents = Math.max(0, Math.round(entry.valueCents));
+        const commissionCents = Math.max(0, entry.valueCents);
         return {
           commissionCents,
           ratePctApplied: null,
@@ -231,9 +254,8 @@ export function resolveCommission(args: {
         // The sale covers periodRevenueCents → periodRevenueCents + saleAmountCents.
         // Split across bands by their thresholds.
 
-        // Check at least one band covers the starting point
-        const lowestThreshold = bands[0].thresholdCents;
-        if (lowestThreshold <= periodRevenueCents || lowestThreshold === 0) {
+        // Check at least one band covers the starting point (after asc sort)
+        if (bands[0].thresholdCents <= periodRevenueCents) {
           const saleStart = periodRevenueCents;
           const saleEnd = periodRevenueCents + saleAmountCents;
           let totalCommission = 0;
