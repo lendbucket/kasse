@@ -7,7 +7,7 @@ type PrismaTx = Prisma.TransactionClient;
  *
  * Match logic (org-scoped, not soft-deleted):
  *   1. If phone provided → match on organizationId + phone
- *   2. Else if email provided → match on organizationId + email
+ *   2. If email provided → match on organizationId + email
  *   3. No match → create
  *
  * MUST be called inside an existing withTenantScope transaction — does NOT open
@@ -31,7 +31,7 @@ export async function findOrCreateClient(
 
   // Try to find an existing client by phone first, then email
   if (phone?.trim()) {
-    const existing = await tx.client.findFirst({
+    const byPhone = await tx.client.findFirst({
       where: {
         organizationId,
         phone: phone.trim(),
@@ -39,9 +39,10 @@ export async function findOrCreateClient(
       },
       select: { id: true },
     });
-    if (existing) return { clientId: existing.id, created: false };
-  } else if (email?.trim()) {
-    const existing = await tx.client.findFirst({
+    if (byPhone) return { clientId: byPhone.id, created: false };
+  }
+  if (email?.trim()) {
+    const byEmail = await tx.client.findFirst({
       where: {
         organizationId,
         email: email.trim(),
@@ -49,7 +50,7 @@ export async function findOrCreateClient(
       },
       select: { id: true },
     });
-    if (existing) return { clientId: existing.id, created: false };
+    if (byEmail) return { clientId: byEmail.id, created: false };
   }
 
   // No match → create

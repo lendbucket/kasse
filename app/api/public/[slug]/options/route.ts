@@ -24,8 +24,10 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // TODO: role sentinel — no PUBLIC role in the type yet; userId marks this as
+  // an anonymous public booking in audit.
   const publicCtx: TenantContext = {
-    userId: "",
+    userId: "__public__",
     email: "",
     name: null,
     role: "STAFF",

@@ -84,11 +84,10 @@ export async function POST(
   );
 
   // Build synthetic public TenantContext
-  // Role: "STAFF" is the lowest-privilege value available in the Role enum.
-  // TODO: add a "PUBLIC" role to the Role enum so public bookings are
-  // distinguishable from staff actions in audit logs.
+  // TODO: role sentinel — no PUBLIC role in the type yet; userId marks this as
+  // an anonymous public booking in audit.
   const publicCtx: TenantContext = {
-    userId: "",
+    userId: "__public__",
     email: "",
     name: null,
     role: "STAFF",

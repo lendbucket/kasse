@@ -48,9 +48,9 @@ type Step = "service" | "staff" | "datetime" | "details" | "confirm";
 /*  Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
 
-function formatPrice(cents: number | null): string {
-  if (cents == null) return "";
-  return `$${(cents / 100).toFixed(2)}`;
+function formatPrice(dollars: number | null): string {
+  if (dollars == null) return "";
+  return `$${dollars.toFixed(2)}`;
 }
 
 function formatDuration(minutes: number | null): string {
