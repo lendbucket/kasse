@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { RefreshCw } from "lucide-react";
+import { PoweredBySalonTransact } from "@/components/compliance/PoweredBySalonTransact";
 
 type RetentionGrain = "day" | "week" | "month";
 
@@ -66,7 +67,7 @@ function pctColor(pct: number): string {
   return "pill-error";
 }
 
-const iS: React.CSSProperties = {
+const controlInputStyle: React.CSSProperties = {
   height: 36,
   borderRadius: 6,
   border: "1px solid var(--border)",
@@ -87,6 +88,7 @@ export default function ReportsPage() {
   const [data, setData] = useState<RetentionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Fetch staff list for filter
   useEffect(() => {
@@ -103,6 +105,10 @@ export default function ReportsPage() {
 
   // Fetch retention data
   const fetchData = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     setLoading(true);
     setError(null);
     try {
@@ -113,14 +119,17 @@ export default function ReportsPage() {
       });
       if (staffFilter) params.set("staffId", staffFilter);
 
-      const res = await fetch(`/api/analytics/retention?${params}`);
+      const res = await fetch(`/api/analytics/retention?${params}`, { signal: ctrl.signal });
+      if (ctrl.signal.aborted) return;
       if (!res.ok) throw new Error("Failed to load retention data");
       const d = await res.json();
+      if (ctrl.signal.aborted) return;
       setData(d.retention);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
-      setLoading(false);
+      if (!ctrl.signal.aborted) setLoading(false);
     }
   }, [startDate, endDate, grain, staffFilter]);
 
@@ -186,7 +195,7 @@ export default function ReportsPage() {
         <select
           value={staffFilter}
           onChange={(e) => setStaffFilter(e.target.value)}
-          style={{ ...iS, width: 180 }}
+          style={{ ...controlInputStyle, width: 180 }}
         >
           <option value="">All stylists</option>
           {staffList.map((s) => (
@@ -199,14 +208,14 @@ export default function ReportsPage() {
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          style={{ ...iS, width: 150 }}
+          style={{ ...controlInputStyle, width: 150 }}
         />
         <span style={{ color: "var(--text-muted)", fontSize: 13 }}>to</span>
         <input
           type="date"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
-          style={{ ...iS, width: 150 }}
+          style={{ ...controlInputStyle, width: 150 }}
         />
 
         {/* Refresh */}
@@ -302,7 +311,7 @@ export default function ReportsPage() {
                   <tbody>
                     {data.rows.map((row, i) => (
                       <tr
-                        key={`${row.period}-${row.staffId ?? "none"}-${i}`}
+                        key={`${row.period}-${row.locationId}-${row.staffId ?? "none"}-${i}`}
                         style={{ borderBottom: "1px solid var(--border)" }}
                       >
                         <td style={{ padding: "10px 16px", fontSize: 14, color: "var(--text-primary)" }}>
@@ -334,6 +343,8 @@ export default function ReportsPage() {
           </>
         )}
       </div>
+
+      <PoweredBySalonTransact />
     </>
   );
 }

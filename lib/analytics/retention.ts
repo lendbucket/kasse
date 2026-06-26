@@ -78,27 +78,38 @@ export async function computeRetention(
     ? Prisma.sql`AND t."staffId" = ${staffId}`
     : Prisma.empty;
 
-  const rawRows = await tx.$queryRaw<RawRow[]>`
-    WITH checkouts AS (
-      SELECT t."locationId", t."staffId", t."clientId",
-             ${bucketExpr} AS period,
-             (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
-      FROM "Transaction" t
+  // Shared CTE filter fragments — used by both the per-stylist grouped query
+  // and the salon-wide distinct-total query so they never drift.
+  const checkoutWhere = Prisma.sql`
       WHERE t.status = 'completed'
         AND t."clientId" IS NOT NULL
         AND (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date
             BETWEEN ${startDate}::date AND ${endDate}::date
         ${locationFilter}
-        ${staffFilter}
-    ),
-    cwr AS (
-      SELECT c.*, EXISTS (
+        ${staffFilter}`;
+
+  // RLS already scopes Appointment by org (forced RLS, kasse_app); the explicit
+  // organizationId match is defense-in-depth + makes cross-tenant safety self-evident.
+  const rebookExists = Prisma.sql`EXISTS (
         SELECT 1 FROM "Appointment" a
         WHERE a."clientId" = c."clientId"
+          AND a."organizationId" = c."organizationId"
           AND a."softDeletedAt" IS NULL
           AND a.status NOT IN ('cancelled','no_show')
           AND (a."startTime" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date > c.checkout_day
-      ) AS rebooked
+      )`;
+
+  // Per-stylist grouped query
+  const rawRows = await tx.$queryRaw<RawRow[]>`
+    WITH checkouts AS (
+      SELECT t."organizationId", t."locationId", t."staffId", t."clientId",
+             ${bucketExpr} AS period,
+             (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
+      FROM "Transaction" t
+      ${checkoutWhere}
+    ),
+    cwr AS (
+      SELECT c.*, ${rebookExists} AS rebooked
       FROM checkouts c
     )
     SELECT period, "locationId", "staffId",
@@ -107,6 +118,27 @@ export async function computeRetention(
     FROM cwr
     GROUP BY period, "locationId", "staffId"
     ORDER BY period DESC, "staffId"
+  `;
+
+  // Salon-wide distinct-client totals (no GROUP BY — one row).
+  // A client seen by two stylists counts once here, unlike the per-stylist rows
+  // where she counts for each stylist (correct for per-stylist analysis).
+  const [salonTotals] = await tx.$queryRaw<
+    { checkouts: bigint | number; rebooked_clients: bigint | number }[]
+  >`
+    WITH checkouts AS (
+      SELECT t."organizationId", t."clientId",
+             (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
+      FROM "Transaction" t
+      ${checkoutWhere}
+    ),
+    cwr AS (
+      SELECT c.*, ${rebookExists} AS rebooked
+      FROM checkouts c
+    )
+    SELECT COUNT(DISTINCT "clientId") AS checkouts,
+           COUNT(DISTINCT "clientId") FILTER (WHERE rebooked) AS rebooked_clients
+    FROM cwr
   `;
 
   // Resolve staff names
@@ -143,9 +175,10 @@ export async function computeRetention(
     };
   });
 
-  // Totals: sum across all rows (per Salon Envy's per-stylist slicing definition)
-  const totalCheckouts = rows.reduce((s, r) => s + r.checkouts, 0);
-  const totalRebooked = rows.reduce((s, r) => s + r.rebookedClients, 0);
+  // Totals: salon-wide distinct-client counts (not sum of per-stylist rows,
+  // which would double-count a client seen by two stylists).
+  const totalCheckouts = Number(salonTotals.checkouts);
+  const totalRebooked = Number(salonTotals.rebooked_clients);
   const totalPct =
     totalCheckouts === 0
       ? 0
