@@ -24,8 +24,10 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
+  // TODO: role sentinel — no PUBLIC role in the type yet; userId marks this as
+  // an anonymous public booking in audit.
   const publicCtx: TenantContext = {
-    userId: "",
+    userId: "__public__",
     email: "",
     name: null,
     role: "STAFF",
@@ -35,7 +37,7 @@ export async function GET(
     request: { route: "/api/public/[slug]/options" },
   };
 
-  const [services, stylists] = await withTenantScope(prisma, publicCtx, async (tx) =>
+  const [services, staff] = await withTenantScope(prisma, publicCtx, async (tx) =>
     Promise.all([
       tx.service.findMany({
         where: {
@@ -70,6 +72,6 @@ export async function GET(
     organization: { name: ctx.organizationName },
     location: { id: ctx.locationId, name: ctx.locationName },
     services,
-    stylists,
+    staff,
   });
 }
