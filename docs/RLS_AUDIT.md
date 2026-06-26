@@ -2564,3 +2564,13 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | `/api/staff/[id]/pricing` | GET, PUT | TENANT_SCOPED | Verifies staff in-org + serviceIds in eligibility set |
 | `/api/staff/[id]/compensation` | GET, PUT | TENANT_SCOPED | Upserts Compensation by staffId, org-verified |
 | `/api/tax` | GET | TENANT_SCOPED | Reads active TaxRate for a location; uses `requireTenantContext` + `assertLocationInTenant` + `withTenantScope` |
+
+---
+
+## Public booking read-only core (added feat/public-booking-read-core)
+
+| Route / Module | Methods | Classification | Notes |
+|-------|---------|---------------|-------|
+| `/api/public/[slug]/options` | GET | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access via withTenantScope scoped to the resolved org; isSuperadmin=false. Returns bookable services + active stylists (id/name/price/duration only). No PII exposed. |
+| `/api/public/[slug]/availability` | GET | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access (staff/service verification + slot generation engine) via withTenantScope scoped to the resolved org; isSuperadmin=false. Returns open appointment slots. No PII exposed. |
+| `lib/booking/public-context.ts` | — | PUBLIC_ANONYMOUS (helper) | Anonymous slug→org/location resolver. Uses prismaAdmin for the cross-tenant lookup (kasse_app role has rolbypassrls=FALSE; plain prisma returns zero rows without a tenant GUC). Only exposes org/location display info, never customer data. |
