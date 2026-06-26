@@ -96,6 +96,7 @@ export function CustomerPicker({ locationId, value, onChange }: CustomerPickerPr
   // Quick-create client
   async function quickCreate() {
     if (creating || !query.trim()) return;
+    if (!locationId?.trim()) { setSearchError(true); return; }
     setCreating(true);
     try {
       const res = await fetch("/api/clients", {
@@ -256,12 +257,13 @@ export function CustomerPicker({ locationId, value, onChange }: CustomerPickerPr
             </button>
           ))}
 
-          {/* Quick-create row */}
-          {!searchError && !searching && query.trim() && (
+          {/* Quick-create row — hidden when an exact-name match already exists */}
+          {!searchError && !searching && query.trim() &&
+            !results.some((c) => c.name.trim().toLowerCase() === query.trim().toLowerCase()) && (
             <button
               type="button"
               onClick={quickCreate}
-              disabled={creating}
+              disabled={creating || !locationId}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -270,12 +272,12 @@ export function CustomerPicker({ locationId, value, onChange }: CustomerPickerPr
                 padding: "10px 12px",
                 border: "none",
                 background: "transparent",
-                cursor: creating ? "not-allowed" : "pointer",
+                cursor: creating || !locationId ? "not-allowed" : "pointer",
                 textAlign: "left",
                 fontSize: 14,
                 color: "var(--brand)",
                 fontWeight: 500,
-                opacity: creating ? 0.6 : 1,
+                opacity: creating || !locationId ? 0.6 : 1,
               }}
               onMouseEnter={(e) => { if (!creating) (e.currentTarget as HTMLElement).style.background = "var(--bg-hover, #f9fafb)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
