@@ -95,11 +95,14 @@ export default function ReportsPage() {
     let cancelled = false;
     fetch("/api/staff")
       .then(async (res) => {
-        if (!res.ok) return;
+        if (!res.ok) {
+          console.warn("Failed to load staff for filter", res.status);
+          return;
+        }
         const d = await res.json();
         if (!cancelled) setStaffList(d.staff ?? []);
       })
-      .catch(() => {});
+      .catch((e) => { console.warn("Failed to load staff for filter", e); });
     return () => { cancelled = true; };
   }, []);
 
@@ -298,7 +301,7 @@ export default function ReportsPage() {
                             fontWeight: 600,
                             color: "var(--text-secondary)",
                             borderBottom: "1px solid var(--border)",
-                            background: "#f9fafb",
+                            background: "var(--bg-page)",
                             letterSpacing: "0.04em",
                             textTransform: "uppercase",
                           }}
@@ -311,7 +314,7 @@ export default function ReportsPage() {
                   <tbody>
                     {data.rows.map((row, i) => (
                       <tr
-                        key={`${row.period}-${row.locationId}-${row.staffId ?? "none"}-${i}`}
+                        key={`${row.period}-${row.locationId}-${row.staffId ?? "none"}`}
                         style={{ borderBottom: "1px solid var(--border)" }}
                       >
                         <td style={{ padding: "10px 16px", fontSize: 14, color: "var(--text-primary)" }}>

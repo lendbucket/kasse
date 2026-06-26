@@ -54,11 +54,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Parse grain (default: month)
-  const grainParam = params.get("grain") ?? "month";
-  const grain: RetentionGrain = VALID_GRAINS.includes(grainParam as RetentionGrain)
-    ? (grainParam as RetentionGrain)
-    : "month";
+  // Parse grain (default: month; explicitly invalid → 400)
+  const grainParam = params.get("grain");
+  if (grainParam && !VALID_GRAINS.includes(grainParam as RetentionGrain)) {
+    return NextResponse.json(
+      { error: "invalid_grain", valid: ["day", "week", "month"] },
+      { status: 400 },
+    );
+  }
+  const grain: RetentionGrain = (grainParam as RetentionGrain) || "month";
 
   const locationId = params.get("locationId") ?? undefined;
   const staffId = params.get("staffId") ?? undefined;
