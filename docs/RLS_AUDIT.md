@@ -2571,6 +2571,6 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 
 | Route / Module | Methods | Classification | Notes |
 |-------|---------|---------------|-------|
-| `/api/public/[slug]/options` | GET | PUBLIC_ANONYMOUS | Slug-scoped, no tenant context, read-only. Returns bookable services + active stylists (id/name/price/duration only). No PII exposed. |
-| `/api/public/[slug]/availability` | GET | PUBLIC_ANONYMOUS | Slug-scoped, no tenant context, read-only. Returns open appointment slots for a stylist/service/date. Validates staff+service belong to org. No PII exposed. |
-| `lib/booking/public-context.ts` | — | PUBLIC_ANONYMOUS (helper) | Anonymous slug→org/location resolver. Plain prisma call (no session); the slug IS the scope. Only exposes org/location display info, never customer data. |
+| `/api/public/[slug]/options` | GET | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access via withTenantScope scoped to the resolved org; isSuperadmin=false. Returns bookable services + active stylists (id/name/price/duration only). No PII exposed. |
+| `/api/public/[slug]/availability` | GET | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access (staff/service verification + slot generation engine) via withTenantScope scoped to the resolved org; isSuperadmin=false. Returns open appointment slots. No PII exposed. |
+| `lib/booking/public-context.ts` | — | PUBLIC_ANONYMOUS (helper) | Anonymous slug→org/location resolver. Uses prismaAdmin for the cross-tenant lookup (kasse_app role has rolbypassrls=FALSE; plain prisma returns zero rows without a tenant GUC). Only exposes org/location display info, never customer data. |

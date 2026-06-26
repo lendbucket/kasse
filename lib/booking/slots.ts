@@ -78,12 +78,6 @@ export async function generateDaySlots(
 
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += stepMinutes) {
-      if (hour === startHour && minute === 0) {
-        // include 08:00
-      }
-      const chicagoMinutesSinceMidnight = hour * 60 + minute;
-      if (chicagoMinutesSinceMidnight >= endHour * 60) break;
-
       // Chicago local -> UTC
       const candidateUTC = new Date(
         Date.UTC(y, m - 1, d, hour, minute, 0) - offsetMinutes * 60_000,
@@ -113,7 +107,7 @@ export async function generateDaySlots(
 
 /**
  * Compute the offset in minutes from Chicago local time to UTC for a given
- * instant. Positive means Chicago is behind UTC (e.g., +300 for CST, +360 for CDT).
+ * instant. Positive means Chicago is behind UTC (e.g., +300 for CDT (UTC−5), +360 for CST (UTC−6)).
  * Same approach as lib/chicago-time.ts.
  */
 function chicagoOffsetMinutes(date: Date): number {

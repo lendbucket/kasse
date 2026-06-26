@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prismaAdmin } from "@/lib/prismaAdmin";
 
 /**
  * Public booking context resolved from an organization slug.
@@ -17,21 +17,25 @@ export interface PublicBookingContext {
  * Resolves an organization slug to the public booking context.
  * Returns null if the slug doesn't match an org or the org has no location.
  *
- * This is a plain prisma call (not tenant-scoped) because there is no session;
- * the slug IS the scope. Only ever exposes org/location display info, never
+ * Uses prismaAdmin (cross-tenant lookup) because there is no session and no
+ * tenant GUC set. The kasse_app role has rolbypassrls=FALSE, so a plain prisma
+ * call would return zero rows under RLS. prismaAdmin sets
+ * app.is_superadmin='true' per-operation, which the RLS policies allow. This is
+ * analogous to auth routes resolving a user by email — a legitimate public
+ * cross-tenant lookup that only exposes org/location display info, never
  * customer data.
  */
 export async function resolvePublicContextBySlug(
   slug: string,
 ): Promise<PublicBookingContext | null> {
-  const org = await prisma.organization.findUnique({
+  const org = await prismaAdmin.organization.findUnique({
     where: { slug },
     select: { id: true, name: true },
   });
 
   if (!org) return null;
 
-  const location = await prisma.location.findFirst({
+  const location = await prismaAdmin.location.findFirst({
     where: { organizationId: org.id },
     orderBy: { createdAt: "asc" },
     select: { id: true, name: true, timezone: true },
