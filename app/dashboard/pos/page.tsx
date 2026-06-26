@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, Plus, Trash2, Banknote, CreditCard, MoreHorizontal } from "lucide-react";
 import { PoweredBySalonTransact } from "@/components/compliance/PoweredBySalonTransact";
+import { CustomerPicker } from "@/components/pos/CustomerPicker";
 
 type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string };
 type Staff = { id: string; name: string; locationId: string };
@@ -22,7 +23,7 @@ export default function POSPage() {
   const [category, setCategory] = useState(ALL_CAT);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [staffId, setStaffId] = useState("");
-  const [clientName, setClientName] = useState("");
+  const [client, setClient] = useState<{ id: string; name: string } | null>(null);
   const [tipInput, setTipInput] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("card");
   const [charging, setCharging] = useState(false);
@@ -70,7 +71,7 @@ export default function POSPage() {
 
   function addToCart(s: Service) { setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price }]); }
   function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); }
-  function clearCart() { setCart([]); setClientName(""); setTipInput(""); setStaffId(""); }
+  function clearCart() { setCart([]); setClient(null); setTipInput(""); setStaffId(""); }
 
   async function charge() {
     if (cart.length === 0 || charging) return;
@@ -78,7 +79,7 @@ export default function POSPage() {
     if (!locId) { setToast("No location"); return; }
     setCharging(true); setToast(null);
     try {
-      const r = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: locId, staffId: staffId || undefined, clientName: clientName.trim() || undefined, amount: subtotal, tax, tip, total, paymentMethod: payment }) });
+      const r = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: locId, staffId: staffId || undefined, clientId: client?.id ?? undefined, clientName: client?.name ?? undefined, amount: subtotal, tax, tip, total, paymentMethod: payment }) });
       if (!r.ok) throw new Error("Charge failed");
       setToast(`Charged ${fmt(total)}`); clearCart();
     } catch (e) { setToast(e instanceof Error ? e.message : "Charge failed"); }
@@ -166,7 +167,7 @@ export default function POSPage() {
           {/* Details */}
           <div style={{ padding: 16, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
             <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={iS}><option value="">Stylist (optional)</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-            <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client name (optional)" style={iS} />
+            <CustomerPicker locationId={services[0]?.locationId ?? ""} value={client} onChange={setClient} />
           </div>
           {/* Totals */}
           <div style={{ padding: 16, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>

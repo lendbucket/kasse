@@ -12,6 +12,7 @@ import { withTenantScope } from "@/lib/tenant/db-scope";
 type TransactionBody = {
   locationId: string;
   staffId?: string;
+  clientId?: string;
   clientName?: string;
   amount: number;
   tip?: number;
@@ -61,11 +62,22 @@ export async function POST(request: NextRequest) {
   }
 
   const transaction = await withTenantScope(prisma, ctx, async (tx) => {
+    // Verify clientId belongs to this tenant (defense-in-depth; RLS also scopes)
+    let verifiedClientId: string | null = null;
+    if (body.clientId) {
+      const client = await tx.client.findFirst({
+        where: { id: body.clientId, organizationId: location.organizationId },
+        select: { id: true },
+      });
+      if (client) verifiedClientId = client.id;
+    }
+
     return tx.transaction.create({
       data: {
         locationId: body.locationId,
         organizationId: location.organizationId,
         staffId: body.staffId ?? null,
+        clientId: verifiedClientId,
         clientName: body.clientName ?? null,
         subtotal: body.amount,
         tip: body.tip ?? 0,
