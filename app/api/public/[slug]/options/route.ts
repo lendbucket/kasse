@@ -35,7 +35,7 @@ export async function GET(
     request: { route: "/api/public/[slug]/options" },
   };
 
-  const [services, stylists] = await withTenantScope(prisma, publicCtx, async (tx) =>
+  const [services, staff] = await withTenantScope(prisma, publicCtx, async (tx) =>
     Promise.all([
       tx.service.findMany({
         where: {
@@ -70,6 +70,6 @@ export async function GET(
     organization: { name: ctx.organizationName },
     location: { id: ctx.locationId, name: ctx.locationName },
     services,
-    stylists,
+    staff,
   });
 }
