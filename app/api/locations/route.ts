@@ -11,6 +11,8 @@ import {
   assertCanAddLocation,
   planLimitErrorResponse,
 } from "@/lib/plans/api-helpers";
+import { slugifyLocationName, ensureUniqueLocationSlug } from "@/lib/locations/slug";
+import { Prisma } from "@prisma/client";
 import { Permissions, type PermissionKey } from "@/lib/permissions/types";
 import { requirePermission, PermissionError, type PermissionSession } from "@/lib/permissions/check";
 
@@ -114,13 +116,31 @@ export async function POST(request: NextRequest) {
       // Hard-block if at plan limit — throws PlanLimitError caught below
       assertCanAddLocation(plan);
 
-      // Create the location
-      const location = await tx.location.create({
-        data: {
-          name: trimmedName,
-          organizationId: ctx.organizationId,
-        },
-      });
+      // Auto-generate a unique booking slug, retrying on TOCTOU race (P2002).
+      // location.create is the only write in this scope, so retrying inside
+      // the interactive transaction is safe (no prior writes to roll back).
+      let location;
+      let attempt = 0;
+      while (true) {
+        const baseSlug = slugifyLocationName(trimmedName);
+        const bookingSlug = await ensureUniqueLocationSlug(tx, ctx.organizationId, baseSlug);
+        try {
+          location = await tx.location.create({
+            data: { name: trimmedName, organizationId: ctx.organizationId, bookingSlug },
+          });
+          break;
+        } catch (err) {
+          if (
+            err instanceof Prisma.PrismaClientKnownRequestError &&
+            err.code === "P2002" &&
+            attempt < 3
+          ) {
+            attempt += 1;
+            continue; // race: another create took this slug — regenerate and retry
+          }
+          throw err;
+        }
+      }
       return location;
     });
 
