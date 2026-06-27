@@ -218,6 +218,7 @@ model User {
 
   @@index([customRoleId])
   @@index([organizationId], map: "User_organizationId_idx")
+  @@index([visitorId])
 }
 
 model Account {
@@ -400,10 +401,10 @@ model StaffInvitation {
   createdAt         DateTime     @default(now()) @db.Timestamptz(6)
   updatedAt         DateTime     @default(now()) @updatedAt @db.Timestamptz(6)
   organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  location          Location     @relation(fields: [locationId], references: [id], onUpdate: NoAction)
+  location          Location     @relation(fields: [locationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   staff             Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  inviter           User         @relation("StaffInvitationInviter", fields: [inviterUserId], references: [id], onUpdate: NoAction)
-  acceptedUser      User?        @relation("StaffInvitationAcceptedUser", fields: [acceptedUserId], references: [id], onUpdate: NoAction)
+  inviter           User         @relation("StaffInvitationInviter", fields: [inviterUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  acceptedUser      User?        @relation("StaffInvitationAcceptedUser", fields: [acceptedUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([organizationId, locationId, acceptedAt], map: "idx_staffinv_org_loc_pending", where: raw("(\"acceptedAt\" IS NULL AND \"revokedAt\" IS NULL)"))
   @@index([email], map: "idx_staffinv_email")
@@ -505,8 +506,8 @@ model Client {
   waitlistEntries         WaitlistEntry[]
 
   @@index([organizationId, isActive], map: "idx_client_org_active", where: raw("(\"softDeletedAt\" IS NULL)"))
-  @@index([organizationId, email], map: "idx_client_org_email", where: raw("(\"softDeletedAt\" IS NULL)"))
-  @@index([organizationId, phone], map: "idx_client_org_phone", where: raw("(\"softDeletedAt\" IS NULL)"))
+  @@unique([organizationId, email], map: "idx_client_org_email_unique", where: raw("((email IS NOT NULL) AND (\"softDeletedAt\" IS NULL))"))
+  @@unique([organizationId, phone], map: "idx_client_org_phone_unique", where: raw("((phone IS NOT NULL) AND (\"softDeletedAt\" IS NULL))"))
   @@index([locationId], map: "Client_locationId_idx")
 }
 
@@ -1831,13 +1832,10 @@ model EmploymentAgreement {
 /// Per-recipient signing token for EmploymentAgreements. Hash stored at
 /// rest; raw token returned once via email. Mirrors StaffInvitation pattern.
 ///
-/// PARTIAL INDEX WARNING: The idx_agreement_sign_token_expires index
-/// in the migration includes `WHERE "consumedAt" IS NULL` for query
-/// efficiency on unconsumed tokens. Prisma schema cannot express
-/// partial indexes — DO NOT run `prisma db pull` and accept the
-/// regenerated schema without preserving this divergence.
+/// WARNING: DO NOT run `prisma db pull` — it would destroy partial indexes,
+/// @db.Date/Time/Timestamptz types, custom relation names, and dbgenerated defaults.
 model AgreementSignToken {
-  id                String              @id @default(dbgenerated("gen_random_uuid()::text"))
+  id                String              @id @default(dbgenerated("(gen_random_uuid())::text"))
   organizationId    String
   agreementId       String              @unique
   staffId           String
@@ -1851,12 +1849,12 @@ model AgreementSignToken {
   userAgentConsumed String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @default(now())
-  agreement         EmploymentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
-  staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agreement         EmploymentAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([organizationId], map: "idx_agreement_sign_token_org")
-  @@index([expiresAt], map: "idx_agreement_sign_token_expires")
+  @@index([expiresAt], map: "idx_agreement_sign_token_expires", where: raw("(\"consumedAt\" IS NULL)"))
   @@index([staffId], map: "AgreementSignToken_staffId_idx")
 }
 
