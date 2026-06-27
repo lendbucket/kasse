@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import {
   User, Lock, Sliders, Building2, MapPin, Palette, Clock, CreditCard, Gift,
   Percent, Tag, Receipt, Zap, Landmark, ArrowUpRight, Bell, Calendar, Users,
@@ -111,6 +111,7 @@ export default function SettingsPage() {
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<Record<string, string>>({})
   const [taxByLoc, setTaxByLoc] = useState<Record<string, { ratePercent: string; services: boolean; products: boolean; loading: boolean; saving: boolean; saved: boolean; error: string | null }>>({})
+  const taxFetchedRef = useRef<Set<string>>(new Set())
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -148,7 +149,8 @@ export default function SettingsPage() {
     if (section !== "sales_taxes" || !org.locations?.length) return
     const locs = org.locations as { id: string; name: string }[]
     for (const loc of locs) {
-      if (taxByLoc[loc.id]) continue
+      if (taxFetchedRef.current.has(loc.id)) continue
+      taxFetchedRef.current.add(loc.id)
       setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ratePercent: "", services: true, products: true, loading: true, saving: false, saved: false, error: null } }))
       fetch(`/api/tax?locationId=${encodeURIComponent(loc.id)}`)
         .then(async (res) => {
@@ -168,7 +170,7 @@ export default function SettingsPage() {
           setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], loading: false, error: "Failed to load tax rate" } }))
         })
     }
-  }, [section, org.locations, taxByLoc])
+  }, [section, org.locations])
 
   async function saveLocationTax(locationId: string) {
     const row = taxByLoc[locationId]

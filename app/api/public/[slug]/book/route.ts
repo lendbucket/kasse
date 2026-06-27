@@ -68,8 +68,10 @@ export async function POST(
 
   // Multi-location guard: if no locationSlug was provided, check whether the org
   // has multiple bookable locations. If so, the client must select one explicitly
-  // rather than silently booking against the oldest location.
-  if (!locationSlug) {
+  // rather than silently booking against the oldest location. When exactly one
+  // bookable location exists, resolve to its slug explicitly.
+  let effectiveLocationSlug = locationSlug;
+  if (!effectiveLocationSlug) {
     const locs = await listPublicLocationsBySlug(slug);
     const bookable = (locs?.locations ?? []).filter((l) => l.bookingSlug);
     if (bookable.length > 1) {
@@ -78,9 +80,13 @@ export async function POST(
         { status: 400 },
       );
     }
+    if (bookable.length === 1) {
+      effectiveLocationSlug = bookable[0].bookingSlug ?? undefined;
+    }
+    // 0 bookable → leave undefined; resolver's isActive+oldest fallback still serves a single un-slugged location
   }
 
-  const ctx = await resolvePublicContextBySlug(slug, locationSlug);
+  const ctx = await resolvePublicContextBySlug(slug, effectiveLocationSlug);
   if (!ctx) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
