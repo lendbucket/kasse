@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { prismaAdmin } from "@/lib/prismaAdmin";
 import type { NextRequest } from "next/server";
 import { Role } from "@prisma/client";
 
@@ -111,13 +111,19 @@ export async function requireTenantContext(req?: NextRequest): Promise<TenantCon
  * Throws TenantContextError if the location does not belong to the tenant or does not exist.
  *
  * USE THIS IN EVERY ROUTE THAT ACCEPTS A locationId FROM USER INPUT.
+ *
+ * Uses prismaAdmin (RLS bypass) ON PURPOSE: this runs OUTSIDE withTenantScope, so the
+ * app.current_org_id RLS variable is not set. The RLS-restricted `prisma` client would
+ * return ZERO rows here and every check would wrongly throw "Location not found". Tenant
+ * isolation is preserved by the explicit organizationId predicate below (superadmin is
+ * intentionally cross-tenant). Same documented pattern as lib/permissions/resolve-hierarchy.ts.
  */
 export async function assertLocationInTenant(
   locationId: string,
   ctx: TenantContext,
 ): Promise<{ id: string; organizationId: string }> {
   if (ctx.isSuperadmin) {
-    const loc = await prisma.location.findUnique({
+    const loc = await prismaAdmin.location.findUnique({
       where: { id: locationId },
       select: { id: true, organizationId: true },
     });
@@ -125,7 +131,7 @@ export async function assertLocationInTenant(
     return loc;
   }
 
-  const loc = await prisma.location.findFirst({
+  const loc = await prismaAdmin.location.findFirst({
     where: { id: locationId, organizationId: ctx.organizationId },
     select: { id: true, organizationId: true },
   });
@@ -146,7 +152,7 @@ export async function assertStaffInTenant(
   ctx: TenantContext,
 ): Promise<{ id: string; organizationId: string; locationId: string | null }> {
   if (ctx.isSuperadmin) {
-    const staff = await prisma.staff.findUnique({
+    const staff = await prismaAdmin.staff.findUnique({
       where: { id: staffId },
       select: { id: true, organizationId: true, locationId: true },
     });
@@ -154,7 +160,7 @@ export async function assertStaffInTenant(
     return staff;
   }
 
-  const staff = await prisma.staff.findFirst({
+  const staff = await prismaAdmin.staff.findFirst({
     where: { id: staffId, organizationId: ctx.organizationId },
     select: { id: true, organizationId: true, locationId: true },
   });
