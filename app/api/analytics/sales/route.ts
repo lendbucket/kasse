@@ -27,6 +27,6 @@ export async function GET(request: NextRequest) {
   const grain: SalesGrain = (grainParam as SalesGrain) || "day";
   const locationId = params.get("locationId") ?? undefined;
 
-  const sales = await withTenantScope(prisma, ctx, async (tx) => computeSales(tx, { startDate, endDate, grain, locationId }));
+  const sales = await withTenantScope(prisma, ctx, async (tx) => computeSales(tx, { startDate, endDate, grain, locationId, organizationId: ctx.organizationId }));
   return NextResponse.json({ sales });
 }

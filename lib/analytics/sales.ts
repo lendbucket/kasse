@@ -4,7 +4,7 @@ import { OrderStatus, PaymentStatus } from "@/lib/checkout/constants";
 type PrismaTx = Prisma.TransactionClient;
 export type SalesGrain = "day" | "week" | "month";
 
-export interface SalesOpts { startDate: string; endDate: string; grain: SalesGrain; locationId?: string; }
+export interface SalesOpts { startDate: string; endDate: string; grain: SalesGrain; locationId?: string; organizationId: string; }
 export interface SalesSeriesPoint { period: string; orders: number; grossCents: number; netCents: number; taxCents: number; tipCents: number; }
 export interface StaffSalesRow { staffId: string | null; staffName: string; revenueCents: number; items: number; orders: number; pctOfRevenue: number; }
 export interface ServiceSalesRow { displayName: string; revenueCents: number; quantity: number; }
@@ -18,7 +18,7 @@ export interface SalesResult { summary: SalesSummary; series: SalesSeriesPoint[]
  * All inputs are parameterized; the grain bucket is chosen from a fixed whitelist.
  */
 export async function computeSales(tx: PrismaTx, opts: SalesOpts): Promise<SalesResult> {
-  const { startDate, endDate, grain, locationId } = opts;
+  const { startDate, endDate, grain, locationId, organizationId } = opts;
 
   const ts = Prisma.sql`(o."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')`;
   const bucketExpr = (() => {
@@ -87,7 +87,7 @@ export async function computeSales(tx: PrismaTx, opts: SalesOpts): Promise<Sales
   const staffIds = [...new Set(staffRaw.map((r) => r.staffId).filter((v): v is string => v != null))];
   const nameMap = new Map<string, string>();
   if (staffIds.length) {
-    const recs = await tx.staff.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } });
+    const recs = await tx.staff.findMany({ where: { id: { in: staffIds }, organizationId }, select: { id: true, name: true } });
     for (const s of recs) nameMap.set(s.id, s.name);
   }
 
