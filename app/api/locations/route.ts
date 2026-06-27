@@ -11,6 +11,7 @@ import {
   assertCanAddLocation,
   planLimitErrorResponse,
 } from "@/lib/plans/api-helpers";
+import { slugifyLocationName, ensureUniqueLocationSlug } from "@/lib/locations/slug";
 import { Permissions, type PermissionKey } from "@/lib/permissions/types";
 import { requirePermission, PermissionError, type PermissionSession } from "@/lib/permissions/check";
 
@@ -114,11 +115,16 @@ export async function POST(request: NextRequest) {
       // Hard-block if at plan limit — throws PlanLimitError caught below
       assertCanAddLocation(plan);
 
+      // Auto-generate a unique booking slug for this location
+      const baseSlug = slugifyLocationName(trimmedName);
+      const bookingSlug = await ensureUniqueLocationSlug(tx, ctx.organizationId, baseSlug);
+
       // Create the location
       const location = await tx.location.create({
         data: {
           name: trimmedName,
           organizationId: ctx.organizationId,
+          bookingSlug,
         },
       });
       return location;

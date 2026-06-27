@@ -276,6 +276,7 @@ model Location {
   geofenceRadius              Int                     @default(100)
   businessHours               Json?
   salonTransactLocationId     String?
+  bookingSlug                 String?
   createdAt                   DateTime                @default(now())
   groupId                     String?
   appointments                Appointment[]
@@ -304,6 +305,7 @@ model Location {
   transactions                Transaction[]
   waitlistEntries             WaitlistEntry[]
 
+  @@unique([organizationId, bookingSlug])
   @@index([groupId])
   @@index([organizationId], map: "Location_organizationId_idx")
 }
