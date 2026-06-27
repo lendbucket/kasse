@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                      */
@@ -166,7 +166,7 @@ export function BookingFlow({
 
   const tz = options?.location.timezone ?? "America/Chicago";
 
-  const eligibleStaff = (() => {
+  const eligibleStaff = useMemo(() => {
     if (!options) return [];
     if (!selectedService) return options.staff;
     const hasElig = options.staffServices.some((m) => m.serviceId === selectedService.id);
@@ -175,7 +175,7 @@ export function BookingFlow({
       options.staffServices.filter((m) => m.serviceId === selectedService.id).map((m) => m.staffId),
     );
     return options.staff.filter((s) => ok.has(s.id));
-  })();
+  }, [options, selectedService]);
 
   /* ---------- Fetch options on mount ---------- */
 

@@ -164,14 +164,17 @@ export async function POST(
       });
       if (!service) return { notFound: true as const };
 
-      // Per-service eligibility: if this service has any configured stylists, the chosen staff must be one of them.
-      // Fallback: a service with zero StylistService rows is "unconfigured" → any bookable staff allowed.
-      const eligibility = await tx.stylistService.findMany({
-        where: { serviceId },
-        select: { staffId: true },
+      // Per-service eligibility, org-anchored via the service relation. If the service has any
+      // configured stylists, the chosen staff must be one of them; zero rows = unconfigured = allow.
+      const eligibilityCount = await tx.stylistService.count({
+        where: { serviceId, service: { organizationId: ctx.organizationId } },
       });
-      if (eligibility.length > 0 && !eligibility.some((e) => e.staffId === staffId)) {
-        return { notEligible: true as const };
+      if (eligibilityCount > 0) {
+        const eligibleRow = await tx.stylistService.findFirst({
+          where: { serviceId, staffId },
+          select: { staffId: true },
+        });
+        if (!eligibleRow) return { notEligible: true as const };
       }
 
       // Find or create client
