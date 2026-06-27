@@ -59,6 +59,7 @@ export async function GET(
           organizationId: ctx.organizationId,
           isActive: true,
           softDeletedAt: null,
+          bookableByCustomers: true,
         },
         select: {
           id: true,
