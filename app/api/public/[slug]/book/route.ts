@@ -139,28 +139,40 @@ export async function POST(
 
   try {
     const result = await withTenantScope(prisma, publicCtx, async (tx) => {
-      // Verify staffId belongs to this org
+      // Verify staffId belongs to this org and is bookable
       const staff = await tx.staff.findFirst({
         where: {
           id: staffId,
           organizationId: ctx.organizationId,
           isActive: true,
           softDeletedAt: null,
+          bookableByCustomers: true,
         },
         select: { id: true },
       });
       if (!staff) return { notFound: true as const };
 
-      // Verify serviceId belongs to this org
+      // Verify serviceId belongs to this org and is bookable
       const service = await tx.service.findFirst({
         where: {
           id: serviceId,
           organizationId: ctx.organizationId,
           isActive: true,
+          bookableByCustomers: true,
         },
         select: { id: true, name: true },
       });
       if (!service) return { notFound: true as const };
+
+      // Per-service eligibility: if this service has any configured stylists, the chosen staff must be one of them.
+      // Fallback: a service with zero StylistService rows is "unconfigured" → any bookable staff allowed.
+      const eligibility = await tx.stylistService.findMany({
+        where: { serviceId },
+        select: { staffId: true },
+      });
+      if (eligibility.length > 0 && !eligibility.some((e) => e.staffId === staffId)) {
+        return { notEligible: true as const };
+      }
 
       // Find or create client
       const { clientId } = await findOrCreateClient(tx, {
@@ -231,6 +243,13 @@ export async function POST(
 
     if ("notFound" in result && result.notFound) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    if ("notEligible" in result && result.notEligible) {
+      return NextResponse.json(
+        { error: "staff_not_eligible", message: "That stylist doesn't offer the selected service." },
+        { status: 400 },
+      );
     }
 
     if ("conflict" in result && result.conflict) {

@@ -38,42 +38,31 @@ export async function GET(
     request: { route: "/api/public/[slug]/options" },
   };
 
-  const [services, staff] = await withTenantScope(prisma, publicCtx, async (tx) =>
-    Promise.all([
+  const { services, staff, staffServices } = await withTenantScope(prisma, publicCtx, async (tx) => {
+    const [services, staff] = await Promise.all([
       tx.service.findMany({
-        where: {
-          organizationId: ctx.organizationId,
-          isActive: true,
-          bookableByCustomers: true,
-        },
-        select: {
-          id: true,
-          name: true,
-          price: true,
-          duration: true,
-        },
+        where: { organizationId: ctx.organizationId, isActive: true, bookableByCustomers: true },
+        select: { id: true, name: true, price: true, duration: true },
         orderBy: { name: "asc" },
       }),
       tx.staff.findMany({
-        where: {
-          organizationId: ctx.organizationId,
-          isActive: true,
-          softDeletedAt: null,
-          bookableByCustomers: true,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
+        where: { organizationId: ctx.organizationId, isActive: true, softDeletedAt: null, bookableByCustomers: true },
+        select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
-    ]),
-  );
+    ]);
+    const staffServices = await tx.stylistService.findMany({
+      where: { staffId: { in: staff.map((s) => s.id) }, serviceId: { in: services.map((s) => s.id) } },
+      select: { staffId: true, serviceId: true },
+    });
+    return { services, staff, staffServices };
+  });
 
   return NextResponse.json({
     organization: { name: ctx.organizationName },
     location: { id: ctx.locationId, name: ctx.locationName, timezone: ctx.timezone },
     services,
     staff,
+    staffServices,
   });
 }
