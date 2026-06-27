@@ -7,6 +7,8 @@ import {
   type TenantContext,
 } from "@/lib/tenant/context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
+import { Permissions, type PermissionKey } from "@/lib/permissions/types";
+import { requirePermission, PermissionError, type PermissionSession } from "@/lib/permissions/check";
 
 export async function GET(
   request: NextRequest,
@@ -44,6 +46,7 @@ type UpdateBody = {
   role?: "manager" | "stylist";
   locationId?: string;
   active?: boolean;
+  bookableByCustomers?: boolean;
 };
 
 export async function PATCH(
@@ -56,6 +59,23 @@ export async function PATCH(
   } catch (e) {
     const r = tenantErrorResponse(e);
     if (r) return r;
+    throw e;
+  }
+
+  const ps: PermissionSession = {
+    user: {
+      id: ctx.userId,
+      role: ctx.role,
+      organizationId: ctx.organizationId,
+      customRolePermissions: ctx.customRolePermissions as PermissionKey[] | undefined,
+    },
+  };
+  try {
+    requirePermission(ps, Permissions.STAFF.EDIT);
+  } catch (e) {
+    if (e instanceof PermissionError) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
     throw e;
   }
 
@@ -87,6 +107,7 @@ export async function PATCH(
   if (body.role === "manager" || body.role === "stylist") data.role = body.role;
   if (typeof body.locationId === "string") data.locationId = body.locationId;
   if (typeof body.active === "boolean") data.isActive = body.active;
+  if (typeof body.bookableByCustomers === "boolean") data.bookableByCustomers = body.bookableByCustomers;
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
@@ -121,6 +142,23 @@ export async function DELETE(
   } catch (e) {
     const r = tenantErrorResponse(e);
     if (r) return r;
+    throw e;
+  }
+
+  const ps: PermissionSession = {
+    user: {
+      id: ctx.userId,
+      role: ctx.role,
+      organizationId: ctx.organizationId,
+      customRolePermissions: ctx.customRolePermissions as PermissionKey[] | undefined,
+    },
+  };
+  try {
+    requirePermission(ps, Permissions.STAFF.DEACTIVATE);
+  } catch (e) {
+    if (e instanceof PermissionError) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
     throw e;
   }
 

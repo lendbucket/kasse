@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users, Settings } from "lucide-react";
+import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users, Settings, CalendarOff } from "lucide-react";
 
 type Location = { id: string; name: string };
 type Role = "manager" | "stylist";
-type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; isActive: boolean; location: { id: string; name: string } | null };
+type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; isActive: boolean; bookableByCustomers: boolean; location: { id: string; name: string } | null };
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -76,6 +76,11 @@ export default function StaffPage() {
                     <td><span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
                       <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "var(--success)" : "var(--border-strong)", display: "inline-block" }} />
                       <span style={{ color: s.isActive ? "var(--success)" : "var(--text-muted)" }}>{s.isActive ? "Active" : "Inactive"}</span>
+                      {!s.bookableByCustomers && (
+                        <span title="Hidden from online booking" style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 8, padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.08)" }}>
+                          <CalendarOff size={11} /> No online booking
+                        </span>
+                      )}
                     </span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
@@ -96,6 +101,11 @@ export default function StaffPage() {
                       <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                         <span style={{ padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600, background: s.role === "manager" ? "var(--brand-soft)" : "rgba(0,0,0,0.04)", color: s.role === "manager" ? "var(--brand)" : "var(--text-secondary)" }}>{s.role === "manager" ? "Manager" : "Stylist"}</span>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: s.isActive ? "var(--success)" : "var(--text-muted)" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: s.isActive ? "var(--success)" : "var(--border-strong)" }} />{s.isActive ? "Active" : "Inactive"}</span>
+                        {!s.bookableByCustomers && (
+                          <span title="Hidden from online booking" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "var(--text-muted)", background: "rgba(0,0,0,0.04)", border: "1px solid rgba(0,0,0,0.08)" }}>
+                            <CalendarOff size={11} /> No online booking
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -122,6 +132,7 @@ function StaffModal({ mode, member, locations, onClose, onSaved }: { mode: "crea
   const [role, setRole] = useState<Role>((member?.role as Role) === "manager" ? "manager" : "stylist");
   const [locationId, setLocationId] = useState(member?.locationId ?? locations[0]?.id ?? "");
   const [active, setActive] = useState(member?.isActive ?? true);
+  const [bookable, setBookable] = useState(member?.bookableByCustomers ?? true);
   const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid var(--border)", padding: "0 12px", fontSize: 16, color: "var(--text-primary)", background: "var(--bg-card)", outline: "none" };
 
@@ -129,7 +140,7 @@ function StaffModal({ mode, member, locations, onClose, onSaved }: { mode: "crea
     e.preventDefault(); if (!name.trim() || !locationId || submitting) return;
     setSubmitting(true); setErr(null);
     try {
-      const r = await fetch(mode === "edit" ? `/api/staff/${member!.id}` : "/api/staff", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email: email || undefined, phone: phone || undefined, role, locationId, active }) });
+      const r = await fetch(mode === "edit" ? `/api/staff/${member!.id}` : "/api/staff", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, email: email || undefined, phone: phone || undefined, role, locationId, active, bookableByCustomers: bookable }) });
       if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Save failed"); }
       onSaved();
     } catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); } finally { setSubmitting(false); }
@@ -165,6 +176,12 @@ function StaffModal({ mode, member, locations, onClose, onSaved }: { mode: "crea
             <div><p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>Active</p><p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Inactive staff hidden from POS</p></div>
             <button type="button" role="switch" aria-checked={active} onClick={() => setActive((v) => !v)} style={{ position: "relative", width: 44, height: 24, borderRadius: 999, border: "none", cursor: "pointer", transition: "background 150ms", background: active ? "var(--success)" : "var(--border)" }}>
               <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 150ms", transform: active ? "translateX(22px)" : "translateX(2px)" }} />
+            </button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid var(--border)", borderRadius: 6, padding: "12px 16px" }}>
+            <div><p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>Bookable online</p><p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>Show on your public booking page</p></div>
+            <button type="button" role="switch" aria-checked={bookable} onClick={() => setBookable((v) => !v)} style={{ position: "relative", width: 44, height: 24, borderRadius: 999, border: "none", cursor: "pointer", transition: "background 150ms", background: bookable ? "var(--success)" : "var(--border)" }}>
+              <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 150ms", transform: bookable ? "translateX(22px)" : "translateX(2px)" }} />
             </button>
           </div>
           {err && <p style={{ fontSize: 13, color: "var(--error)", background: "var(--error-soft)", border: "1px solid var(--error)", borderRadius: 6, padding: "8px 12px" }}>{err}</p>}

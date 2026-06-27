@@ -324,6 +324,7 @@ model Staff {
   commissionType        String                     @default("percentage")
   commissionRate        Float                      @default(40)
   isActive              Boolean                    @default(true)
+  bookableByCustomers   Boolean                    @default(true)
   color                 String?
   bio                   String?
   avatarUrl             String?
