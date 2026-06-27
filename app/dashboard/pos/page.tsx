@@ -86,8 +86,10 @@ export default function POSPage() {
     if (payment === "card") { setToast("Card payments arrive in the next slice"); setTimeout(() => setToast(null), 3000); return; }
     setCharging(true); setToast(null);
     try {
-      // Reuse the cart-scoped key so retries / double-taps dedupe server-side.
-      const idempotencyKey = cartKey || ((typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      // cartKey is set on first addToCart, so it's always present here (cart is non-empty).
+      // Reuse it so retries / double-taps dedupe server-side; never mint a per-press key.
+      if (!cartKey) { setToast("Something went wrong — clear and re-add items"); return; }
+      const idempotencyKey = cartKey;
       const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

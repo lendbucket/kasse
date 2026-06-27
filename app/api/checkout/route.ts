@@ -63,6 +63,9 @@ export async function POST(request: NextRequest) {
 
   let result: CheckoutResult | null = null;
   let lastErr: unknown = null;
+  // Retry the whole tx on a P2002 order-number collision: createImmediateCheckout
+  // recomputes nextOrderNumber on each re-entry, so a concurrent winner's committed
+  // row bumps our count and clears the clash. Non-P2002 errors propagate immediately.
   for (let attempt = 0; attempt < 4; attempt++) {
     try { result = await withTenantScope(prisma, ctx, (tx) => createImmediateCheckout(tx, input)); break; }
     catch (e) { lastErr = e; if (isP2002(e)) continue; throw e; }
