@@ -277,6 +277,8 @@ export function BookingFlow({
         const data = await res.json();
         setBookingResult(data);
         setStep("confirm");
+      } else if (res.status === 429) {
+        setSubmitError("You've made several booking attempts in a short time. Please wait a moment and try again.");
       } else if (res.status === 409) {
         setSubmitError("That time was just taken. Please go back and pick another.");
         setSelectedSlot(null);
