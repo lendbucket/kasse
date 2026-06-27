@@ -7,7 +7,7 @@ import { CustomerPicker } from "@/components/pos/CustomerPicker";
 
 type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string };
 type Staff = { id: string; name: string; locationId: string };
-type CartItem = { key: string; serviceId: string; name: string; price: number };
+type CartItem = { key: string; serviceId: string; name: string; price: number; staffId: string };
 type PaymentMethod = "cash" | "card" | "other";
 
 const FALLBACK_TAX_RATE = 0.0825; // used only if /api/tax has no active row or fails
@@ -22,7 +22,6 @@ export default function POSPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL_CAT);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [staffId, setStaffId] = useState("");
   const [client, setClient] = useState<{ id: string; name: string } | null>(null);
   const [tipInput, setTipInput] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("card");
@@ -69,21 +68,39 @@ export default function POSPage() {
   const tip = useMemo(() => { const n = parseFloat(tipInput); return Number.isFinite(n) && n > 0 ? +n.toFixed(2) : 0; }, [tipInput]);
   const total = useMemo(() => +(subtotal + tax + tip).toFixed(2), [subtotal, tax, tip]);
 
-  function addToCart(s: Service) { setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price }]); }
+  function addToCart(s: Service) { setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price, staffId: "" }]); }
+  function setLineStaff(key: string, sid: string) { setCart((p) => p.map((i) => (i.key === key ? { ...i, staffId: sid } : i))); }
   function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); }
-  function clearCart() { setCart([]); setClient(null); setTipInput(""); setStaffId(""); }
+  function clearCart() { setCart([]); setClient(null); setTipInput(""); }
 
   async function charge() {
     if (cart.length === 0 || charging) return;
     const locId = services[0]?.locationId;
     if (!locId) { setToast("No location"); return; }
+    if (payment === "card") { setToast("Card payments arrive in the next slice"); setTimeout(() => setToast(null), 3000); return; }
     setCharging(true); setToast(null);
     try {
-      const r = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId: locId, staffId: staffId || undefined, clientId: client?.id ?? undefined, clientName: client?.name ?? undefined, amount: subtotal, tax, tip, total, paymentMethod: payment }) });
-      if (!r.ok) throw new Error("Charge failed");
-      setToast(`Charged ${fmt(total)}`); clearCart();
+      const idempotencyKey = (typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const r = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationId: locId,
+          clientId: client?.id ?? undefined,
+          clientName: client?.name ?? undefined,
+          items: cart.map((i) => ({ serviceId: i.serviceId, staffId: i.staffId || undefined, quantity: 1 })),
+          tipCents: Math.round(tip * 100),
+          discountCents: 0,
+          method: payment === "cash" ? "CASH" : "OTHER",
+          idempotencyKey,
+        }),
+      });
+      const data = (await r.json().catch(() => ({}))) as { error?: string; orderNumber?: string; totalCents?: number };
+      if (!r.ok) throw new Error(data?.error === "card_coming_soon" ? "Card payments arrive in the next slice" : (data?.error || "Charge failed"));
+      setToast(`Order ${data.orderNumber} — ${fmt((data.totalCents ?? 0) / 100)} paid`);
+      clearCart();
     } catch (e) { setToast(e instanceof Error ? e.message : "Charge failed"); }
-    finally { setCharging(false); setTimeout(() => setToast(null), 3000); }
+    finally { setCharging(false); setTimeout(() => setToast(null), 3500); }
   }
 
   const iS: React.CSSProperties = { width: "100%", height: 36, borderRadius: 6, border: "1px solid var(--border)", padding: "0 12px", fontSize: 16, color: "var(--text-primary)", background: "var(--bg-card)", outline: "none" };
@@ -153,12 +170,18 @@ export default function POSPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {cart.map((item) => (
-                  <div key={item.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 6 }}>
-                    <div>
-                      <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>{item.name}</p>
-                      <p style={{ fontSize: 13, fontFamily: "var(--font-fira), monospace", color: "var(--text-secondary)", margin: "2px 0 0" }}>{fmt(item.price)}</p>
+                  <div key={item.key} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", margin: 0 }}>{item.name}</p>
+                        <p style={{ fontSize: 13, fontFamily: "var(--font-fira), monospace", color: "var(--text-secondary)", margin: "2px 0 0" }}>{fmt(item.price)}</p>
+                      </div>
+                      <button type="button" onClick={() => removeFromCart(item.key)} aria-label="Remove" style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}><X size={16} /></button>
                     </div>
-                    <button type="button" onClick={() => removeFromCart(item.key)} aria-label="Remove" style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}><X size={16} /></button>
+                    <select value={item.staffId} onChange={(e) => setLineStaff(item.key, e.target.value)} style={{ ...iS, height: 32, fontSize: 13 }}>
+                      <option value="">Stylist (optional)</option>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
                   </div>
                 ))}
               </div>
@@ -166,7 +189,6 @@ export default function POSPage() {
           </div>
           {/* Details */}
           <div style={{ padding: 16, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} style={iS}><option value="">Stylist (optional)</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
             <CustomerPicker locationId={services[0]?.locationId ?? ""} value={client} onChange={setClient} />
           </div>
           {/* Totals */}

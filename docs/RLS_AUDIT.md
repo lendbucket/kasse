@@ -2564,6 +2564,7 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | `/api/staff/[id]/pricing` | GET, PUT | TENANT_SCOPED | Verifies staff in-org + serviceIds in eligibility set |
 | `/api/staff/[id]/compensation` | GET, PUT | TENANT_SCOPED | Upserts Compensation by staffId, org-verified |
 | `/api/staff/[id]/invite` | POST | TENANT_SCOPED | Verifies staff in-org inside a `withTenantScope` tx; creates a StaffInvitation for an existing roster member (token hashed at rest, raw token emailed); gated `STAFF.INVITE`; sends invite email via Resend + writes STAFF_INVITATION_SENT audit. Accept side is the existing PRE_SESSION `/api/onboarding/staff-accept`. |
+| `/api/checkout` | POST | TENANT_SCOPED | Cash/manual (CASH/OTHER) checkout. Server-prices line items in integer cents via withTenantScope tx; creates Cart→Order(+items)→Payment, closes the order; gated `POS.OPEN_CHECKOUT`; idempotency-keyed; reuses lib/tax for per-line tax. CARD is rejected (routes to SalonTransact in 3b). Builds on modern Order/Payment (not legacy Transaction). |
 | `/api/tax` | GET, POST | TENANT_SCOPED | GET reads active TaxRate for a location. POST supersedes the active TaxRate (end-dates+deactivates old, inserts new active row effective today); gated by `SETTINGS.EDIT_TAX`; location verified via `assertLocationInTenant`; both use `requireTenantContext` + `withTenantScope`. |
 
 ---
