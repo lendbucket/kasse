@@ -15,15 +15,25 @@ export const maxDuration = 30;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = "Kasse <onboarding@kasseapp.com>";
 
-// Build the accept link on the SAME origin the owner is already using
-// (portal.kasseapp.com) — that domain is served by this app and is made public
-// in the route map. signup.kasseapp.com is NOT a domain on this Vercel project,
-// so we must not default to it. An explicit env override wins only if set to a
-// real on-project host.
+// Build the accept link on a TRUSTED host only. The owner normally invites from
+// portal.kasseapp.com (served by this app + made public in the route map). The
+// forwarded host is validated against an allowlist so a spoofed x-forwarded-host
+// can never place a hostile origin into the invite email — that link carries the
+// invitee's account-creation token. signup.kasseapp.com is NOT on this project,
+// so it is never a default. NEXT_PUBLIC_PORTAL_HOST lets staging/preview opt in.
+const ALLOWED_INVITE_HOSTS = new Set(
+  ["portal.kasseapp.com", process.env.NEXT_PUBLIC_PORTAL_HOST?.trim()].filter(
+    Boolean,
+  ) as string[],
+);
+
 function getBaseUrl(request: Request): string {
-  const proto = request.headers.get("x-forwarded-proto") ?? "https";
-  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (host) return `${proto}://${host}`;
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host && ALLOWED_INVITE_HOSTS.has(host)) {
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    return `${proto}://${host}`;
+  }
   const envBase = process.env.NEXT_PUBLIC_ONBOARDING_BASE_URL?.trim();
   if (envBase) return envBase.replace(/\/+$/, "");
   return "https://portal.kasseapp.com";
