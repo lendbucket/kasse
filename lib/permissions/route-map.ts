@@ -49,6 +49,19 @@ export const routeMap: Record<string, RouteGuard> = {
   "/api/onboarding": { type: "authenticated" },
   "/api/me": { type: "authenticated" },
 
+  // ── Terms acceptance (P1.A.10) ───────────────────────────────────────
+  // MUST be mapped or the terms gate in middleware.ts creates a redirect loop:
+  // the gate redirects an un-accepted user to /terms/accept, but if that path
+  // is unmapped, getRouteGuard() returns null -> forbidden -> the page-forbidden
+  // branch redirects to /dashboard -> /dashboard re-triggers the gate -> bounce.
+  // /terms + /privacy are public (readable logged-out and from the accept page's
+  // "Read..." links). /terms/accept (exact-match wins over the /terms prefix)
+  // requires a session; /api/terms/accept records the acceptance.
+  "/terms": { type: "public" },
+  "/privacy": { type: "public" },
+  "/terms/accept": { type: "authenticated" },
+  "/api/terms/accept": { type: "authenticated" },
+
   // ── Role-gated ───────────────────────────────────────────────────────
   "/admin": { type: "role", roles: [Role.SUPERADMIN] },
   "/api/admin": { type: "role", roles: [Role.SUPERADMIN] },
