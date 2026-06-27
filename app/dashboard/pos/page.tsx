@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, X, Plus, Trash2, Banknote, CreditCard, MoreHorizontal } from "lucide-react";
 import { PoweredBySalonTransact } from "@/components/compliance/PoweredBySalonTransact";
 import { CustomerPicker } from "@/components/pos/CustomerPicker";
+import { useActiveLocation } from "@/lib/locations/context";
+import { LocationSwitcher } from "@/components/layout/LocationSwitcher";
 
 type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string };
 type Staff = { id: string; name: string; locationId: string };
@@ -32,6 +34,7 @@ export default function POSPage() {
   const [charging, setCharging] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [taxRate, setTaxRate] = useState<number>(FALLBACK_TAX_RATE);
+  const { activeLocationId } = useActiveLocation();
 
   useEffect(() => {
     let c = false;
@@ -49,7 +52,7 @@ export default function POSPage() {
   }, []);
 
   useEffect(() => {
-    const locId = services[0]?.locationId;
+    const locId = activeLocationId;
     if (!locId) return;
     let cancelled = false;
     (async () => {
@@ -63,7 +66,7 @@ export default function POSPage() {
       } catch { /* network error -> keep fallback */ }
     })();
     return () => { cancelled = true; };
-  }, [services]);
+  }, [activeLocationId]);
 
   const categories = useMemo(() => { const s = new Set<string>(); services.forEach((sv) => { if (sv.category) s.add(sv.category); }); return [ALL_CAT, ...Array.from(s).sort()]; }, [services]);
   const filtered = useMemo(() => { const q = search.trim().toLowerCase(); return services.filter((s) => (category === ALL_CAT || s.category === category) && (!q || s.name.toLowerCase().includes(q))); }, [services, search, category]);
@@ -82,8 +85,8 @@ export default function POSPage() {
 
   async function charge() {
     if (cart.length === 0 || charging) return;
-    const locId = services[0]?.locationId;
-    if (!locId) { setToast("No location"); return; }
+    const locId = activeLocationId;
+    if (!locId) { setToast("No location selected"); return; }
     if (payment === "card") { setToast("Card payments arrive in the next slice"); setTimeout(() => setToast(null), 3000); return; }
     setCharging(true); setToast(null);
     try {
@@ -123,7 +126,10 @@ export default function POSPage() {
           <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>TERMINAL</p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.5px", margin: 0 }}>Payments &amp; invoices</h1>
         </div>
-        {toast && <div style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 14, color: "var(--text-primary)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>{toast}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {toast && <div style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 14, color: "var(--text-primary)", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>{toast}</div>}
+          <LocationSwitcher />
+        </div>
       </div>
 
       <div style={{ display: "flex", height: "calc(100vh - 100px)" }}>
@@ -199,7 +205,7 @@ export default function POSPage() {
           </div>
           {/* Details */}
           <div style={{ padding: 16, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
-            <CustomerPicker locationId={services[0]?.locationId ?? ""} value={client} onChange={setClient} />
+            <CustomerPicker locationId={activeLocationId} value={client} onChange={setClient} />
           </div>
           {/* Totals */}
           <div style={{ padding: 16, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6, fontSize: 14 }}>

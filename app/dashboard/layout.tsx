@@ -8,6 +8,8 @@ import { FlagProvider } from "@/lib/feature-flags/context"
 import { prisma } from "@/lib/prisma"
 import { withTenantScope } from "@/lib/tenant/db-scope"
 import { Role } from "@prisma/client"
+import { cookies } from "next/headers"
+import { LocationProvider } from "@/lib/locations/context"
 
 // Known flag keys — centralize this list to avoid typos.
 // Add as flags are created. Keep this list small for v1.
@@ -54,8 +56,31 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
   }
 
+  // Active-location context: fetch org locations server-side (no client race),
+  // resolve active from cookie -> user's home location -> first location.
+  let locations: { id: string; name: string }[] = []
+  if (session.user.organizationId) {
+    try {
+      locations = await withTenantScope(
+        prisma,
+        {
+          userId: session.user.id, email: session.user.email ?? "", name: session.user.name ?? null,
+          role: (session.user.role as Role) ?? Role.STAFF, organizationId: session.user.organizationId,
+          locationId: session.user.locationId ?? null, isSuperadmin: session.user.role === Role.SUPERADMIN,
+        },
+        (tx) => tx.location.findMany({ where: { organizationId: session!.user.organizationId! }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      )
+    } catch { locations = [] }
+  }
+  const cookieLoc = (await cookies()).get("kasse_active_location")?.value
+  const initialActiveId =
+    (cookieLoc && locations.some((l) => l.id === cookieLoc) ? cookieLoc : "") ||
+    (session.user.locationId && locations.some((l) => l.id === session.user.locationId) ? session.user.locationId : "") ||
+    locations[0]?.id || ""
+
   return (
     <FlagProvider flags={flagResults}>
+      <LocationProvider locations={locations} initialActiveId={initialActiveId}>
       <div style={{ display: "flex", minHeight: "100vh", background: "#f7f8fa" }}>
         <div className="hidden md:block" style={{ flexShrink: 0 }}>
           <Sidebar user={session.user} />
@@ -65,6 +90,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </div>
         <div className="md:hidden"><BottomNav /></div>
       </div>
+      </LocationProvider>
     </FlagProvider>
   )
 }

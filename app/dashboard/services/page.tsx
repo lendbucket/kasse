@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Plus, Pencil, Power, Tag, X } from "lucide-react";
+import { useActiveLocation } from "@/lib/locations/context";
 
 type Location = { id: string; name: string };
 type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string; isActive: boolean };
@@ -121,9 +122,10 @@ export default function ServicesPage() {
 }
 
 function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "create" | "edit"; service: Service | null; locations: Location[]; onClose: () => void; onSaved: () => void }) {
+  const { activeLocationId } = useActiveLocation();
   const [name, setName] = useState(service?.name ?? ""); const [cat, setCat] = useState(service?.category ?? "");
   const [price, setPrice] = useState(service ? String(service.price) : ""); const [duration, setDuration] = useState(service ? String(service.duration) : "");
-  const [locationId, setLocationId] = useState(service?.locationId ?? locations[0]?.id ?? "");
+  const [locationId, setLocationId] = useState(service?.locationId ?? activeLocationId ?? locations[0]?.id ?? "");
   const [active, setActive] = useState(service?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
