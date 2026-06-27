@@ -139,28 +139,43 @@ export async function POST(
 
   try {
     const result = await withTenantScope(prisma, publicCtx, async (tx) => {
-      // Verify staffId belongs to this org
+      // Verify staffId belongs to this org and is bookable
       const staff = await tx.staff.findFirst({
         where: {
           id: staffId,
           organizationId: ctx.organizationId,
           isActive: true,
           softDeletedAt: null,
+          bookableByCustomers: true,
         },
         select: { id: true },
       });
       if (!staff) return { notFound: true as const };
 
-      // Verify serviceId belongs to this org
+      // Verify serviceId belongs to this org and is bookable
       const service = await tx.service.findFirst({
         where: {
           id: serviceId,
           organizationId: ctx.organizationId,
           isActive: true,
+          bookableByCustomers: true,
         },
         select: { id: true, name: true },
       });
       if (!service) return { notFound: true as const };
+
+      // Per-service eligibility, org-anchored via the service relation. If the service has any
+      // configured stylists, the chosen staff must be one of them; zero rows = unconfigured = allow.
+      const eligibilityCount = await tx.stylistService.count({
+        where: { serviceId, service: { organizationId: ctx.organizationId } },
+      });
+      if (eligibilityCount > 0) {
+        const eligibleRow = await tx.stylistService.findFirst({
+          where: { serviceId, staffId },
+          select: { staffId: true },
+        });
+        if (!eligibleRow) return { notEligible: true as const };
+      }
 
       // Find or create client
       const { clientId } = await findOrCreateClient(tx, {
@@ -231,6 +246,13 @@ export async function POST(
 
     if ("notFound" in result && result.notFound) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    if ("notEligible" in result && result.notEligible) {
+      return NextResponse.json(
+        { error: "staff_not_eligible", message: "That stylist doesn't offer the selected service." },
+        { status: 400 },
+      );
     }
 
     if ("conflict" in result && result.conflict) {

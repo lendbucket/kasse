@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                      */
@@ -23,6 +23,7 @@ interface OptionsResponse {
   location: { id: string; name: string | null; timezone: string };
   services: ServiceOption[];
   staff: StaffOption[];
+  staffServices: { staffId: string; serviceId: string }[];
 }
 
 interface AvailabilityResponse {
@@ -164,6 +165,17 @@ export function BookingFlow({
   const abortRef = useRef<AbortController | null>(null);
 
   const tz = options?.location.timezone ?? "America/Chicago";
+
+  const eligibleStaff = useMemo(() => {
+    if (!options) return [];
+    if (!selectedService) return options.staff;
+    const hasElig = options.staffServices.some((m) => m.serviceId === selectedService.id);
+    if (!hasElig) return options.staff;
+    const ok = new Set(
+      options.staffServices.filter((m) => m.serviceId === selectedService.id).map((m) => m.staffId),
+    );
+    return options.staff.filter((s) => ok.has(s.id));
+  }, [options, selectedService]);
 
   /* ---------- Fetch options on mount ---------- */
 
@@ -373,7 +385,7 @@ export function BookingFlow({
               {options?.services.map((svc) => (
                 <button
                   key={svc.id}
-                  onClick={() => { setSelectedService(svc); setStep("staff"); }}
+                  onClick={() => { setSelectedService(svc); setSelectedStaff(null); setSelectedDate(""); setSelectedSlot(null); setStep("staff"); }}
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
@@ -427,11 +439,11 @@ export function BookingFlow({
             >
               &larr; Back
             </button>
-            {options?.staff.length === 0 && (
-              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>No stylists available.</p>
+            {eligibleStaff.length === 0 && (
+              <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>No stylists available for this service.</p>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {options?.staff.map((s) => (
+              {eligibleStaff.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => { setSelectedStaff(s); setSelectedDate(""); setSelectedSlot(null); setStep("datetime"); }}
