@@ -2584,3 +2584,11 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | Route | Methods | Classification | Notes |
 |-------|---------|---------------|-------|
 | `/api/analytics/retention` | GET | TENANT_SCOPED | Read-only analytics; runs inside `withTenantScope`; RLS-scoped (kasse_app). Transaction + Appointment both org-scoped by forced RLS; Client.id is globally unique (no cross-tenant clientId collision). Appointment rebook subquery carries explicit `organizationId` match as defense-in-depth. |
+
+---
+
+## Dashboard home (fix/dashboard-home-revenue)
+
+| Route / Module | Methods | Classification | Notes |
+|-------|---------|---------------|-------|
+| `app/dashboard/page.tsx` | — (Server Component) | BYPASS_NEEDED — APP_LAYER_FILTERED | Uses `prismaAdmin` with explicit `organizationId` filter derived from the trusted NextAuth session. NOT RLS-enforced at the Postgres layer — app-layer filtering only. This is an intentional, documented workaround: the plain RLS-scoped client returns zero rows without a tenant GUC, and server components have no `withTenantScope` integration yet. TODO: migrate to `withTenantScope` with a session-derived TenantContext once server-component GUC propagation is sorted, so RLS enforces isolation rather than just the app-layer filter. |

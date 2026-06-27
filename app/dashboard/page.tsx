@@ -18,6 +18,19 @@ import {
   Sparkles,
 } from "lucide-react";
 
+type LocationRow = { id: string; name: string; sales: number; txn: number; avg: number };
+
+/** Compute the UTC offset in minutes for a given instant in a named timezone. */
+function offsetMinutes(date: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const p = Object.fromEntries(dtf.formatToParts(date).map(x => [x.type, x.value]));
+  const hour = Number(p.hour) === 24 ? 0 : Number(p.hour);
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hour, +p.minute, +p.second);
+  return (asUTC - date.getTime()) / 60000;
+}
+
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
@@ -72,19 +85,9 @@ export default async function DashboardPage() {
 
   const orgId = session.user.organizationId;
 
-  // Day window computed in the ORG's timezone (multi-tenant correct), not server-UTC.
-  function offsetMinutes(date: Date, tz: string): number {
-    const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const p = Object.fromEntries(dtf.formatToParts(date).map(x => [x.type, x.value]));
-    const hour = Number(p.hour) === 24 ? 0 : Number(p.hour);
-    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hour, +p.minute, +p.second);
-    return (asUTC - date.getTime()) / 60000;
-  }
-
   let todayRevenue = 0, transactionCount = 0, appointmentCount = 0, tipsTotal = 0, compsTotal = 0;
-  let locationRows: { id: string; name: string; sales: number; txn: number; avg: number }[] = [];
+  let locationRows: LocationRow[] = [];
+  // Fallback when Organization.timezone is unset (default in schema is America/Chicago)
   let orgTz = "America/Chicago";
 
   try {
@@ -94,6 +97,7 @@ export default async function DashboardPage() {
       });
       orgTz = org?.timezone || "America/Chicago";
 
+      // Day window computed in the ORG's timezone (multi-tenant correct), not server-UTC.
       const now = new Date();
       const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: orgTz,
         year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
@@ -116,19 +120,24 @@ export default async function DashboardPage() {
         where: { organizationId: orgId, startTime: { gte: sod, lte: eod } },
       });
 
+      // Per-location totals: single groupBy instead of N+1 aggregates
       const locations = await prismaAdmin.location.findMany({
         where: { organizationId: orgId, isActive: true },
         select: { id: true, name: true }, orderBy: { name: "asc" },
       });
-      locationRows = await Promise.all(locations.map(async (loc) => {
-        const a = await prismaAdmin.transaction.aggregate({
-          where: { organizationId: orgId, locationId: loc.id, createdAt: { gte: sod, lte: eod }, status: "completed" },
-          _sum: { total: true }, _count: true,
-        });
-        const sales = a._sum.total ?? 0;
-        const txnC = a._count;
-        return { id: loc.id, name: loc.name, sales, txn: txnC, avg: txnC > 0 ? sales / txnC : 0 };
-      }));
+      const locTotals = await prismaAdmin.transaction.groupBy({
+        by: ["locationId"],
+        where: { organizationId: orgId, createdAt: { gte: sod, lte: eod }, status: "completed" },
+        _sum: { total: true },
+        _count: { _all: true },
+      });
+      const totalsByLoc = new Map(
+        locTotals.map((t) => [t.locationId, { sales: t._sum.total ?? 0, txn: t._count._all }]),
+      );
+      locationRows = locations.map((loc) => {
+        const t = totalsByLoc.get(loc.id) ?? { sales: 0, txn: 0 };
+        return { id: loc.id, name: loc.name, sales: t.sales, txn: t.txn, avg: t.txn > 0 ? t.sales / t.txn : 0 };
+      });
     }
   } catch (e) { console.error("Dashboard data error:", e); }
 
