@@ -83,6 +83,7 @@ export const routeMap: Record<string, RouteGuard> = {
   "/api/services": { type: "permission", permission: Permissions.SERVICES.VIEW },
   "/api/staff": { type: "permission", permission: Permissions.STAFF.VIEW_LIST },
   "/api/transactions": { type: "permission", permission: Permissions.POS.OPEN_CHECKOUT },
+  "/api/checkout": { type: "permission", permission: Permissions.POS.OPEN_CHECKOUT },
   "/api/waitlist": { type: "permission", permission: Permissions.APPOINTMENTS.VIEW_OWN },
   "/api/messages": { type: "permission", permission: Permissions.CLIENTS.MESSAGE },
   "/api/locations": { type: "permission", permission: Permissions.SETTINGS.EDIT_LOCATIONS },
