@@ -134,14 +134,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  try {
-    await assertLocationInTenant(locationId, ctx);
-  } catch (e) {
-    const r = tenantErrorResponse(e);
-    if (r) return r;
-    throw e;
-  }
-
   const ps: PermissionSession = {
     user: {
       id: ctx.userId,
@@ -156,6 +148,14 @@ export async function POST(request: NextRequest) {
     if (e instanceof PermissionError) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
+    throw e;
+  }
+
+  try {
+    await assertLocationInTenant(locationId, ctx);
+  } catch (e) {
+    const r = tenantErrorResponse(e);
+    if (r) return r;
     throw e;
   }
 
