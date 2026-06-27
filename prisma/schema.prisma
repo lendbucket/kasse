@@ -276,7 +276,7 @@ model Location {
   geofenceRadius              Int                     @default(100)
   businessHours               Json?
   salonTransactLocationId     String?
-  bookingSlug                 String?
+  bookingSlug                 String?                 // Nullable; @@unique treats NULLs as distinct (Postgres), so un-slugged locations don't collide
   createdAt                   DateTime                @default(now())
   groupId                     String?
   appointments                Appointment[]
