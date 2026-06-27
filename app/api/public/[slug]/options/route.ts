@@ -14,12 +14,13 @@ import type { TenantContext } from "@/lib/tenant/context";
  * TODO: add rate-limiting middleware before heavy public launch (e.g., per-IP).
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
 
-  const ctx = await resolvePublicContextBySlug(slug);
+  const locationSlug = new URL(request.url).searchParams.get("location") ?? undefined;
+  const ctx = await resolvePublicContextBySlug(slug, locationSlug);
   if (!ctx) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
