@@ -2,6 +2,29 @@ import Link from "next/link";
 import { listPublicLocationsBySlug } from "@/lib/booking/public-context";
 import { BookingFlow } from "./booking-flow";
 
+function NotFound({ message }: { message: string }) {
+  return (
+    <div style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "var(--bg-page)",
+      color: "var(--text-primary)",
+      fontFamily: "var(--font-inter), sans-serif",
+    }}>
+      <div style={{ textAlign: "center" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
+          Not Found
+        </h1>
+        <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+          {message}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default async function BookPage({
   params,
 }: {
@@ -11,41 +34,27 @@ export default async function BookPage({
   const data = await listPublicLocationsBySlug(slug);
 
   if (!data || data.locations.length === 0) {
-    return (
-      <div style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg-page)",
-        color: "var(--text-primary)",
-        fontFamily: "var(--font-inter), sans-serif",
-      }}>
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-            Not Found
-          </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-            This booking page doesn&apos;t exist or is no longer available.
-          </p>
-        </div>
-      </div>
-    );
+    return <NotFound message="This booking page doesn't exist or is no longer available." />;
   }
 
-  if (data.locations.length === 1) {
+  const bookable = data.locations.filter((loc) => loc.bookingSlug);
+
+  if (bookable.length === 0) {
+    return <NotFound message="Online booking isn't set up for this business yet." />;
+  }
+
+  if (bookable.length === 1) {
     return (
       <BookingFlow
         slug={slug}
+        locationSlug={bookable[0].bookingSlug!}
         organizationName={data.organizationName}
-        locationName={data.locations[0].name}
+        locationName={bookable[0].name}
       />
     );
   }
 
-  // Multiple locations — render a location picker
-  const bookableLocations = data.locations.filter((loc) => loc.bookingSlug);
-
+  // Multiple bookable locations — render a location picker
   return (
     <div style={{
       minHeight: "100vh",
@@ -67,7 +76,7 @@ export default async function BookPage({
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {bookableLocations.map((loc) => (
+          {bookable.map((loc) => (
             <Link
               key={loc.id}
               href={`/book/${slug}/${loc.bookingSlug}`}

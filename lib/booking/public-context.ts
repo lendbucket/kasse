@@ -64,7 +64,7 @@ export async function resolvePublicContextBySlug(
         select: { id: true, name: true, timezone: true },
       })
     : await prismaAdmin.location.findFirst({
-        where: { organizationId: org.id },
+        where: { organizationId: org.id, isActive: true },
         orderBy: { createdAt: "asc" },
         select: { id: true, name: true, timezone: true },
       });
