@@ -110,6 +110,7 @@ export default function SettingsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<Record<string, string>>({})
+  const [taxByLoc, setTaxByLoc] = useState<Record<string, { ratePercent: string; services: boolean; products: boolean; loading: boolean; saving: boolean; saved: boolean; error: string | null }>>({})
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -140,6 +141,63 @@ export default function SettingsPage() {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ settingsUpdates: updates }),
     })
+  }
+
+  // Load per-location tax rates when the sales_taxes section is active
+  useEffect(() => {
+    if (section !== "sales_taxes" || !org.locations?.length) return
+    const locs = org.locations as { id: string; name: string }[]
+    for (const loc of locs) {
+      if (taxByLoc[loc.id]) continue
+      setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ratePercent: "", services: true, products: true, loading: true, saving: false, saved: false, error: null } }))
+      fetch(`/api/tax?locationId=${encodeURIComponent(loc.id)}`)
+        .then(async (res) => {
+          if (!res.ok) throw new Error("Failed to load tax")
+          const data = await res.json()
+          setTaxByLoc((prev) => ({
+            ...prev,
+            [loc.id]: {
+              ratePercent: data.ratePercent != null ? String(data.ratePercent) : "",
+              services: data.applicableToServices ?? true,
+              products: data.applicableToProducts ?? true,
+              loading: false, saving: false, saved: false, error: null,
+            },
+          }))
+        })
+        .catch(() => {
+          setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], loading: false, error: "Failed to load tax rate" } }))
+        })
+    }
+  }, [section, org.locations, taxByLoc])
+
+  async function saveLocationTax(locationId: string) {
+    const row = taxByLoc[locationId]
+    if (!row) return
+    const parsed = parseFloat(row.ratePercent)
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 25) {
+      setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], error: "Rate must be a number between 0 and 25" } }))
+      return
+    }
+    setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], saving: true, error: null, saved: false } }))
+    try {
+      const res = await fetch("/api/tax", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locationId, ratePercent: parsed, applicableToServices: row.services, applicableToProducts: row.products }),
+      })
+      if (res.status === 403) {
+        setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], saving: false, error: "You don't have permission to edit tax" } }))
+        return
+      }
+      if (!res.ok) {
+        setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], saving: false, error: "Failed to save tax rate" } }))
+        return
+      }
+      setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], saving: false, saved: true } }))
+      setTimeout(() => setTaxByLoc((prev) => prev[locationId] ? ({ ...prev, [locationId]: { ...prev[locationId], saved: false } }) : prev), 2000)
+    } catch {
+      setTaxByLoc((prev) => ({ ...prev, [locationId]: { ...prev[locationId], saving: false, error: "Network error" } }))
+    }
   }
 
   function toggleSection(s: string) {
@@ -207,17 +265,56 @@ export default function SettingsPage() {
       </div>)
 
       case "sales_taxes": return (<div>
-        <SH title="Sales taxes" sub="Configure tax rates for your locations." />
-        <Card>
-          <div style={{ padding: 20 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Tax rate (%)</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input type="number" step="0.01" value={settings.taxRate ?? 8.25} onChange={(e) => saveSettings({ taxRate: parseFloat(e.target.value) })}
-                style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, color: "#111827", fontFamily: "var(--font-fira), monospace" }} />
-              <span style={{ fontSize: 14, color: "#9ca3af" }}>% applied to all taxable services</span>
-            </div>
-          </div>
-        </Card>
+        <SH title="Sales taxes" sub="Configure tax rates for each location." />
+        {!org.locations?.length ? (
+          <Card><div style={{ padding: 20, fontSize: 14, color: "#6b7280" }}>Add a location first to configure its tax rate.</div></Card>
+        ) : (org.locations as { id: string; name: string }[]).map((loc) => {
+          const row = taxByLoc[loc.id]
+          return (
+            <Card key={loc.id}>
+              <div style={{ padding: 20 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: "#111827", margin: "0 0 16px" }}>{loc.name}</h3>
+                {row?.loading ? (
+                  <p style={{ fontSize: 13, color: "#9ca3af" }}>Loading...</p>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Tax rate (%)</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <input type="number" step="0.01" value={row?.ratePercent ?? ""}
+                          onChange={(e) => setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], ratePercent: e.target.value, saved: false } }))}
+                          style={{ width: 120, height: 44, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 14px", fontSize: 15, color: "#111827", fontFamily: "var(--font-fira), monospace" }} />
+                        <span style={{ fontSize: 14, color: "#9ca3af" }}>%</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: "#374151" }}>Applies to services</p>
+                        </div>
+                        <Toggle on={row?.services ?? true} onChange={() => setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], services: !prev[loc.id]?.services, saved: false } }))} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div>
+                          <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: "#374151" }}>Applies to products</p>
+                        </div>
+                        <Toggle on={row?.products ?? true} onChange={() => setTaxByLoc((prev) => ({ ...prev, [loc.id]: { ...prev[loc.id], products: !prev[loc.id]?.products, saved: false } }))} />
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <button onClick={() => saveLocationTax(loc.id)} disabled={row?.saving}
+                        style={{ height: 36, padding: "0 16px", background: "#606e74", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 600, color: "white", cursor: row?.saving ? "not-allowed" : "pointer", opacity: row?.saving ? 0.7 : 1, fontFamily: "inherit" }}>
+                        {row?.saving ? "Saving..." : "Save"}
+                      </button>
+                      {row?.saved && <span style={{ fontSize: 13, color: "#16a34a", fontWeight: 500 }}>Saved</span>}
+                      {row?.error && <span style={{ fontSize: 13, color: "#dc2626" }}>{row.error}</span>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </Card>
+          )
+        })}
       </div>)
 
       case "receipts": return (<div>

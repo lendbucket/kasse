@@ -4,15 +4,15 @@ import { resolvePriceForBooking } from "@/lib/compensation/resolve";
 
 type PrismaTx = Prisma.TransactionClient;
 
-const TZ = "America/Chicago";
-
 export interface DaySlotsInput {
   organizationId: string;
   locationId: string;
   staffId: string;
   serviceId: string;
-  /** YYYY-MM-DD, Chicago-local calendar date */
+  /** YYYY-MM-DD, location-local calendar date */
   date: string;
+  /** IANA timezone for the location (e.g. "America/Chicago") */
+  timeZone: string;
   /** Slot step in minutes (default 15) */
   stepMinutes?: number;
 }
@@ -30,7 +30,7 @@ export interface DaySlotsResult {
  *
  * ALGORITHM:
  * 1. Resolve duration via resolvePriceForBooking.
- * 2. Walk the Chicago-local date from 08:00 to 20:00 in stepMinutes increments.
+ * 2. Walk the location-local date from 08:00 to 20:00 in stepMinutes increments.
  *    For each candidate, convert to UTC and compute candidateEnd.
  * 3. Call checkStylistAvailability for each candidate. If ok, include the slot.
  * 4. Return the list of open slots + service duration.
@@ -53,6 +53,7 @@ export async function generateDaySlots(
     staffId,
     serviceId,
     date,
+    timeZone,
     stepMinutes = 15,
   } = input;
 
@@ -63,14 +64,13 @@ export async function generateDaySlots(
     organizationId,
   });
 
-  // 2. Build candidate window: 08:00–20:00 Chicago time, stepping by stepMinutes
-  //    Convert each Chicago-local time to UTC using the same Intl approach the
-  //    engine uses (via lib/chicago-time.ts pattern).
+  // 2. Build candidate window: 08:00–20:00 location-local time, stepping by stepMinutes
+  //    Convert each local time to UTC using the Intl approach.
   const [y, m, d] = date.split("-").map(Number);
 
-  // Compute Chicago→UTC offset for the target date (use noon to avoid DST edge)
+  // Compute local→UTC offset for the target date (use noon to avoid DST edge)
   const noonUTC = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const offsetMinutes = chicagoOffsetMinutes(noonUTC);
+  const offsetMinutes = tzOffsetMinutes(noonUTC, timeZone);
 
   const slots: string[] = [];
   const startHour = 8;
@@ -78,7 +78,7 @@ export async function generateDaySlots(
 
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += stepMinutes) {
-      // Chicago local -> UTC
+      // Local -> UTC
       const candidateUTC = new Date(
         Date.UTC(y, m - 1, d, hour, minute, 0) - offsetMinutes * 60_000,
       );
@@ -106,13 +106,13 @@ export async function generateDaySlots(
 }
 
 /**
- * Compute the offset in minutes from Chicago local time to UTC for a given
- * instant. Positive means Chicago is behind UTC (e.g., +300 for CDT (UTC−5), +360 for CST (UTC−6)).
- * Same approach as lib/chicago-time.ts.
+ * Compute the offset in minutes from local time in the given IANA timezone to
+ * UTC for a given instant. Positive means local is behind UTC (e.g., +300 for
+ * CDT (UTC-5), +360 for CST (UTC-6)).
  */
-function chicagoOffsetMinutes(date: Date): number {
+function tzOffsetMinutes(date: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
+    timeZone,
     hour12: false,
     year: "numeric",
     month: "2-digit",

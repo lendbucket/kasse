@@ -20,7 +20,7 @@ interface StaffOption {
 
 interface OptionsResponse {
   organization: { name: string };
-  location: { id: string; name: string | null };
+  location: { id: string; name: string | null; timezone: string };
   services: ServiceOption[];
   staff: StaffOption[];
 }
@@ -61,10 +61,10 @@ function formatDuration(minutes: number | null): string {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-function formatSlotTime(iso: string): string {
+function formatSlotTime(iso: string, timeZone: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
+    timeZone,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
@@ -82,42 +82,41 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function todayStr(): string {
+function todayStr(timeZone: string): string {
   const now = new Date();
-  const chi = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(now);
-  return chi;
 }
 
-function maxDateStr(): string {
+function maxDateStr(timeZone: string): string {
   const d = new Date();
   d.setDate(d.getDate() + 90);
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Chicago",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(d);
 }
 
-function chicagoTimeFromISO(iso: string): string {
+function timeFromISO(iso: string, timeZone: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString("en-US", {
-    timeZone: "America/Chicago",
+    timeZone,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
   });
 }
 
-function chicagoDateFromISO(iso: string): string {
+function dateFromISO(iso: string, timeZone: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", {
-    timeZone: "America/Chicago",
+    timeZone,
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -131,10 +130,12 @@ function chicagoDateFromISO(iso: string): string {
 
 export function BookingFlow({
   slug,
+  locationSlug,
   organizationName,
   locationName,
 }: {
   slug: string;
+  locationSlug?: string;
   organizationName: string;
   locationName: string | null;
 }) {
@@ -162,6 +163,8 @@ export function BookingFlow({
 
   const abortRef = useRef<AbortController | null>(null);
 
+  const tz = options?.location.timezone ?? "America/Chicago";
+
   /* ---------- Fetch options on mount ---------- */
 
   useEffect(() => {
@@ -169,7 +172,9 @@ export function BookingFlow({
     setOptionsLoading(true);
     setOptionsError(null);
 
-    fetch(`/api/public/${encodeURIComponent(slug)}/options`, { signal: ctrl.signal })
+    const optUrl = `/api/public/${encodeURIComponent(slug)}/options` + (locationSlug ? `?location=${encodeURIComponent(locationSlug)}` : "");
+
+    fetch(optUrl, { signal: ctrl.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error("Failed to load options");
         const data: OptionsResponse = await res.json();
@@ -181,7 +186,7 @@ export function BookingFlow({
       .finally(() => setOptionsLoading(false));
 
     return () => ctrl.abort();
-  }, [slug]);
+  }, [slug, locationSlug]);
 
   /* ---------- Fetch slots when date changes ---------- */
 
@@ -203,6 +208,7 @@ export function BookingFlow({
         serviceId: selectedService.id,
         date,
       });
+      if (locationSlug) qs.set("location", locationSlug);
 
       fetch(`/api/public/${encodeURIComponent(slug)}/availability?${qs}`, {
         signal: ctrl.signal,
@@ -220,7 +226,7 @@ export function BookingFlow({
         })
         .finally(() => setSlotsLoading(false));
     },
-    [slug, selectedService, selectedStaff],
+    [slug, locationSlug, selectedService, selectedStaff],
   );
 
   useEffect(() => {
@@ -242,10 +248,10 @@ export function BookingFlow({
     setSubmitting(true);
     setSubmitError(null);
 
-    // Extract Chicago-local date+time from the selected UTC slot ISO
+    // Extract location-local date+time from the selected UTC slot ISO
     const slotDate = new Date(selectedSlot);
-    const chiParts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Chicago",
+    const localParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
       hour12: false,
       year: "numeric",
       month: "2-digit",
@@ -253,7 +259,7 @@ export function BookingFlow({
       hour: "2-digit",
       minute: "2-digit",
     }).formatToParts(slotDate);
-    const p = Object.fromEntries(chiParts.map((x) => [x.type, x.value]));
+    const p = Object.fromEntries(localParts.map((x) => [x.type, x.value]));
     const bookDate = `${p.year}-${p.month}-${p.day}`;
     const hr = Number(p.hour) === 24 ? 0 : Number(p.hour);
     const bookTime = `${String(hr).padStart(2, "0")}:${p.minute}`;
@@ -270,6 +276,7 @@ export function BookingFlow({
           clientName: clientName.trim(),
           clientEmail: clientEmail.trim() || undefined,
           clientPhone: clientPhone.trim() || undefined,
+          locationSlug: locationSlug || undefined,
         }),
       });
 
@@ -475,8 +482,8 @@ export function BookingFlow({
               <input
                 type="date"
                 value={selectedDate}
-                min={todayStr()}
-                max={maxDateStr()}
+                min={todayStr(tz)}
+                max={maxDateStr(tz)}
                 onChange={(e) => setSelectedDate(e.target.value)}
                 className="input"
                 style={{ width: "100%", padding: "10px 12px", fontSize: 14 }}
@@ -530,7 +537,7 @@ export function BookingFlow({
                           transition: "all 0.15s",
                         }}
                       >
-                        {formatSlotTime(slot)}
+                        {formatSlotTime(slot, tz)}
                       </button>
                     ))}
                   </div>
@@ -573,7 +580,7 @@ export function BookingFlow({
               </div>
               {selectedSlot && (
                 <div style={{ color: "var(--text-secondary)", marginTop: 4 }}>
-                  {chicagoDateFromISO(selectedSlot)} at {chicagoTimeFromISO(selectedSlot)}
+                  {dateFromISO(selectedSlot, tz)} at {timeFromISO(selectedSlot, tz)}
                 </div>
               )}
             </div>
@@ -692,12 +699,12 @@ export function BookingFlow({
               </div>
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 2 }}>Date</div>
-                <div style={{ fontWeight: 500 }}>{chicagoDateFromISO(bookingResult.appointment.startTime)}</div>
+                <div style={{ fontWeight: 500 }}>{dateFromISO(bookingResult.appointment.startTime, tz)}</div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 2 }}>Time</div>
                 <div style={{ fontWeight: 500 }}>
-                  {chicagoTimeFromISO(bookingResult.appointment.startTime)} &ndash; {chicagoTimeFromISO(bookingResult.appointment.endTime)}
+                  {timeFromISO(bookingResult.appointment.startTime, tz)} &ndash; {timeFromISO(bookingResult.appointment.endTime, tz)}
                 </div>
               </div>
             </div>

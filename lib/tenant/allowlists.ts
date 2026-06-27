@@ -175,7 +175,7 @@ export const BUSINESS_SETTINGS_ALLOWED_FIELDS = new Set<string>([
   "acceptCash",
   "acceptCard",
   "acceptGiftCard",
-  "taxRate",
+  // taxRate removed — now written per-location via POST /api/tax (TaxRate table)
   "tipPromptEnabled",
   "tipOptions",
   "receiptFooter",

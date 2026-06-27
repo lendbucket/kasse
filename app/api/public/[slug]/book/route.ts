@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { resolvePublicContextBySlug } from "@/lib/booking/public-context";
+import { resolvePublicContextBySlug, listPublicLocationsBySlug } from "@/lib/booking/public-context";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import { checkStylistAvailability } from "@/lib/booking/availability";
 import { resolvePriceForBooking } from "@/lib/compensation/resolve";
@@ -11,7 +11,6 @@ import type { TenantContext } from "@/lib/tenant/context";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
-const TZ = "America/Chicago";
 
 /**
  * POST /api/public/[slug]/book
@@ -49,11 +48,6 @@ export async function POST(
     );
   }
 
-  const ctx = await resolvePublicContextBySlug(slug);
-  if (!ctx) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-
   let body: {
     staffId?: string;
     serviceId?: string;
@@ -62,6 +56,7 @@ export async function POST(
     clientName?: string;
     clientEmail?: string;
     clientPhone?: string;
+    locationSlug?: string;
   };
   try {
     body = await request.json();
@@ -69,7 +64,26 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { staffId, serviceId, date, time, clientName, clientEmail, clientPhone } = body;
+  const { staffId, serviceId, date, time, clientName, clientEmail, clientPhone, locationSlug } = body;
+
+  // Multi-location guard: if no locationSlug was provided, check whether the org
+  // has multiple bookable locations. If so, the client must select one explicitly
+  // rather than silently booking against the oldest location.
+  if (!locationSlug) {
+    const locs = await listPublicLocationsBySlug(slug);
+    const bookable = (locs?.locations ?? []).filter((l) => l.bookingSlug);
+    if (bookable.length > 1) {
+      return NextResponse.json(
+        { error: "location_required", message: "This business has multiple locations; please select one." },
+        { status: 400 },
+      );
+    }
+  }
+
+  const ctx = await resolvePublicContextBySlug(slug, locationSlug);
+  if (!ctx) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
 
   if (!staffId || !serviceId || !date || !time || !clientName?.trim()) {
     return NextResponse.json(
@@ -93,13 +107,12 @@ export async function POST(
     return NextResponse.json({ error: "invalid_time", expected: "HH:MM" }, { status: 400 });
   }
 
-  // Compute startTime as UTC from Chicago-local date+time
-  // Same Chicago→UTC approach as lib/booking/slots.ts chicagoOffsetMinutes
+  // Compute startTime as UTC from location-local date+time
   const [y, mo, d] = date.split("-").map(Number);
   const [h, mi] = time.split(":").map(Number);
 
   const noonUTC = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0));
-  const offsetMinutes = chicagoOffsetMinutes(noonUTC);
+  const offsetMinutes = tzOffsetMinutes(noonUTC, ctx.timezone);
   const startTime = new Date(
     Date.UTC(y, mo - 1, d, h, mi, 0) - offsetMinutes * 60_000,
   );
@@ -254,12 +267,11 @@ function isPgExclusionViolation(e: unknown): boolean {
 }
 
 /**
- * Compute Chicago→UTC offset in minutes for a given instant.
- * Same approach as lib/booking/slots.ts chicagoOffsetMinutes.
+ * Compute local→UTC offset in minutes for a given instant and IANA timezone.
  */
-function chicagoOffsetMinutes(date: Date): number {
+function tzOffsetMinutes(date: Date, timeZone: string): number {
   const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
+    timeZone,
     hour12: false,
     year: "numeric",
     month: "2-digit",

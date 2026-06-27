@@ -2563,7 +2563,7 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | `/api/staff/[id]/services` | GET, PUT | TENANT_SCOPED | Verifies staff in-org, then operates on StylistService |
 | `/api/staff/[id]/pricing` | GET, PUT | TENANT_SCOPED | Verifies staff in-org + serviceIds in eligibility set |
 | `/api/staff/[id]/compensation` | GET, PUT | TENANT_SCOPED | Upserts Compensation by staffId, org-verified |
-| `/api/tax` | GET | TENANT_SCOPED | Reads active TaxRate for a location; uses `requireTenantContext` + `assertLocationInTenant` + `withTenantScope` |
+| `/api/tax` | GET, POST | TENANT_SCOPED | GET reads active TaxRate for a location. POST supersedes the active TaxRate (end-dates+deactivates old, inserts new active row effective today); gated by `SETTINGS.EDIT_TAX`; location verified via `assertLocationInTenant`; both use `requireTenantContext` + `withTenantScope`. |
 
 ---
 
@@ -2575,6 +2575,7 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | `/api/public/[slug]/availability` | GET | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access (staff/service verification + slot generation engine) via withTenantScope scoped to the resolved org; isSuperadmin=false. Returns open appointment slots. No PII exposed. |
 | `lib/booking/public-context.ts` | — | PUBLIC_ANONYMOUS (helper) | Anonymous slug→org/location resolver. Uses prismaAdmin for the cross-tenant lookup (kasse_app role has rolbypassrls=FALSE; plain prisma returns zero rows without a tenant GUC). Only exposes org/location display info, never customer data. TODO: currently picks the oldest location (findFirst createdAt asc); must move to a per-location bookingSlug before multi-location ships. |
 | `/api/public/[slug]/book` | POST | PUBLIC_ANONYMOUS | Anonymous; slug→org resolved via prismaAdmin (cross-tenant lookup); all data access + write via withTenantScope scoped to the resolved org; isSuperadmin=false. Find-or-create client (match by phone/email within org, else create). Booking goes through availability engine (checkStylistAvailability) and is backstopped by appointment_no_double_booking exclusion constraint (23P01 → 409). |
+| `app/book/[slug]/[locationSlug]/page.tsx` | — (SSR) | PUBLIC_ANONYMOUS | Public, no session. Uses prismaAdmin (via resolvePublicContextBySlug) for cross-tenant slug→org/location resolution; only exposes org/location display info. Renders BookingFlow for the resolved location. |
 | `lib/booking/find-or-create-client.ts` | — | PUBLIC_ANONYMOUS (helper) | Runs inside caller's withTenantScope tx. Matches client by phone or email within the org (softDeletedAt null), else creates. No direct prisma/prismaAdmin import. |
 
 ---
