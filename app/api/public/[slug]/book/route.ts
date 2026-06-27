@@ -49,11 +49,6 @@ export async function POST(
     );
   }
 
-  const ctx = await resolvePublicContextBySlug(slug);
-  if (!ctx) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
-  }
-
   let body: {
     staffId?: string;
     serviceId?: string;
@@ -62,6 +57,7 @@ export async function POST(
     clientName?: string;
     clientEmail?: string;
     clientPhone?: string;
+    locationSlug?: string;
   };
   try {
     body = await request.json();
@@ -69,7 +65,12 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { staffId, serviceId, date, time, clientName, clientEmail, clientPhone } = body;
+  const { staffId, serviceId, date, time, clientName, clientEmail, clientPhone, locationSlug } = body;
+
+  const ctx = await resolvePublicContextBySlug(slug, locationSlug);
+  if (!ctx) {
+    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  }
 
   if (!staffId || !serviceId || !date || !time || !clientName?.trim()) {
     return NextResponse.json(

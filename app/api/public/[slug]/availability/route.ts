@@ -25,13 +25,15 @@ export async function GET(
 ) {
   const { slug } = await params;
 
-  const ctx = await resolvePublicContextBySlug(slug);
+  const url = new URL(request.url);
+  const locationSlug = url.searchParams.get("location") ?? undefined;
+
+  const ctx = await resolvePublicContextBySlug(slug, locationSlug);
   if (!ctx) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
   // Parse query params
-  const url = new URL(request.url);
   const staffId = url.searchParams.get("staffId");
   const serviceId = url.searchParams.get("serviceId");
   const date = url.searchParams.get("date");

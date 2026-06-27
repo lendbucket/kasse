@@ -131,10 +131,12 @@ function chicagoDateFromISO(iso: string): string {
 
 export function BookingFlow({
   slug,
+  locationSlug,
   organizationName,
   locationName,
 }: {
   slug: string;
+  locationSlug?: string;
   organizationName: string;
   locationName: string | null;
 }) {
@@ -169,7 +171,9 @@ export function BookingFlow({
     setOptionsLoading(true);
     setOptionsError(null);
 
-    fetch(`/api/public/${encodeURIComponent(slug)}/options`, { signal: ctrl.signal })
+    const optUrl = `/api/public/${encodeURIComponent(slug)}/options` + (locationSlug ? `?location=${encodeURIComponent(locationSlug)}` : "");
+
+    fetch(optUrl, { signal: ctrl.signal })
       .then(async (res) => {
         if (!res.ok) throw new Error("Failed to load options");
         const data: OptionsResponse = await res.json();
@@ -181,7 +185,7 @@ export function BookingFlow({
       .finally(() => setOptionsLoading(false));
 
     return () => ctrl.abort();
-  }, [slug]);
+  }, [slug, locationSlug]);
 
   /* ---------- Fetch slots when date changes ---------- */
 
@@ -203,6 +207,7 @@ export function BookingFlow({
         serviceId: selectedService.id,
         date,
       });
+      if (locationSlug) qs.set("location", locationSlug);
 
       fetch(`/api/public/${encodeURIComponent(slug)}/availability?${qs}`, {
         signal: ctrl.signal,
@@ -220,7 +225,7 @@ export function BookingFlow({
         })
         .finally(() => setSlotsLoading(false));
     },
-    [slug, selectedService, selectedStaff],
+    [slug, locationSlug, selectedService, selectedStaff],
   );
 
   useEffect(() => {
@@ -270,6 +275,7 @@ export function BookingFlow({
           clientName: clientName.trim(),
           clientEmail: clientEmail.trim() || undefined,
           clientPhone: clientPhone.trim() || undefined,
+          locationSlug: locationSlug || undefined,
         }),
       });
 
