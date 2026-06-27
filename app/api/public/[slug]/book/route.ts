@@ -5,13 +5,13 @@ import { withTenantScope } from "@/lib/tenant/db-scope";
 import { checkStylistAvailability } from "@/lib/booking/availability";
 import { resolvePriceForBooking } from "@/lib/compensation/resolve";
 import { findOrCreateClient } from "@/lib/booking/find-or-create-client";
+import { checkRateLimit } from "@/lib/rate-limit/check";
+import { getRateLimitIp } from "@/lib/http/headers";
 import type { TenantContext } from "@/lib/tenant/context";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 const TZ = "America/Chicago";
-
-// TODO: add rate-limiting middleware before public launch (per-IP/per-phone).
 
 /**
  * POST /api/public/[slug]/book
@@ -27,6 +27,27 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
+
+  // Rate-limit anonymous booking writes per IP (10 / 10 min). IP-only
+  // (identifier=null collapses to the IP axis) so one IP can't spam
+  // appointments across the public link. Fails open if Upstash is
+  // unconfigured — see lib/rate-limit/check.ts.
+  const rlIp = getRateLimitIp(request.headers);
+  const rl = await checkRateLimit("public-booking", rlIp, null);
+  if (!rl.ok) {
+    const retryAfterSec = Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000));
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many booking attempts. Please wait a moment and try again." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfterSec),
+          "X-RateLimit-Limit": String(rl.limit),
+          "X-RateLimit-Remaining": String(rl.remaining),
+        },
+      },
+    );
+  }
 
   const ctx = await resolvePublicContextBySlug(slug);
   if (!ctx) {
