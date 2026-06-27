@@ -15,9 +15,18 @@ export const maxDuration = 30;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = "Kasse <onboarding@kasseapp.com>";
 
-// Same base as the onboarding staff-invite route so the accept link points at the known public host.
-function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_ONBOARDING_BASE_URL ?? "https://signup.kasseapp.com";
+// Build the accept link on the SAME origin the owner is already using
+// (portal.kasseapp.com) — that domain is served by this app and is made public
+// in the route map. signup.kasseapp.com is NOT a domain on this Vercel project,
+// so we must not default to it. An explicit env override wins only if set to a
+// real on-project host.
+function getBaseUrl(request: Request): string {
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host) return `${proto}://${host}`;
+  const envBase = process.env.NEXT_PUBLIC_ONBOARDING_BASE_URL?.trim();
+  if (envBase) return envBase.replace(/\/+$/, "");
+  return "https://portal.kasseapp.com";
 }
 
 const ERROR_STATUS: Record<string, number> = {
@@ -56,7 +65,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: result.error }, { status: ERROR_STATUS[result.error] ?? 400 });
   }
 
-  const acceptUrl = `${getBaseUrl()}/staff/accept-invite?token=${result.rawToken}`;
+  const acceptUrl = `${getBaseUrl(request)}/staff/accept-invite?token=${result.rawToken}`;
   let emailSent = false;
   if (RESEND_API_KEY) {
     try {
