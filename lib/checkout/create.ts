@@ -154,8 +154,9 @@ export async function createImmediateCheckout(tx: Prisma.TransactionClient, inpu
     data: {
       organizationId: input.organizationId, locationId: input.locationId, cartId: cart.id, orderNumber,
       appointmentId: input.appointmentId ?? null, clientId: input.clientId ?? null,
-      // Cap freeform walk-in name (PII) before it lands in a permanent order record.
-      clientNameSnapshot: input.clientName ? input.clientName.slice(0, 200) : null,
+      // Cap + de-fang freeform walk-in name (PII) before it lands in a permanent record:
+      // strip control/format chars (RTL overrides, zero-width) that corrupt receipts. Spaces kept.
+      clientNameSnapshot: input.clientName ? input.clientName.replace(/[\p{Cc}\p{Cf}]/gu, "").trim().slice(0, 200) : null,
       subtotalCents, discountCents, taxCents, tipCents, totalCents, paidCents: totalCents, balanceDueCents: 0,
       status: OrderStatus.CLOSED, closedAt: new Date(),
       items: { create: itemCreate },

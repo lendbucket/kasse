@@ -15,8 +15,13 @@ const ERROR_STATUS: Record<string, number> = {
   unsupported_tender: 422, service_not_found: 404, staff_not_found: 404, location_mismatch: 409,
 };
 
-function isP2002(e: unknown): boolean {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+// Only an orderNumber unique-collision should trigger a retry (createImmediateCheckout
+// recomputes the number on re-entry). Any other P2002 is a real bug and must propagate.
+function isOrderNumberConflict(e: unknown): boolean {
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") return false;
+  const target = e.meta?.target;
+  const s = Array.isArray(target) ? target.join(",") : String(target ?? "");
+  return s.toLowerCase().includes("ordernumber");
 }
 
 export async function POST(request: NextRequest) {
@@ -68,7 +73,7 @@ export async function POST(request: NextRequest) {
   // row bumps our count and clears the clash. Non-P2002 errors propagate immediately.
   for (let attempt = 0; attempt < 4; attempt++) {
     try { result = await withTenantScope(prisma, ctx, (tx) => createImmediateCheckout(tx, input)); break; }
-    catch (e) { lastErr = e; if (isP2002(e)) continue; throw e; }
+    catch (e) { lastErr = e; if (isOrderNumberConflict(e)) continue; throw e; }
   }
   if (!result) { console.error("checkout failed after retries", { attempts: 4, idempotencyKey: input.idempotencyKey, err: lastErr }); return NextResponse.json({ error: "checkout_conflict" }, { status: 409 }); }
   if (!result.ok) return NextResponse.json({ error: result.error, detail: result.detail }, { status: ERROR_STATUS[result.error] ?? 400 });

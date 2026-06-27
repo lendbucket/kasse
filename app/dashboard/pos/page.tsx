@@ -13,6 +13,7 @@ type PaymentMethod = "cash" | "card" | "other";
 const FALLBACK_TAX_RATE = 0.0825; // used only if /api/tax has no active row or fails
 const ALL_CAT = "All";
 function fmt(n: number) { return `$${n.toFixed(2)}`; }
+function newCartKey() { return (typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 
 export default function POSPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -73,10 +74,10 @@ export default function POSPage() {
 
   function addToCart(s: Service) {
     setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price, staffId: "" }]);
-    setCartKey((k) => k || ((typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`));
+    setCartKey(newCartKey()); // any composition change mints a fresh idempotency key
   }
-  function setLineStaff(key: string, sid: string) { setCart((p) => p.map((i) => (i.key === key ? { ...i, staffId: sid } : i))); }
-  function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); }
+  function setLineStaff(key: string, sid: string) { setCart((p) => p.map((i) => (i.key === key ? { ...i, staffId: sid } : i))); setCartKey(newCartKey()); }
+  function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); setCartKey(newCartKey()); }
   function clearCart() { setCart([]); setClient(null); setTipInput(""); setCartKey(""); }
 
   async function charge() {
