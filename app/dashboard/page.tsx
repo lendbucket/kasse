@@ -1,7 +1,6 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { prismaAdmin } from "@/lib/prismaAdmin";
 import { getLandingForRole } from "@/lib/permissions/role-landing";
 import { getActiveOnboardingSessionForOwner } from "@/lib/onboarding/sessions";
@@ -18,6 +17,19 @@ import {
   ChevronsUpDown,
   Sparkles,
 } from "lucide-react";
+
+type LocationRow = { id: string; name: string; sales: number; txn: number; avg: number };
+
+/** Compute the UTC offset in minutes for a given instant in a named timezone. */
+function offsetMinutes(date: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const p = Object.fromEntries(dtf.formatToParts(date).map(x => [x.type, x.value]));
+  const hour = Number(p.hour) === 24 ? 0 : Number(p.hour);
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, hour, +p.minute, +p.second);
+  return (asUTC - date.getTime()) / 60000;
+}
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -71,23 +83,62 @@ export default async function DashboardPage() {
     }
   }
 
-  let todayRevenue = 0;
-  let transactionCount = 0;
-  let appointmentCount = 0;
+  const orgId = session.user.organizationId;
+
+  let todayRevenue = 0, transactionCount = 0, appointmentCount = 0, tipsTotal = 0, compsTotal = 0;
+  let locationRows: LocationRow[] = [];
+  // Fallback when Organization.timezone is unset (default in schema is America/Chicago)
+  let orgTz = "America/Chicago";
 
   try {
-    const now = new Date();
-    const sod = new Date(now); sod.setHours(0, 0, 0, 0);
-    const eod = new Date(now); eod.setHours(23, 59, 59, 999);
-    const txn = await prisma.transaction.aggregate({
-      where: { createdAt: { gte: sod, lte: eod }, status: "completed" },
-      _sum: { total: true }, _count: true,
-    });
-    todayRevenue = txn._sum.total ?? 0;
-    transactionCount = txn._count;
-    appointmentCount = await prisma.appointment.count({
-      where: { startTime: { gte: sod, lte: eod } },
-    });
+    if (orgId) {
+      const org = await prismaAdmin.organization.findUnique({
+        where: { id: orgId }, select: { timezone: true },
+      });
+      orgTz = org?.timezone || "America/Chicago";
+
+      // Day window computed in the ORG's timezone (multi-tenant correct), not server-UTC.
+      const now = new Date();
+      const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: orgTz,
+        year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+      const [yy, mm, dd] = ymd.split("-").map(Number);
+      const noonUTC = new Date(Date.UTC(yy, mm - 1, dd, 12, 0, 0));
+      const off = offsetMinutes(noonUTC, orgTz);
+      const sod = new Date(Date.UTC(yy, mm - 1, dd, 0, 0, 0) - off * 60000);
+      const eod = new Date(Date.UTC(yy, mm - 1, dd, 23, 59, 59, 999) - off * 60000);
+
+      const txn = await prismaAdmin.transaction.aggregate({
+        where: { organizationId: orgId, createdAt: { gte: sod, lte: eod }, status: "completed" },
+        _sum: { total: true, tip: true, discount: true }, _count: true,
+      });
+      todayRevenue = txn._sum.total ?? 0;
+      tipsTotal = txn._sum.tip ?? 0;
+      compsTotal = txn._sum.discount ?? 0;
+      transactionCount = txn._count;
+
+      appointmentCount = await prismaAdmin.appointment.count({
+        where: { organizationId: orgId, startTime: { gte: sod, lte: eod } },
+      });
+
+      // Per-location totals: single groupBy instead of N+1 aggregates
+      const locations = await prismaAdmin.location.findMany({
+        where: { organizationId: orgId, isActive: true },
+        select: { id: true, name: true }, orderBy: { name: "asc" },
+      });
+      const locTotals = await prismaAdmin.transaction.groupBy({
+        by: ["locationId"],
+        where: { organizationId: orgId, createdAt: { gte: sod, lte: eod }, status: "completed" },
+        _sum: { total: true },
+        _count: { _all: true },
+      });
+      const totalsByLoc = new Map(
+        locTotals.map((t) => [t.locationId, { sales: t._sum.total ?? 0, txn: t._count._all }]),
+      );
+      locationRows = locations.map((loc) => {
+        const t = totalsByLoc.get(loc.id) ?? { sales: 0, txn: 0 };
+        return { id: loc.id, name: loc.name, sales: t.sales, txn: t.txn, avg: t.txn > 0 ? t.sales / t.txn : 0 };
+      });
+    }
   } catch (e) { console.error("Dashboard data error:", e); }
 
   // Onboarding session check — surface the completion tile for owners.
@@ -116,8 +167,8 @@ export default async function DashboardPage() {
     { label: "Transactions", value: String(transactionCount) },
     { label: "Average sale", value: `$${avgTicket.toFixed(2)}` },
     { label: "Appointments", value: String(appointmentCount) },
-    { label: "Tips", value: "$0.00" },
-    { label: "Comps & discounts", value: "$0.00" },
+    { label: "Tips", value: `$${tipsTotal.toFixed(2)}` },
+    { label: "Comps & discounts", value: `$${compsTotal.toFixed(2)}` },
   ];
 
   return (
@@ -130,7 +181,7 @@ export default async function DashboardPage() {
             <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px", margin: 0 }}>Home</h1>
             <span style={{ color: "#606E74", fontSize: 22, fontWeight: 700 }}>:</span>
             <span style={{ fontSize: 22, fontWeight: 700, color: "#606E74", letterSpacing: "-0.5px", display: "flex", alignItems: "center", gap: 4 }}>
-              All locations <ChevronDown size={18} strokeWidth={1.5} />
+              {locationRows.length === 1 ? locationRows[0].name : "All locations"} <ChevronDown size={18} strokeWidth={1.5} />
             </span>
           </div>
           <DashboardClock />
@@ -275,24 +326,14 @@ export default async function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {[
-                { name: "Salon Envy\u00ae Corpus Christi", sales: "$0.00", txn: "0", avg: "$0.00" },
-                { name: "Salon Envy\u00ae San Antonio", sales: `$${todayRevenue.toFixed(2)}`, txn: String(transactionCount), avg: `$${avgTicket.toFixed(2)}` },
-              ].map((loc) => (
-                <tr key={loc.name}>
+              {locationRows.length === 0 ? (
+                <tr><td colSpan={4} style={{ color: "#9ca3af", fontSize: 13 }}>No locations yet</td></tr>
+              ) : locationRows.map((loc) => (
+                <tr key={loc.id}>
                   <td style={{ fontWeight: 600 }}>{loc.name}</td>
-                  <td>
-                    <div style={{ fontFamily: "var(--font-fira), monospace", fontWeight: 600 }}>{loc.sales}</div>
-                    <span className="trend-neutral" style={{ fontSize: 11 }}>N/A</span>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{loc.txn}</div>
-                    <span className="trend-neutral" style={{ fontSize: 11 }}>N/A</span>
-                  </td>
-                  <td>
-                    <div style={{ fontFamily: "var(--font-fira), monospace" }}>{loc.avg}</div>
-                    <span className="trend-neutral" style={{ fontSize: 11 }}>N/A</span>
-                  </td>
+                  <td><div style={{ fontFamily: "var(--font-fira), monospace", fontWeight: 600 }}>${loc.sales.toFixed(2)}</div></td>
+                  <td><div style={{ fontWeight: 600 }}>{loc.txn}</div></td>
+                  <td><div style={{ fontFamily: "var(--font-fira), monospace" }}>${loc.avg.toFixed(2)}</div></td>
                 </tr>
               ))}
             </tbody>
