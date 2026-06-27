@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolvePublicContextBySlug } from "@/lib/booking/public-context";
 import { generateDaySlots } from "@/lib/booking/slots";
-import { todayChicagoDateString } from "@/lib/chicago-time";
+import { todayDateStringInTz } from "@/lib/chicago-time";
 import { withTenantScope } from "@/lib/tenant/db-scope";
 import type { TenantContext } from "@/lib/tenant/context";
 
@@ -68,8 +68,8 @@ export async function GET(
     );
   }
 
-  // Validate date is not in the past (Chicago time)
-  const todayStr = todayChicagoDateString();
+  // Validate date is not in the past (location-local time)
+  const todayStr = todayDateStringInTz(ctx.timezone);
   if (date < todayStr) {
     return NextResponse.json(
       { error: "date_in_past" },
@@ -146,6 +146,7 @@ export async function GET(
       staffId,
       serviceId,
       date,
+      timeZone: ctx.timezone,
       stepMinutes,
     });
   });
