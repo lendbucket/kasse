@@ -6,7 +6,7 @@ import { Plus, Pencil, Power, Shield, Scissors, MapPin, X, Users, Settings, Cale
 
 type Location = { id: string; name: string };
 type Role = "manager" | "stylist";
-type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; isActive: boolean; bookableByCustomers: boolean; location: { id: string; name: string } | null };
+type StaffMember = { id: string; name: string; email: string | null; phone: string | null; role: string; locationId: string; isActive: boolean; bookableByCustomers: boolean; userId: string | null; location: { id: string; name: string } | null };
 
 export default function StaffPage() {
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -14,6 +14,19 @@ export default function StaffPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalState, setModalState] = useState<{ open: false } | { open: true; mode: "create" } | { open: true; mode: "edit"; member: StaffMember }>({ open: false });
+  const [inviteState, setInviteState] = useState<Record<string, "sending" | "sent">>({});
+
+  async function sendInvite(m: StaffMember) {
+    setInviteState((s) => ({ ...s, [m.id]: "sending" }));
+    try {
+      const r = await fetch(`/api/staff/${m.id}/invite`, { method: "POST" });
+      if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error || "failed"); }
+      setInviteState((s) => ({ ...s, [m.id]: "sent" }));
+    } catch (e) {
+      setInviteState((s) => { const n = { ...s }; delete n[m.id]; return n; });
+      setError(e instanceof Error ? `Invite failed: ${e.message}` : "Invite failed");
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -84,6 +97,11 @@ export default function StaffPage() {
                     </span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                        {!s.userId && s.email && (
+                          <button onClick={() => sendInvite(s)} disabled={inviteState[s.id] === "sending" || inviteState[s.id] === "sent"} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", background: inviteState[s.id] === "sent" ? "var(--bg-page)" : "var(--bg-card)", fontSize: 12, fontWeight: 500, color: inviteState[s.id] === "sent" ? "var(--text-muted)" : "var(--brand)", cursor: inviteState[s.id] ? "default" : "pointer" }}>
+                            {inviteState[s.id] === "sent" ? "Invite sent" : inviteState[s.id] === "sending" ? "Sending\u2026" : "Invite"}
+                          </button>
+                        )}
                         <Link href={`/dashboard/staff/${s.id}`} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}><Settings size={12} /> Configure</Link>
                         <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 12, fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Pencil size={12} /> Edit</button>
                         <button onClick={() => toggleActive(s)} style={{ height: 28, padding: "0 10px", borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 12, fontWeight: 500, color: s.isActive ? "var(--error)" : "var(--success)", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
@@ -111,6 +129,11 @@ export default function StaffPage() {
                   </div>
                   {s.location?.name && <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)", marginBottom: 4 }}><MapPin size={12} />{s.location.name}</div>}
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    {!s.userId && s.email && (
+                      <button onClick={() => sendInvite(s)} disabled={inviteState[s.id] === "sending" || inviteState[s.id] === "sent"} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, fontWeight: 500, color: inviteState[s.id] === "sent" ? "var(--text-muted)" : "var(--brand)", cursor: inviteState[s.id] ? "default" : "pointer" }}>
+                        {inviteState[s.id] === "sent" ? "Sent" : inviteState[s.id] === "sending" ? "\u2026" : "Invite"}
+                      </button>
+                    )}
                     <Link href={`/dashboard/staff/${s.id}`} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Configure</Link>
                     <button onClick={() => setModalState({ open: true, mode: "edit", member: s })} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, fontWeight: 500, color: "var(--text-secondary)", cursor: "pointer" }}>Edit</button>
                     <button onClick={() => toggleActive(s)} style={{ flex: 1, height: 32, borderRadius: 6, border: "1px solid var(--border)", background: "var(--bg-card)", fontSize: 13, fontWeight: 500, color: s.isActive ? "var(--error)" : "var(--success)", cursor: "pointer" }}>{s.isActive ? "Deactivate" : "Activate"}</button>
