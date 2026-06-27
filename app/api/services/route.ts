@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { applyServiceBuilderFields } from "@/lib/services/fields";
 import {
   requireTenantContext,
   assertLocationInTenant,
@@ -97,18 +99,20 @@ export async function POST(request: NextRequest) {
     throw e;
   }
 
+  const data: Record<string, unknown> = {
+    name: body.name.trim(),
+    price: body.price,
+    duration: Math.round(body.duration),
+    category: body.category?.trim() || null,
+    locationId: body.locationId,
+    organizationId: location.organizationId,
+    isActive: body.active ?? true,
+  };
+  const fieldErr = applyServiceBuilderFields(body as unknown as Record<string, unknown>, data);
+  if (fieldErr) return NextResponse.json({ error: fieldErr }, { status: 400 });
+
   const service = await withTenantScope(prisma, ctx, async (tx) => {
-    return tx.service.create({
-      data: {
-        name: body.name.trim(),
-        price: body.price,
-        duration: Math.round(body.duration),
-        category: body.category?.trim() || null,
-        locationId: body.locationId,
-        organizationId: location.organizationId,
-        isActive: body.active ?? true,
-      },
-    });
+    return tx.service.create({ data: data as Prisma.ServiceUncheckedCreateInput });
   });
 
   return NextResponse.json({ service }, { status: 201 });
