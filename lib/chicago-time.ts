@@ -47,3 +47,15 @@ export function todayChicagoDateString(): string {
   });
   return dtf.format(now);
 }
+
+/** Today's date string (YYYY-MM-DD) in the given IANA timezone. */
+export function todayDateStringInTz(timeZone: string): string {
+  const now = new Date();
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return dtf.format(now);
+}

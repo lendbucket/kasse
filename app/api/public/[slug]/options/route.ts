@@ -71,7 +71,7 @@ export async function GET(
 
   return NextResponse.json({
     organization: { name: ctx.organizationName },
-    location: { id: ctx.locationId, name: ctx.locationName },
+    location: { id: ctx.locationId, name: ctx.locationName, timezone: ctx.timezone },
     services,
     staff,
   });
