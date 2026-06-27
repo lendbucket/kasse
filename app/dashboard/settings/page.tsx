@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
+import LocationsSection from "@/components/settings/LocationsSection"
 import {
   User, Lock, Sliders, Building2, MapPin, Palette, Clock, CreditCard, Gift,
   Percent, Tag, Receipt, Zap, Landmark, ArrowUpRight, Bell, Calendar, Users,
@@ -210,6 +211,8 @@ export default function SettingsPage() {
     if (loading) return <p style={{ color: "#9ca3af" }}>Loading...</p>
 
     switch (section) {
+      case "locations": return <LocationsSection />
+
       case "about": return (<div>
         <SH title="About" sub="Manage your business account and settings." />
         <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden", marginBottom: 32 }}>

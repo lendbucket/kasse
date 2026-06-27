@@ -66,6 +66,7 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/clients` | GET, POST | Lists/creates clients scoped to tenant org; asserts location ownership on POST |
 | `/api/staff` | GET, POST | Lists/creates staff scoped to tenant org; asserts location ownership on POST |
 | `/api/locations` | GET, POST | GET returns locations belonging to the authenticated tenant. POST creates a new location; gated by plan tier (FREE = max 1 location). Returns 402 PAYMENT_REQUIRED with structured upgrade body on limit. |
+| `/api/locations/[id]` | PATCH | Updates a single location's profile (name/address/city/state/zip/phone/email/timezone/isActive) via `updateMany` scoped to organizationId; gated `SETTINGS.EDIT_LOCATIONS`; `requireTenantContext` + `withTenantScope`; count 0 => 404. |
 | `/api/services` | GET, POST | Lists/creates services scoped to tenant org; asserts location on POST |
 | `/api/services/[id]` | PATCH, DELETE | Updates/soft-deletes a service, scoped to tenant organizationId |
 | `/api/transactions` | POST | Creates a payment transaction; asserts location + staff belong to tenant |
