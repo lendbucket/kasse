@@ -15,9 +15,28 @@ export const maxDuration = 30;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const RESEND_FROM = "Kasse <onboarding@kasseapp.com>";
 
-// Same base as the onboarding staff-invite route so the accept link points at the known public host.
-function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_ONBOARDING_BASE_URL ?? "https://signup.kasseapp.com";
+// Build the accept link on a TRUSTED host only. The owner normally invites from
+// portal.kasseapp.com (served by this app + made public in the route map). The
+// forwarded host is validated against an allowlist so a spoofed x-forwarded-host
+// can never place a hostile origin into the invite email — that link carries the
+// invitee's account-creation token. signup.kasseapp.com is NOT on this project,
+// so it is never a default. NEXT_PUBLIC_PORTAL_HOST lets staging/preview opt in.
+const ALLOWED_INVITE_HOSTS = new Set(
+  ["portal.kasseapp.com", process.env.NEXT_PUBLIC_PORTAL_HOST?.trim()].filter(
+    Boolean,
+  ) as string[],
+);
+
+function getBaseUrl(request: Request): string {
+  const host =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (host && ALLOWED_INVITE_HOSTS.has(host)) {
+    const proto = request.headers.get("x-forwarded-proto") ?? "https";
+    return `${proto}://${host}`;
+  }
+  const envBase = process.env.NEXT_PUBLIC_ONBOARDING_BASE_URL?.trim();
+  if (envBase) return envBase.replace(/\/+$/, "");
+  return "https://portal.kasseapp.com";
 }
 
 const ERROR_STATUS: Record<string, number> = {
@@ -56,7 +75,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: result.error }, { status: ERROR_STATUS[result.error] ?? 400 });
   }
 
-  const acceptUrl = `${getBaseUrl()}/staff/accept-invite?token=${result.rawToken}`;
+  const acceptUrl = `${getBaseUrl(request)}/staff/accept-invite?token=${result.rawToken}`;
   let emailSent = false;
   if (RESEND_API_KEY) {
     try {

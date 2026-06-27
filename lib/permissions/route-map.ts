@@ -28,6 +28,12 @@ export const routeMap: Record<string, RouteGuard> = {
   "/register": { type: "public" },
   "/forgot-password": { type: "public" },
   "/reset-password": { type: "public" },
+  // Staff invitation acceptance — the invitee has no account/JWT yet; the
+  // invitation token IS the auth. The page renders the set-password form; the
+  // accept API consumes the token and creates the User + links Staff. Exact-match
+  // entries win over the /api/onboarding (authenticated) prefix in getRouteGuard.
+  "/staff/accept-invite": { type: "public" },
+  "/api/onboarding/staff-accept": { type: "public" },
   "/api/health": { type: "public" },
   "/api/auth": { type: "public" },
   // Cron routes are middleware-public; the route handler enforces
