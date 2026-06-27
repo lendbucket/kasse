@@ -2587,6 +2587,7 @@ performed before PR #129 ships. Tracked as a hard pre-req for P1.C.3.
 | Route | Methods | Classification | Notes |
 |-------|---------|---------------|-------|
 | `/api/analytics/retention` | GET | TENANT_SCOPED | Read-only analytics; runs inside `withTenantScope`; RLS-scoped (kasse_app). Transaction + Appointment both org-scoped by forced RLS; Client.id is globally unique (no cross-tenant clientId collision). Appointment rebook subquery carries explicit `organizationId` match as defense-in-depth. |
+| `/api/analytics/sales` | GET | TENANT_SCOPED | Read-only sales analytics over the modern Order/OrderItem/Payment cents ledger; runs inside `withTenantScope`; RLS-scoped (kasse_app). Order/OrderItem/Payment org-scoped by forced RLS; staff-name lookup carries an explicit `organizationId` predicate as defense-in-depth. Gated `REPORTS.VIEW_OWN`. |
 
 ---
 

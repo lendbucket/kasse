@@ -111,6 +111,11 @@ export const routeMap: Record<string, RouteGuard> = {
   // ── P0.A.13: Organization group hierarchy ──────────────────────────────
   "/api/organization-groups": { type: "permission", permission: Permissions.SETTINGS.EDIT_LOCATIONS },
   "/api/organization-groups/[id]": { type: "permission", permission: Permissions.SETTINGS.EDIT_LOCATIONS },
+
+  // Analytics + tax. Longest-prefix: "/api/analytics" covers /retention, /sales,
+  // and any future sub-route. Both were unmapped -> default-deny 403.
+  "/api/analytics": { type: "permission", permission: Permissions.REPORTS.VIEW_OWN },
+  "/api/tax": { type: "permission", permission: Permissions.POS.OPEN_CHECKOUT },
 };
 
 /**
