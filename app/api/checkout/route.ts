@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     try { result = await withTenantScope(prisma, ctx, (tx) => createImmediateCheckout(tx, input)); break; }
     catch (e) { lastErr = e; if (isP2002(e)) continue; throw e; }
   }
-  if (!result) { console.error("checkout failed after retries", lastErr); return NextResponse.json({ error: "checkout_conflict" }, { status: 409 }); }
+  if (!result) { console.error("checkout failed after retries", { attempts: 4, idempotencyKey: input.idempotencyKey, err: lastErr }); return NextResponse.json({ error: "checkout_conflict" }, { status: 409 }); }
   if (!result.ok) return NextResponse.json({ error: result.error, detail: result.detail }, { status: ERROR_STATUS[result.error] ?? 400 });
 
   return NextResponse.json(result, { status: 201, headers: { "Cache-Control": "no-store" } });

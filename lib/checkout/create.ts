@@ -29,12 +29,19 @@ export type CheckoutResult =
 
 const MAX_ITEMS = 50;
 
+// Per-location daily sequence: YYYYMMDD-NNN. NOTE: count-then-insert is a TOCTOU
+// race — two concurrent checkouts on the same location/day can compute the same
+// number; the unique index (locationId, orderNumber) rejects the loser with P2002
+// and the route retries the whole tx (recomputing the count). The 4-retry budget is
+// sufficient for low-concurrency single-terminal salons (launch scope). For
+// multi-terminal high concurrency, replace with a per-location Postgres SEQUENCE or
+// a SELECT ... FOR UPDATE counter row. (3c+ hardening.)
 async function nextOrderNumber(tx: Prisma.TransactionClient, locationId: string): Promise<string> {
   const now = new Date();
-  const y = now.getUTCFullYear(), mo = now.getUTCMonth(), d = now.getUTCDate();
-  const datePart = `${y}${String(mo + 1).padStart(2, "0")}${String(d).padStart(2, "0")}`;
-  const start = new Date(Date.UTC(y, mo, d));
-  const end = new Date(Date.UTC(y, mo, d + 1));
+  const year = now.getUTCFullYear(), monthIdx = now.getUTCMonth(), day = now.getUTCDate();
+  const datePart = `${year}${String(monthIdx + 1).padStart(2, "0")}${String(day).padStart(2, "0")}`;
+  const start = new Date(Date.UTC(year, monthIdx, day));
+  const end = new Date(Date.UTC(year, monthIdx, day + 1));
   const todayCount = await tx.order.count({ where: { locationId, createdAt: { gte: start, lt: end } } });
   return `${datePart}-${String(todayCount + 1).padStart(3, "0")}`;
 }
@@ -110,6 +117,8 @@ export async function createImmediateCheckout(tx: Prisma.TransactionClient, inpu
     const s = svcById.get(item.serviceId)!;
     const staffId = item.staffId ?? null;
     const override = staffId ? overrideByPair.get(`${item.serviceId}:${staffId}`) : undefined;
+    // Service.price is stored in dollars (Float); ServiceStaffOverride.priceCents is
+    // already integer cents and wins when a stylist with an override is on the line.
     const unitPriceCents = override ?? Math.round(s.price * 100);
     const subtotalCents = unitPriceCents * qty;
     const taxableFlag = s.taxable === true;
@@ -131,6 +140,8 @@ export async function createImmediateCheckout(tx: Prisma.TransactionClient, inpu
     data: {
       organizationId: input.organizationId, locationId: input.locationId,
       appointmentId: input.appointmentId ?? null, clientId: input.clientId ?? null,
+      // realtimeChannelId is @unique + required; for 3a any unique value works. It
+      // becomes the Supabase realtime channel for live cart sync in a later slice.
       realtimeChannelId: randomUUID(), status: CartStatus.CONVERTED,
       subtotalCents, discountCents, taxCents, tipCents, totalCents,
       items: { create: itemCreate },

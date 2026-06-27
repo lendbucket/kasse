@@ -22,6 +22,9 @@ export default function POSPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL_CAT);
   const [cart, setCart] = useState<CartItem[]>([]);
+  // Idempotency key tied to the CART's lifetime (not the button press), so a
+  // double-tap on Charge sends the same key and the server dedupes to one order.
+  const [cartKey, setCartKey] = useState("");
   const [client, setClient] = useState<{ id: string; name: string } | null>(null);
   const [tipInput, setTipInput] = useState("");
   const [payment, setPayment] = useState<PaymentMethod>("card");
@@ -68,10 +71,13 @@ export default function POSPage() {
   const tip = useMemo(() => { const n = parseFloat(tipInput); return Number.isFinite(n) && n > 0 ? +n.toFixed(2) : 0; }, [tipInput]);
   const total = useMemo(() => +(subtotal + tax + tip).toFixed(2), [subtotal, tax, tip]);
 
-  function addToCart(s: Service) { setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price, staffId: "" }]); }
+  function addToCart(s: Service) {
+    setCart((p) => [...p, { key: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, serviceId: s.id, name: s.name, price: s.price, staffId: "" }]);
+    setCartKey((k) => k || ((typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`));
+  }
   function setLineStaff(key: string, sid: string) { setCart((p) => p.map((i) => (i.key === key ? { ...i, staffId: sid } : i))); }
   function removeFromCart(key: string) { setCart((p) => p.filter((i) => i.key !== key)); }
-  function clearCart() { setCart([]); setClient(null); setTipInput(""); }
+  function clearCart() { setCart([]); setClient(null); setTipInput(""); setCartKey(""); }
 
   async function charge() {
     if (cart.length === 0 || charging) return;
@@ -80,7 +86,8 @@ export default function POSPage() {
     if (payment === "card") { setToast("Card payments arrive in the next slice"); setTimeout(() => setToast(null), 3000); return; }
     setCharging(true); setToast(null);
     try {
-      const idempotencyKey = (typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // Reuse the cart-scoped key so retries / double-taps dedupe server-side.
+      const idempotencyKey = cartKey || ((typeof crypto !== "undefined" && "randomUUID" in crypto) ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
       const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
