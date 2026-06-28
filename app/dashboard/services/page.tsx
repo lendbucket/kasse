@@ -5,7 +5,12 @@ import { Plus, Pencil, Power, Tag, X } from "lucide-react";
 import { useActiveLocation } from "@/lib/locations/context";
 
 type Location = { id: string; name: string };
-type Service = { id: string; name: string; price: number; duration: number; category: string | null; locationId: string; isActive: boolean };
+type Service = {
+  id: string; name: string; price: number; duration: number; category: string | null; locationId: string; isActive: boolean;
+  description: string | null; bufferTime: number; processingMinutes: number | null; taxable: boolean;
+  bookableByCustomers: boolean; bookableByStaff: boolean; requiresConsultation: boolean; requiresConsent: boolean;
+  depositRequired: boolean; depositType: "FIXED_AMOUNT" | "PERCENTAGE" | null; depositValueCents: number | null;
+};
 
 const ALL_CAT = "All";
 const CAT_SUGGEST = ["Hair", "Color", "Treatment", "Nails", "Waxing", "Other"];
@@ -121,24 +126,88 @@ export default function ServicesPage() {
   );
 }
 
+function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)} style={{ position: "relative", width: 44, height: 24, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0, transition: "background 150ms", background: on ? "#16a34a" : "#e5e7eb" }}>
+      <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 150ms", transform: on ? "translateX(22px)" : "translateX(2px)" }} />
+    </button>
+  );
+}
+
+function ToggleRow({ label, desc, on, onChange }: { label: string; desc?: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 0" }}>
+      <div><p style={{ fontSize: 14, fontWeight: 500, color: "#111827", margin: 0 }}>{label}</p>{desc && <p style={{ fontSize: 12, color: "#9ca3af", margin: "2px 0 0" }}>{desc}</p>}</div>
+      <Toggle on={on} onChange={onChange} />
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: "0.06em", textTransform: "uppercase", margin: "10px 0 0" }}>{children}</p>;
+}
+
 function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "create" | "edit"; service: Service | null; locations: Location[]; onClose: () => void; onSaved: () => void }) {
   const { activeLocationId } = useActiveLocation();
-  const [name, setName] = useState(service?.name ?? ""); const [cat, setCat] = useState(service?.category ?? "");
-  const [price, setPrice] = useState(service ? String(service.price) : ""); const [duration, setDuration] = useState(service ? String(service.duration) : "");
+  const [name, setName] = useState(service?.name ?? "");
+  const [cat, setCat] = useState(service?.category ?? "");
+  const [description, setDescription] = useState(service?.description ?? "");
+  const [price, setPrice] = useState(service ? String(service.price) : "");
+  const [duration, setDuration] = useState(service ? String(service.duration) : "");
+  const [buffer, setBuffer] = useState(service ? String(service.bufferTime) : "0");
+  const [processing, setProcessing] = useState(service?.processingMinutes != null ? String(service.processingMinutes) : "");
   const [locationId, setLocationId] = useState(service?.locationId ?? activeLocationId ?? locations[0]?.id ?? "");
   const [active, setActive] = useState(service?.isActive ?? true);
-  const [submitting, setSubmitting] = useState(false); const [err, setErr] = useState<string | null>(null);
+  const [taxable, setTaxable] = useState(service?.taxable ?? true);
+  const [bookCustomers, setBookCustomers] = useState(service?.bookableByCustomers ?? true);
+  const [bookStaff, setBookStaff] = useState(service?.bookableByStaff ?? true);
+  const [consult, setConsult] = useState(service?.requiresConsultation ?? false);
+  const [consent, setConsent] = useState(service?.requiresConsent ?? false);
+  const [depositOn, setDepositOn] = useState(service?.depositRequired ?? false);
+  const [depositType, setDepositType] = useState<"FIXED_AMOUNT" | "PERCENTAGE">(service?.depositType ?? "PERCENTAGE");
+  const [depositValue, setDepositValue] = useState(
+    service?.depositValueCents != null
+      ? (service.depositType === "FIXED_AMOUNT" ? (service.depositValueCents / 100).toFixed(2) : String(service.depositValueCents))
+      : "",
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
+  const lbl: React.CSSProperties = { fontSize: 13, fontWeight: 500, color: "#374151" };
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const pN = parseFloat(price); const dN = parseInt(duration, 10);
+    const bN = buffer.trim() === "" ? 0 : parseInt(buffer, 10);
+    const pmN = processing.trim() === "" ? null : parseInt(processing, 10);
     if (!name.trim() || !locationId || submitting) return;
     if (!Number.isFinite(pN) || pN < 0) { setErr("Invalid price"); return; }
-    if (!Number.isFinite(dN) || dN <= 0) { setErr("Invalid duration"); return; }
+    if (!Number.isInteger(dN) || dN <= 0) { setErr("Invalid duration"); return; }
+    if (!Number.isInteger(bN) || bN < 0) { setErr("Invalid buffer time"); return; }
+    if (pmN !== null && (!Number.isInteger(pmN) || pmN < 0)) { setErr("Invalid processing time"); return; }
+    let depositValueCents: number | null = null;
+    if (depositOn) {
+      if (depositType === "FIXED_AMOUNT") {
+        const v = parseFloat(depositValue);
+        if (!Number.isFinite(v) || v <= 0) { setErr("Enter a deposit amount"); return; }
+        depositValueCents = Math.round(v * 100);
+      } else {
+        const v = parseInt(depositValue, 10);
+        if (!Number.isInteger(v) || v < 1 || v > 100) { setErr("Deposit percentage must be 1-100"); return; }
+        depositValueCents = v;
+      }
+    }
     setSubmitting(true); setErr(null);
     try {
-      const r = await fetch(mode === "edit" ? `/api/services/${service!.id}` : "/api/services", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, category: cat || null, price: pN, duration: dN, locationId, active }) });
+      const payload = {
+        name, category: cat || null, description: description.trim() || null,
+        price: pN, duration: dN, bufferTime: bN, processingMinutes: pmN,
+        locationId, active, taxable,
+        bookableByCustomers: bookCustomers, bookableByStaff: bookStaff,
+        requiresConsultation: consult, requiresConsent: consent,
+        depositRequired: depositOn, depositType: depositOn ? depositType : null, depositValueCents,
+      };
+      const r = await fetch(mode === "edit" ? `/api/services/${service!.id}` : "/api/services", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Save failed"); }
       onSaved();
     } catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); } finally { setSubmitting(false); }
@@ -146,27 +215,58 @@ function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "c
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-      <div style={{ background: "white", borderRadius: 12, width: 480, maxWidth: "100%", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 24px 0" }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>{mode === "edit" ? "Edit Service" : "Create Service"}</h2>
+      <div style={{ background: "white", borderRadius: 12, width: 560, maxWidth: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "24px 24px 16px", borderBottom: "1px solid #f3f4f6", flexShrink: 0 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>{mode === "edit" ? "Edit service" : "Create service"}</h2>
           <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", padding: 4 }}><X size={20} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Name <span style={{ color: "#dc2626" }}>*</span></span><input type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Haircut" style={iS} /></label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Category</span><input type="text" value={cat} onChange={(e) => setCat(e.target.value)} list="cat-suggest" placeholder="Hair" style={iS} /><datalist id="cat-suggest">{CAT_SUGGEST.map((c) => <option key={c} value={c} />)}</datalist></label>
+        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flex: 1, minHeight: 0 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Name <span style={{ color: "#dc2626" }}>*</span></span><input type="text" value={name} onChange={(e) => setName(e.target.value)} required placeholder="Haircut" style={iS} /></label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Price ($) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Duration (min) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="1" step="1" inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} required placeholder="45" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Category</span><input type="text" value={cat} onChange={(e) => setCat(e.target.value)} list="cat-suggest" placeholder="Hair" style={iS} /><datalist id="cat-suggest">{CAT_SUGGEST.map((c) => <option key={c} value={c} />)}</datalist></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Location <span style={{ color: "#dc2626" }}>*</span></span><select value={locationId} onChange={(e) => setLocationId(e.target.value)} required style={iS}><option value="">Select</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
           </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Location <span style={{ color: "#dc2626" }}>*</span></span><select value={locationId} onChange={(e) => setLocationId(e.target.value)} required style={iS}><option value="">Select location</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select></label>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid #e5e7eb", borderRadius: 6, padding: "12px 16px" }}>
-            <div><p style={{ fontSize: 14, fontWeight: 500, color: "#111827", margin: 0 }}>Active</p><p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>Inactive services hidden from POS</p></div>
-            <button type="button" role="switch" aria-checked={active} onClick={() => setActive((v) => !v)} style={{ position: "relative", width: 44, height: 24, borderRadius: 999, border: "none", cursor: "pointer", transition: "background 150ms", background: active ? "#16a34a" : "#e5e7eb" }}>
-              <span style={{ position: "absolute", top: 2, width: 20, height: 20, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "transform 150ms", transform: active ? "translateX(22px)" : "translateX(2px)" }} />
-            </button>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Description</span><textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="Shown to clients on the booking page" style={{ ...iS, height: "auto", padding: "10px 12px", fontSize: 14, resize: "vertical", fontFamily: "inherit" }} /></label>
+
+          <SectionLabel>Pricing &amp; time</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Price ($) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="0" step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required placeholder="0.00" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Duration (min) <span style={{ color: "#dc2626" }}>*</span></span><input type="number" min="1" step="1" inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} required placeholder="45" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Buffer after (min)</span><input type="number" min="0" step="1" inputMode="numeric" value={buffer} onChange={(e) => setBuffer(e.target.value)} placeholder="0" style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Processing (min)</span><input type="number" min="0" step="1" inputMode="numeric" value={processing} onChange={(e) => setProcessing(e.target.value)} placeholder="color develop, etc." style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} /></label>
           </div>
-          {err && <p style={{ fontSize: 13, color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 6, padding: "8px 12px" }}>{err}</p>}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+          <div style={{ borderTop: "1px solid #f3f4f6" }}><ToggleRow label="Taxable" desc="Apply sales tax to this service" on={taxable} onChange={setTaxable} /></div>
+
+          <SectionLabel>Online booking</SectionLabel>
+          <div>
+            <ToggleRow label="Bookable by clients" desc="Show on the public booking page" on={bookCustomers} onChange={setBookCustomers} />
+            <ToggleRow label="Bookable by staff" desc="Staff can add it to appointments" on={bookStaff} onChange={setBookStaff} />
+            <ToggleRow label="Requires consultation" on={consult} onChange={setConsult} />
+            <ToggleRow label="Requires consent form" on={consent} onChange={setConsent} />
+          </div>
+
+          <SectionLabel>Deposit</SectionLabel>
+          <div>
+            <ToggleRow label="Require a deposit to book" on={depositOn} onChange={setDepositOn} />
+            {depositOn && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>Type</span>
+                  <select value={depositType} onChange={(e) => setDepositType(e.target.value as "FIXED_AMOUNT" | "PERCENTAGE")} style={iS}>
+                    <option value="PERCENTAGE">Percentage</option>
+                    <option value="FIXED_AMOUNT">Fixed amount</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={lbl}>{depositType === "PERCENTAGE" ? "Percent (%)" : "Amount ($)"}</span>
+                  <input type="number" min="0" step={depositType === "PERCENTAGE" ? "1" : "0.01"} inputMode="decimal" value={depositValue} onChange={(e) => setDepositValue(e.target.value)} placeholder={depositType === "PERCENTAGE" ? "20" : "0.00"} style={{ ...iS, fontFamily: "var(--font-fira), monospace" }} />
+                </label>
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: "1px solid #f3f4f6" }}><ToggleRow label="Active" desc="Inactive services are hidden from POS & booking" on={active} onChange={setActive} /></div>
+
+          {err && <p style={{ fontSize: 13, color: "#dc2626", background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 6, padding: "8px 12px", margin: 0 }}>{err}</p>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4, position: "sticky", bottom: -24, background: "white", paddingTop: 12, paddingBottom: 2 }}>
             <button type="button" onClick={onClose} className="btn btn-secondary">Cancel</button>
             <button type="submit" disabled={!name.trim() || !locationId || submitting} className="btn btn-primary" style={{ opacity: !name.trim() || !locationId || submitting ? 0.5 : 1 }}>{submitting ? "Saving..." : "Save"}</button>
           </div>

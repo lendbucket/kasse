@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { applyServiceBuilderFields } from "@/lib/services/fields";
 import {
   requireTenantContext,
   tenantErrorResponse,
@@ -45,6 +46,9 @@ export async function PATCH(
   if (body.category !== undefined) data.category = body.category?.trim() || null;
   if (typeof body.locationId === "string" && body.locationId) data.locationId = body.locationId;
   if (typeof body.active === "boolean") data.isActive = body.active;
+
+  const fieldErr = applyServiceBuilderFields(body as unknown as Record<string, unknown>, data);
+  if (fieldErr) return NextResponse.json({ error: fieldErr }, { status: 400 });
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
