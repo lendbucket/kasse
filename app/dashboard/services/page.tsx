@@ -172,8 +172,40 @@ function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "c
   );
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const serviceId = service?.id ?? null;
+  const [ovrStaff, setOvrStaff] = useState<{ id: string; name: string }[]>([]);
+  const [ovr, setOvr] = useState<Record<string, { price: string; duration: string }>>({});
+  const [ovrLoading, setOvrLoading] = useState(mode === "edit");
   const iS: React.CSSProperties = { width: "100%", height: 40, borderRadius: 6, border: "1px solid #e5e7eb", padding: "0 12px", fontSize: 16, color: "#111827", background: "white", outline: "none" };
   const lbl: React.CSSProperties = { fontSize: 13, fontWeight: 500, color: "#374151" };
+
+  useEffect(() => {
+    if (mode !== "edit" || !serviceId) return;
+    let cancelled = false;
+    (async () => {
+      setOvrLoading(true);
+      try {
+        const staffQs = service?.locationId ? `?locationId=${service.locationId}&active=true` : "?active=true";
+        const [sr, or] = await Promise.all([
+          fetch(`/api/staff${staffQs}`),
+          fetch(`/api/services/${serviceId}/overrides`),
+        ]);
+        const sd = sr.ok ? ((await sr.json()) as { staff: { id: string; name: string }[] }) : { staff: [] };
+        const od = or.ok ? ((await or.json()) as { overrides: { staffId: string; priceCents: number | null; durationMinutes: number | null }[] }) : { overrides: [] };
+        if (cancelled) return;
+        setOvrStaff(sd.staff.map((s) => ({ id: s.id, name: s.name })));
+        const m: Record<string, { price: string; duration: string }> = {};
+        for (const o of od.overrides) {
+          m[o.staffId] = {
+            price: o.priceCents != null ? (o.priceCents / 100).toFixed(2) : "",
+            duration: o.durationMinutes != null ? String(o.durationMinutes) : "",
+          };
+        }
+        setOvr(m);
+      } catch { /* leave editor empty on load failure */ } finally { if (!cancelled) setOvrLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [mode, serviceId, service?.locationId]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -209,6 +241,21 @@ function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "c
       };
       const r = await fetch(mode === "edit" ? `/api/services/${service!.id}` : "/api/services", { method: mode === "edit" ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!r.ok) { const d = (await r.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Save failed"); }
+      if (mode === "edit" && service) {
+        const overrides: { staffId: string; priceCents: number | null; durationMinutes: number | null }[] = [];
+        for (const [staffId, v] of Object.entries(ovr)) {
+          const hasP = v.price.trim() !== "";
+          const hasD = v.duration.trim() !== "";
+          if (!hasP && !hasD) continue;
+          let priceCents: number | null = null;
+          if (hasP) { const p = parseFloat(v.price); if (!Number.isFinite(p) || p < 0) { setErr("Invalid stylist price"); return; } priceCents = Math.round(p * 100); }
+          let durationMinutes: number | null = null;
+          if (hasD) { const dn = parseInt(v.duration, 10); if (!Number.isInteger(dn) || dn <= 0) { setErr("Invalid stylist duration"); return; } durationMinutes = dn; }
+          overrides.push({ staffId, priceCents, durationMinutes });
+        }
+        const orr = await fetch(`/api/services/${service.id}/overrides`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ overrides }) });
+        if (!orr.ok) { const d = (await orr.json().catch(() => ({}))) as { error?: string }; throw new Error(d.error ?? "Saved service, but per-stylist pricing failed"); }
+      }
       onSaved();
     } catch (e) { setErr(e instanceof Error ? e.message : "Save failed"); } finally { setSubmitting(false); }
   }
@@ -262,6 +309,34 @@ function ServiceModal({ mode, service, locations, onClose, onSaved }: { mode: "c
               </div>
             )}
           </div>
+
+          {mode === "edit" && (
+            <>
+              <SectionLabel>Per-stylist pricing</SectionLabel>
+              {ovrLoading ? (
+                <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>Loading stylists...</p>
+              ) : ovrStaff.length === 0 ? (
+                <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>No stylists at this location yet.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 92px 92px", gap: 8, fontSize: 11, fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    <span>Stylist</span><span>Price $</span><span>Min</span>
+                  </div>
+                  {ovrStaff.map((st) => {
+                    const row = ovr[st.id] ?? { price: "", duration: "" };
+                    return (
+                      <div key={st.id} style={{ display: "grid", gridTemplateColumns: "1fr 92px 92px", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 14, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{st.name}</span>
+                        <input type="number" min="0" step="0.01" inputMode="decimal" value={row.price} onChange={(e) => setOvr((m) => ({ ...m, [st.id]: { price: e.target.value, duration: m[st.id]?.duration ?? "" } }))} placeholder={price || "0.00"} style={{ ...iS, height: 36, fontSize: 14, fontFamily: "var(--font-fira), monospace" }} />
+                        <input type="number" min="1" step="1" inputMode="numeric" value={row.duration} onChange={(e) => setOvr((m) => ({ ...m, [st.id]: { price: m[st.id]?.price ?? "", duration: e.target.value } }))} placeholder={duration || "min"} style={{ ...iS, height: 36, fontSize: 14, fontFamily: "var(--font-fira), monospace" }} />
+                      </div>
+                    );
+                  })}
+                  <p style={{ fontSize: 12, color: "#9ca3af", margin: "2px 0 0" }}>Blank uses the service default. Price overrides apply at checkout.</p>
+                </div>
+              )}
+            </>
+          )}
 
           <div style={{ borderTop: "1px solid #f3f4f6" }}><ToggleRow label="Active" desc="Inactive services are hidden from POS & booking" on={active} onChange={setActive} /></div>
 
