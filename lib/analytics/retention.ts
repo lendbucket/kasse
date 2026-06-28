@@ -46,11 +46,17 @@ interface RawRow {
  * The query is parameterized (never string-interpolates user input).
  *
  * Formula (Salon Envy definition):
- *   checkout = completed POS Transaction with non-null clientId, bucketed to
- *              its Chicago-local calendar day.
+ *   checkout = CLOSED Order with a non-null clientId, bucketed to its
+ *              Chicago-local closedAt calendar day. Per-stylist attribution
+ *              comes from OrderItem.staffId, so a client seen by two stylists
+ *              on one ticket counts once for each (correct for per-stylist
+ *              analysis); the salon-wide totals count each client once.
  *   rebooked = client has ANY Appointment (not soft-deleted, not cancelled/no_show)
  *              whose startTime Chicago-local day is AFTER the checkout day.
  *   rebook%  = distinct rebooked clients / distinct checked-out clients * 100
+ *
+ * Sources the modern Order/OrderItem ledger (per-line staff). The legacy
+ * Transaction table is intentionally not used.
  */
 export async function computeRetention(
   tx: PrismaTx,
@@ -62,28 +68,30 @@ export async function computeRetention(
   const bucketExpr = (() => {
     switch (grain) {
       case "day":
-        return Prisma.sql`(t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date`;
+        return Prisma.sql`(o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date`;
       case "week":
-        return Prisma.sql`date_trunc('week', (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago'))::date`;
+        return Prisma.sql`date_trunc('week', (o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago'))::date`;
       case "month":
-        return Prisma.sql`date_trunc('month', (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago'))::date`;
+        return Prisma.sql`date_trunc('month', (o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago'))::date`;
     }
   })();
 
   // Build optional filters
   const locationFilter = locationId
-    ? Prisma.sql`AND t."locationId" = ${locationId}`
+    ? Prisma.sql`AND o."locationId" = ${locationId}`
     : Prisma.empty;
   const staffFilter = staffId
-    ? Prisma.sql`AND t."staffId" = ${staffId}`
+    ? Prisma.sql`AND oi."staffId" = ${staffId}`
     : Prisma.empty;
 
   // Shared CTE filter fragments — used by both the per-stylist grouped query
-  // and the salon-wide distinct-total query so they never drift.
+  // and the salon-wide distinct-total query so they never drift. A CLOSED order
+  // always has >=1 OrderItem, so the inner join never drops a real checkout.
   const checkoutWhere = Prisma.sql`
-      WHERE t.status = 'completed'
-        AND t."clientId" IS NOT NULL
-        AND (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date
+      WHERE o.status = 'CLOSED'
+        AND o."clientId" IS NOT NULL
+        AND o."closedAt" IS NOT NULL
+        AND (o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date
             BETWEEN ${startDate}::date AND ${endDate}::date
         ${locationFilter}
         ${staffFilter}`;
@@ -99,13 +107,15 @@ export async function computeRetention(
           AND (a."startTime" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date > c.checkout_day
       )`;
 
-  // Per-stylist grouped query
+  // Per-stylist grouped query. Join OrderItem so each (order, stylist) pair is a
+  // checkout row for that stylist; COUNT(DISTINCT clientId) dedups multi-item tickets.
   const rawRows = await tx.$queryRaw<RawRow[]>`
     WITH checkouts AS (
-      SELECT t."organizationId", t."locationId", t."staffId", t."clientId",
+      SELECT o."organizationId", o."locationId", oi."staffId", o."clientId",
              ${bucketExpr} AS period,
-             (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
-      FROM "Transaction" t
+             (o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
+      FROM "Order" o
+      JOIN "OrderItem" oi ON oi."orderId" = o.id
       ${checkoutWhere}
     ),
     cwr AS (
@@ -127,9 +137,10 @@ export async function computeRetention(
     { checkouts: bigint | number; rebooked_clients: bigint | number }[]
   >`
     WITH checkouts AS (
-      SELECT t."organizationId", t."clientId",
-             (t."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
-      FROM "Transaction" t
+      SELECT o."organizationId", o."clientId",
+             (o."closedAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Chicago')::date AS checkout_day
+      FROM "Order" o
+      JOIN "OrderItem" oi ON oi."orderId" = o.id
       ${checkoutWhere}
     ),
     cwr AS (
