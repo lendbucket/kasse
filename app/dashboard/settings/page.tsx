@@ -103,6 +103,49 @@ function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   )
 }
 
+function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>{label}</label>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input readOnly value={value} onFocus={(e) => e.currentTarget.select()}
+          style={{ flex: 1, minWidth: 0, height: 38, border: "1px solid #e5e7eb", borderRadius: 8, padding: "0 12px", fontSize: 13, color: "#374151", fontFamily: "var(--font-fira), monospace", background: "#f9fafb", outline: "none" }} />
+        <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {} }}
+          style={{ height: 38, padding: "0 14px", border: "1px solid #e5e7eb", borderRadius: 8, background: copied ? "#16a34a" : "white", color: copied ? "white" : "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", flexShrink: 0 }}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function BookingLinks({ slug, locations }: { slug?: string; locations?: { id: string; name: string; bookingSlug: string | null; isActive: boolean }[] }) {
+  const [origin, setOrigin] = useState("")
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+  if (!slug) {
+    return <div style={{ padding: "16px 20px", fontSize: 13, color: "#9ca3af" }}>Your booking page isn&apos;t set up yet.</div>
+  }
+  const base = origin || "https://portal.kasseapp.com"
+  const orgUrl = `${base}/book/${slug}`
+  const orgEmbed = `<iframe src="${orgUrl}" width="100%" height="900" style="border:0;" title="Book an appointment"></iframe>`
+  const list = locations ?? []
+  const activeBookable = list.filter((l) => l.isActive && l.bookingSlug)
+  const activeNoSlug = list.filter((l) => l.isActive && !l.bookingSlug)
+  return (
+    <div style={{ padding: "16px 20px" }}>
+      <CopyField label="All locations — booking link" value={orgUrl} />
+      <CopyField label="All locations — website embed" value={orgEmbed} />
+      {activeBookable.length > 1 && activeBookable.map((l) => (
+        <CopyField key={l.id} label={`${l.name} — direct link`} value={`${base}/book/${slug}/${l.bookingSlug}`} />
+      ))}
+      {activeNoSlug.length > 0 && (
+        <p style={{ fontSize: 12, color: "#9ca3af", margin: "4px 0 0" }}>{activeNoSlug.map((l) => l.name).join(", ")}: no booking slug set yet.</p>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const [section, setSection] = useState("about")
   const [org, setOrg] = useState<OrgData>({})
@@ -379,6 +422,11 @@ export default function SettingsPage() {
           <TR label="Require deposit" desc="Require a deposit when booking" on={settings.requireDeposit === true} onChange={() => saveSettings({ requireDeposit: !settings.requireDeposit })} />
           <TR label="Show stylist availability" desc="Let clients see stylist schedules" on={true} onChange={() => {}} />
           <TR label="Allow stylist preference" desc="Let clients choose their stylist" on={true} onChange={() => {}} />
+        </Card>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", margin: "24px 0 6px" }}>Booking links</h3>
+        <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 12px" }}>Share these links, or embed your booking page on your website.</p>
+        <Card>
+          <BookingLinks slug={org.slug} locations={org.locations} />
         </Card>
       </div>)
 
