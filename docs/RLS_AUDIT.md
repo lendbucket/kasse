@@ -69,6 +69,7 @@ These library helpers must be called inside a `withTenantScope` block — they a
 | `/api/locations/[id]` | PATCH | Updates a single location's profile (name/address/city/state/zip/phone/email/timezone/isActive) via `updateMany` scoped to organizationId; gated `SETTINGS.EDIT_LOCATIONS`; `requireTenantContext` + `withTenantScope`; count 0 => 404. |
 | `/api/services` | GET, POST | Lists/creates services scoped to tenant org; asserts location on POST |
 | `/api/services/[id]` | PATCH, DELETE | Updates/soft-deletes a service, scoped to tenant organizationId |
+| `/api/services/[id]/overrides` | GET, PUT | Lists/replaces per-stylist ServiceStaffOverride rows (priceCents/durationMinutes). requireTenantContext + withTenantScope; verifies parent service + every staffId belong to org; delete+createMany replace-all atomic in scope tx. ServiceStaffOverride RLS (USING+WITH CHECK) joins through Service.organizationId. |
 | `/api/transactions` | POST | Creates a payment transaction; asserts location + staff belong to tenant |
 | `/api/waitlist` | GET, POST | Lists/adds waitlist entries scoped to tenant; validates staff if provided |
 | `/api/appointments` | GET, POST | Lists/creates appointments; asserts location, staff, and service ownership |
