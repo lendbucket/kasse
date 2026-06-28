@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { Calendar, Check, ChevronLeft, ChevronRight, Clock, Plus, X } from "lucide-react";
 import DayGrid from "./day-grid";
 import WeekGrid from "./week-grid";
+import ClientPicker from "./client-picker";
 
 type View = "list" | "day" | "week";
 type Staff = { id: string; name: string; locationId: string };
@@ -271,7 +272,7 @@ function NewAppointmentModal({ date, services, staff, locationId, initialStaffId
   initialStaffId?: string; initialStartTime?: string;
   onClose: () => void; onCreated: () => void;
 }) {
-  const [clientName, setClientName] = useState("");
+  const [selectedClient, setSelectedClient] = useState<{ id: string; name: string } | null>(null);
   const [serviceId, setServiceId] = useState(services[0]?.id ?? "");
   const [staffId, setStaffId] = useState(initialStaffId || (staff[0]?.id ?? ""));
   const [startDate, setStartDate] = useState(date);
@@ -287,7 +288,7 @@ function NewAppointmentModal({ date, services, staff, locationId, initialStaffId
     setSubmitting(true); setErr(null);
     try {
       const iso = new Date(`${startDate}T${startTime}`).toISOString();
-      const r = await fetch("/api/appointments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId, staffId, serviceId: serviceId || undefined, clientName: clientName || undefined, startTime: iso, notes: notes || undefined }) });
+      const r = await fetch("/api/appointments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locationId, staffId, serviceId: serviceId || undefined, clientId: selectedClient?.id, startTime: iso, notes: notes || undefined }) });
       if (!r.ok) {
         const d = (await r.json().catch(() => ({}))) as { error?: string; conflicts?: Array<{ type: string; conflictStart?: string; conflictEnd?: string }> };
         if (d.error === "booking_conflict" && d.conflicts?.length) {
@@ -327,8 +328,8 @@ function NewAppointmentModal({ date, services, staff, locationId, initialStaffId
         </div>
         <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>Client name</span>
-            <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Walk-in" style={inputStyle} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>Client</span>
+            <ClientPicker locationId={locationId} value={selectedClient} onChange={setSelectedClient} />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>Service</span>

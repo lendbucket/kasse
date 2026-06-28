@@ -61,6 +61,7 @@ type CreateBody = {
   locationId: string;
   staffId: string;
   serviceId?: string;
+  clientId?: string;
   clientName?: string;
   startTime: string;
   durationMinutes?: number;
@@ -154,6 +155,25 @@ export async function POST(request: NextRequest) {
       return { conflict: true as const, conflicts: availability.conflicts };
     }
 
+    // Resolve client link (tenant-scoped) + first-visit detection.
+    let clientId: string | null = null;
+    let clientNameSnapshot: string | null = body.clientName?.trim() || null;
+    let isFirstVisit = false;
+    if (body.clientId) {
+      const client = await tx.client.findFirst({
+        where: { id: body.clientId, organizationId: ctx.organizationId },
+        select: { id: true, name: true },
+      });
+      if (client) {
+        clientId = client.id;
+        clientNameSnapshot = client.name;
+        const priorVisits = await tx.appointment.count({
+          where: { clientId: client.id, organizationId: ctx.organizationId, status: { notIn: ["cancelled", "no_show"] } },
+        });
+        isFirstVisit = priorVisits === 0;
+      }
+    }
+
     const appointment = await tx.appointment.create({
       data: {
         locationId: body.locationId,
@@ -164,7 +184,9 @@ export async function POST(request: NextRequest) {
         price,
         estimatedTotalCents,
         estimatedTotalMinutes,
-        clientName: body.clientName?.trim() || null,
+        clientId,
+        clientName: clientNameSnapshot,
+        isFirstVisit,
         startTime: start,
         endTime: end,
         notes: body.notes?.trim() || null,
