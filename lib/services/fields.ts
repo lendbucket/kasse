@@ -31,6 +31,16 @@ export function applyServiceBuilderFields(
       data[f] = body[f];
     }
   }
+  // Deposit type + value are validated as a pair: we can't see the existing DB row
+  // here, so the percentage-range cross-check is only sound when both arrive together.
+  // Reject a lone partial so a value can't slip past validation onto a row whose
+  // deposit type lives only in Postgres.
+  if (("depositType" in body) !== ("depositValueCents" in body)) {
+    return "depositType and depositValueCents must be provided together";
+  }
+  // NOTE: depositValueCents stores cents when depositType=FIXED_AMOUNT, but a plain
+  // percent (1 to 100) when depositType=PERCENTAGE. The column name reflects only the
+  // fixed-amount case; treat the unit as type-dependent wherever this value is read.
   if ("depositType" in body) {
     const v = body.depositType;
     if (v === null) data.depositType = null;
